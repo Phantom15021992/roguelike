@@ -52,7 +52,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -70,6 +70,8 @@ func _ready() -> void:
 		_clicktest()
 	elif "--skilltest" in args:
 		_skilltest()
+	elif "--zootest" in args:
+		_zootest()
 	elif "--herotest" in args:
 		_herotest()
 	elif "--cooptest" in args:
@@ -1341,4 +1343,35 @@ func _herotest() -> void:
 	_shot("hero_start5")
 	Meta.change_class("acolyte")
 	print("HERO changed to %s, hero exists=%s" % [Meta.hero_cls, Meta.current_hero().has("cls")])
+	get_tree().quit()
+
+
+# --- «Зоопарк»: каждый новый монстр и босс рядом с героем (`--zootest --god`) ---
+func _zootest() -> void:
+	await _wait(1.5)
+	var p: Node2D = local_hero()
+	p.god = true
+	var scenes := ["frost_wisp", "ice_slime", "toad", "lurker", "shade", "necromancer", "demon", "horror"]
+	for n: String in scenes:
+		var e: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
+		e.position = p.position + Vector2(50, 0).rotated(randf() * TAU)
+		get_tree().current_scene.get_node("Entities").add_child(e)
+		await _wait(2.5)
+		print("ZOO %s hp=%d/%d alive=%s" % [n, e.hp if is_instance_valid(e) else -1, e.max_hp if is_instance_valid(e) else -1, is_instance_valid(e)])
+		_shot("zoo_%s" % n)
+		if is_instance_valid(e):
+			e.queue_free()
+	for n: String in ["ice_queen", "swamp_queen", "shadow_reaper", "abyss_prince", "abyss_lord"]:
+		var b: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
+		b.position = p.position + Vector2(70, 0)
+		b.arena = Rect2(p.position - Vector2(200, 150), Vector2(400, 300))
+		get_tree().current_scene.get_node("Entities").add_child(b)
+		await _wait(0.5)
+		b.take_damage(1, p.position)  # разбудить
+		await _wait(5.0)
+		print("ZOO %s name=%s hp=%d/%d phase=%d" % [n, b.BOSS_NAME, b.hp, b.max_hp, b.phase])
+		_shot("zoo_%s" % n)
+		b.take_damage(b.hp + 99999, p.position, true, false)
+		await _wait(1.5)
+	print("ZOO pickups=%d" % get_tree().get_nodes_in_group("pickups").size())
 	get_tree().quit()

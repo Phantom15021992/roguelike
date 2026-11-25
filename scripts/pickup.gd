@@ -90,7 +90,7 @@ func _draw() -> void:
 		return
 	if kind == "mat":
 		var icon: int = Crafting.MATERIALS[mat]["icon"]
-		draw_texture_rect_region(MATS_TEX, Rect2(-4, -9 - _z, 8, 8), Rect2(icon * 8, 0, 8, 8))
+		draw_texture_rect_region(MATS_TEX, Rect2(-4, -9 - _z, 8, 8), Rect2(icon * 8, 0, 8, 8), Crafting.MATERIALS[mat].get("tint", Color.WHITE))
 		return
 	var c: Color = Items.color(item)
 	var bob := roundf(sin(_t * 3.0)) - _z

@@ -12,6 +12,7 @@ var caster: Node          # для team = "player"
 var mult := 0.0           # доля урона героя за тик (team = "player")
 var slow := 0.0           # > 0 — замедляет монстров (секунд за тик)
 var heal := 0             # > 0 — лечит героев внутри за тик (Святая земля)
+var chill := 0.0          # > 0 — замедляет героев внутри (ледяная земля монстров)
 var _t := 0.0
 var _tick := 0.3
 
@@ -34,7 +35,10 @@ func _process(delta: float) -> void:
 		if team == "enemy":
 			for p in get_tree().get_nodes_in_group("player"):
 				if not p.dead and p.global_position.distance_to(global_position) < radius:
-					p.take_damage(damage, global_position)
+					if damage > 0:
+						p.take_damage(damage, global_position)
+					if chill > 0.0:
+						p.apply_chill(chill)
 		else:
 			if heal > 0:
 				for p in get_tree().get_nodes_in_group("player"):

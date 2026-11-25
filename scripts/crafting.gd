@@ -21,12 +21,21 @@ const MATERIALS := {
 	"obsidian": {"name": "Обсидиан", "icon": 9},
 	"scale": {"name": "Чешуя", "icon": 10},
 	"ember_heart": {"name": "Сердце пламени", "icon": 11, "rare": true},
+	# Глубины (10–50). Иконки пока перекрашенные старые (tint).
+	"ice": {"name": "Лёд", "icon": 1, "tint": Color(0.6, 0.9, 1.4)},
+	"venom": {"name": "Яд", "icon": 4, "tint": Color(0.6, 1.3, 0.4)},
+	"soul": {"name": "Душа", "icon": 1, "tint": Color(0.8, 0.6, 1.4)},
+	"horn": {"name": "Рог", "icon": 3, "tint": Color(1.3, 0.55, 0.45)},
+	"frost_heart": {"name": "Сердце льда", "icon": 11, "rare": true, "tint": Color(0.55, 0.9, 1.5)},
+	"swamp_pearl": {"name": "Болотная жемчужина", "icon": 6, "rare": true, "tint": Color(0.7, 1.3, 0.6)},
+	"shadow_gem": {"name": "Теневой камень", "icon": 7, "rare": true, "tint": Color(0.75, 0.5, 1.4)},
+	"abyss_eye": {"name": "Око бездны", "icon": 11, "rare": true, "tint": Color(1.4, 0.4, 0.8)},
 }
 
 # Обычные материалы (не редкие) — ими платят за заточку.
-const COMMON := ["gel", "dust", "wing", "bone", "spore", "ore", "sulfur", "obsidian", "scale"]
+const COMMON := ["gel", "dust", "wing", "bone", "spore", "ore", "sulfur", "obsidian", "scale", "ice", "venom", "soul", "horn"]
 # Редкие (с боссов): при создании гарантируют редкий предмет.
-const RARE := ["crown", "phylactery", "ember_heart"]
+const RARE := ["crown", "phylactery", "ember_heart", "frost_heart", "swamp_pearl", "shadow_gem", "abyss_eye"]
 
 # Рецепты: база предмета → материалы и золото.
 const RECIPES := {

@@ -334,6 +334,7 @@ func _physics_process(delta: float) -> void:
 	_smoke_time = maxf(0.0, _smoke_time - delta)
 	_bless_time = maxf(0.0, _bless_time - delta)
 	_iron_time = maxf(0.0, _iron_time - delta)
+	_chill_time = maxf(0.0, _chill_time - delta)
 	if _overlay:
 		_overlay.queue_redraw()
 
@@ -351,7 +352,7 @@ func _physics_process(delta: float) -> void:
 
 	var input: Vector2 = ctrl["move"]
 	if input != Vector2.ZERO:
-		velocity = velocity.move_toward(input * max_speed, acceleration * delta)
+		velocity = velocity.move_toward(input * max_speed * (0.6 if _chill_time > 0.0 else 1.0), acceleration * delta)
 		aim = input.normalized()
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
@@ -1057,6 +1058,15 @@ var _bless_time := 0.0           # «Благословение»: +урон
 var _bless_pct := 0.0
 var _iron_time := 0.0            # «Железная кожа»: −получаемый урон
 var _iron_pct := 0.0
+var _chill_time := 0.0           # холод (ледяные монстры): −40% скорости бега
+
+
+func apply_chill(sec: float) -> void:
+	if dead:
+		return
+	if _chill_time <= 0.0:
+		Game.float_text(global_position + Vector2(0, -22), "Холод", Color(0.6, 0.85, 1.0))
+	_chill_time = maxf(_chill_time, sec)
 
 
 ## Серия ударов по дуге с паузами (шквал уколов, град ударов).

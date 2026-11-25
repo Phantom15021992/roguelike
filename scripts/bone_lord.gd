@@ -13,7 +13,9 @@ extends "res://scripts/enemy.gd"
 signal woke
 signal phase_changed(phase: int)
 
-const BOSS_NAME := "Повелитель костей"
+var BOSS_NAME := "Повелитель костей"
+var tempo := 1.0             # варианты босса на глубине действуют быстрее
+var shot_chill := 0.0        # снаряды замедляют героя (ледяные варианты)
 const SHEET := preload("res://assets/bone_lord.png")
 const SKELETON := preload("res://scenes/skeleton.tscn")
 const CRYSTAL := preload("res://scenes/crystal.tscn")
@@ -103,7 +105,7 @@ func _think(delta: float) -> Vector2:
 
 func _idle() -> void:
 	state = "idle"
-	_t = IDLE_TIME[phase - 1] * (1.4 if shielded else 1.0)
+	_t = IDLE_TIME[phase - 1] / tempo * (1.4 if shielded else 1.0)
 
 
 func _wake() -> void:
@@ -202,6 +204,7 @@ func _shoot(dir: Vector2, style: String, dmg: int, speed: float, col: Color) -> 
 	b.speed = speed
 	b.lifetime = 4.0
 	b.color = col
+	b.chill = shot_chill
 	b.position = global_position
 	Game.fx().add_child(b)
 

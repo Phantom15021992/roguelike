@@ -339,11 +339,14 @@ func _materials_bar(mats: Dictionary, gold: int) -> Control:
 	g.add_theme_color_override("font_color", GOLD)
 	h.add_child(g)
 	for id: String in Crafting.MATERIALS:
+		if mats.get(id, 0) <= 0:
+			continue  # материалов стало много — показываем только те, что есть
 		var icon := TextureRect.new()
 		var at := AtlasTexture.new()
 		at.atlas = MATS_TEX
 		at.region = Rect2(Crafting.MATERIALS[id]["icon"] * 8, 0, 8, 8)
 		icon.texture = at
+		icon.modulate = Crafting.MATERIALS[id].get("tint", Color.WHITE)
 		icon.tooltip_text = Crafting.mat_name(id)
 		h.add_child(icon)
 		var l := _label(5)

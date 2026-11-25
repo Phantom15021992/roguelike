@@ -13,7 +13,9 @@ extends "res://scripts/enemy.gd"
 signal woke
 signal phase_changed(phase: int)
 
-const BOSS_NAME := "Король слизней"
+var BOSS_NAME := "Король слизней"
+var tempo := 1.0             # варианты босса на глубине действуют быстрее
+var shot_chill := 0.0        # снаряды замедляют героя (ледяные варианты)
 const SHEET := preload("res://assets/boss_slime.png")
 const SLIME_SCENE := preload("res://scenes/slime.tscn")
 const PROJECTILE := preload("res://scripts/projectile.gd")
@@ -98,14 +100,14 @@ func _think(delta: float) -> Vector2:
 					_second_slam = true
 					_begin_slam()
 				else:
-					_set_state("idle", IDLE_TIME[phase - 1])
+					_set_state("idle", IDLE_TIME[phase - 1] / tempo)
 		"cast":
 			if _t <= 0.0:
 				if _cast == "summon":
 					_summon()
 				else:
 					_spit()
-				_set_state("idle", IDLE_TIME[phase - 1])
+				_set_state("idle", IDLE_TIME[phase - 1] / tempo)
 	return Vector2.ZERO
 
 
@@ -234,6 +236,7 @@ func _spit() -> void:
 		b.damage = spit_damage
 		b.speed = 70.0
 		b.color = Color(0.35, 0.8, 0.3)
+		b.chill = shot_chill
 		b.position = global_position
 		Game.fx().add_child(b)
 	_log("spit %d" % n)

@@ -365,3 +365,20 @@ func make_frames(sheet: Texture2D, anims: Dictionary, size := 16) -> SpriteFrame
 			t.region = Rect2(i * size, 0, size, size)
 			frames.add_frame(anim_name, t)
 	return frames
+
+
+## Добыча босса: монеты, два редких предмета и часть комплекта (под классы случайных героев),
+## материалы биома. mats: [[id, количество], ...].
+func _boss_loot(gold: int, mats: Array) -> void:
+	for i in gold:
+		_spawn_pickup("gold", {})
+	for i in 2:
+		var st: Node = Game.random_hero_state()
+		_spawn_pickup("item", Items.make(Items.random_base(st.cls, st.job), 2, Run.depth))
+	var st2: Node = Game.random_hero_state()
+	var set_piece := Items.random_set_item(Run.depth, st2.cls, st2.job)
+	if not set_piece.is_empty():
+		_spawn_pickup("item", set_piece)
+	for spec: Array in mats:
+		for i in int(spec[1]):
+			_spawn_pickup("mat", {}, str(spec[0]))

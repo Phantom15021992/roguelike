@@ -6,7 +6,7 @@ extends "res://scripts/enemy.gd"
 const SHEET := preload("res://assets/imp.png")
 const TELEGRAPH := preload("res://scripts/telegraph.gd")
 const PUDDLE := preload("res://scripts/puddle.gd")
-const FIRE := Color(1.0, 0.45, 0.15)
+var FIRE := Color(1.0, 0.45, 0.15)  # цвет стихии (у жабы — яд)
 
 @export var speed := 34.0
 @export var keep_distance := 70.0

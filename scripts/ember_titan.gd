@@ -13,7 +13,9 @@ extends "res://scripts/enemy.gd"
 signal woke
 signal phase_changed(phase: int)
 
-const BOSS_NAME := "Владыка пламени"
+var BOSS_NAME := "Владыка пламени"
+var tempo := 1.0             # варианты босса на глубине действуют быстрее
+var shot_chill := 0.0        # снаряды замедляют героя (ледяные варианты)
 const SHEET := preload("res://assets/ember_titan.png")
 const IMP := preload("res://scenes/imp.tscn")
 const TELEGRAPH := preload("res://scripts/telegraph.gd")
@@ -108,7 +110,7 @@ func _think(delta: float) -> Vector2:
 
 func _idle() -> void:
 	state = "idle"
-	_t = IDLE_TIME[phase - 1]
+	_t = IDLE_TIME[phase - 1] / tempo
 
 
 func _wake() -> void:

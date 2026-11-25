@@ -61,7 +61,7 @@ var persist := true
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args)
 	# `--loadsave` — тест на настоящем сохранении: прочитать, но ничего не записывать.
 	if persist or "--loadsave" in args:
 		load_game()

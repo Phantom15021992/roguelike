@@ -38,7 +38,43 @@ const SPAWNS := {
 	"i": preload("res://scenes/imp.tscn"),
 	"o": preload("res://scenes/golem.tscn"),
 	"z": preload("res://scenes/salamander.tscn"),
+	# Глубины 10–50
+	"f": preload("res://scenes/frost_wisp.tscn"),
+	"c": preload("res://scenes/ice_slime.tscn"),
+	"t": preload("res://scenes/toad.tscn"),
+	"u": preload("res://scenes/lurker.tscn"),
+	"h": preload("res://scenes/shade.tscn"),
+	"n": preload("res://scenes/necromancer.tscn"),
+	"d": preload("res://scenes/demon.tscn"),
+	"k": preload("res://scenes/horror.tscn"),
 }
+# Боссы глубин: по биомам (каждый 3-й этаж), на 50-м — финальный.
+const DEEP_BOSSES := {
+	10: preload("res://scenes/ice_queen.tscn"),
+	20: preload("res://scenes/swamp_queen.tscn"),
+	30: preload("res://scenes/shadow_reaper.tscn"),
+	40: preload("res://scenes/abyss_prince.tscn"),
+}
+const FINAL_BOSS := preload("res://scenes/abyss_lord.tscn")
+const FINAL_DEPTH := 50
+
+
+## Какой босс на этом этаже.
+static func boss_for(depth: int) -> PackedScene:
+	if depth >= FINAL_DEPTH and depth % 10 == 0:
+		return FINAL_BOSS
+	var best: PackedScene = null
+	for from: int in DEEP_BOSSES:
+		if depth >= from:
+			best = DEEP_BOSSES[from]
+	if best:
+		return best
+	return BOSSES[(depth / BOSS_EVERY - 1) % BOSSES.size()]
+
+
+## Этаж с боссом: каждый 3-й и 50-й (финал).
+static func is_boss_depth(depth: int) -> bool:
+	return depth % BOSS_EVERY == 0 or depth == FINAL_DEPTH
 # Боссы по очереди: 3-й этаж — Король слизней, 6-й — Повелитель костей, 9-й — снова король...
 const BOSSES := [
 	preload("res://scenes/boss_slime.tscn"),
@@ -52,6 +88,10 @@ const POOLS := [
 	{"from": 2, "name": "", "tint": Color(1, 1, 1), "monsters": [["s", 5], ["b", 2], ["w", 2], ["m", 1]]},
 	{"from": 4, "name": "Катакомбы", "tint": Color(0.82, 0.86, 1.0), "monsters": [["x", 4], ["b", 2], ["w", 2], ["m", 2], ["s", 1]]},
 	{"from": 7, "name": "Огненные пещеры", "tint": Color(1.0, 0.8, 0.68), "monsters": [["i", 3], ["z", 3], ["o", 2], ["b", 1], ["x", 1]]},
+	{"from": 10, "name": "Ледяные пещеры", "tint": Color(0.78, 0.9, 1.15), "monsters": [["f", 3], ["c", 3], ["b", 2], ["x", 1], ["o", 1]]},
+	{"from": 20, "name": "Ядовитые топи", "tint": Color(0.78, 1.0, 0.72), "monsters": [["t", 3], ["u", 2], ["s", 2], ["m", 2], ["z", 1]]},
+	{"from": 30, "name": "Теневой лабиринт", "tint": Color(0.75, 0.68, 0.95), "monsters": [["h", 3], ["n", 2], ["x", 3], ["w", 1], ["f", 1]]},
+	{"from": 40, "name": "Бездна", "tint": Color(0.95, 0.62, 0.68), "monsters": [["d", 3], ["k", 2], ["i", 2], ["h", 2], ["n", 1]]},
 ]
 
 
@@ -97,7 +137,7 @@ func _ready() -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	is_boss_floor = Run.depth % BOSS_EVERY == 0
+	is_boss_floor = is_boss_depth(Run.depth)
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("floor %d seed %d%s" % [Run.depth, rng.seed, " (BOSS)" if is_boss_floor else ""])
 	rows = _generate_boss() if is_boss_floor else _generate(rng, Run.depth)
@@ -463,7 +503,7 @@ func _build(map_rows: Array, guest := false) -> void:
 					astar.set_point_solid(cell, true)
 				_:
 					if SPAWNS.has(ch) or ch == "B":
-						var scene: PackedScene = BOSSES[(Run.depth / BOSS_EVERY - 1) % BOSSES.size()] if ch == "B" else SPAWNS[ch]
+						var scene: PackedScene = boss_for(Run.depth) if ch == "B" else SPAWNS[ch]
 						var e: Node2D = scene.instantiate()
 						e.position = spot
 						if ch == "B":

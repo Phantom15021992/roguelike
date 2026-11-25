@@ -19,6 +19,7 @@ var lifetime := 4.0
 var color := Color(0.6, 0.35, 0.95)
 var on_explode := Callable()  # что сделать на месте взрыва (огненная земля Профессора)
 var source: Node              # герой-стрелок (для его вампиризма, точности и т.п.)
+var chill := 0.0              # > 0 — попадание замедляет героя на столько секунд
 var _t := 0.0
 var _hit := []
 
@@ -76,6 +77,8 @@ func _on_body_entered(body: Node) -> void:
 			if body.has_method("try_reflect") and body.try_reflect(self):
 				return
 			body.take_damage(damage, global_position)
+			if chill > 0.0:
+				body.apply_chill(chill)
 		_pop()
 		return
 	# Снаряд героя. Героев не трогает (например, только что отражённый щитом паладина).

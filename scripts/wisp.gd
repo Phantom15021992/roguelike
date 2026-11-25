@@ -60,9 +60,16 @@ func _extra_flash() -> float:
 	return 0.0
 
 
+var shot_chill := 0.0   # ледяные снаряды замедляют героя (морозный дух)
+var shot_color := Color(0, 0, 0, 0)
+
+
 func _fire(dir: Vector2) -> void:
 	var b: Area2D = PROJECTILE.new()
 	b.direction = dir
+	b.chill = shot_chill
+	if shot_color.a > 0.0:
+		b.color = shot_color
 	b.damage = int(round(b.damage * (1.0 + 0.15 * (Run.depth - 1))))
 	b.position = global_position
 	Game.fx().add_child(b)
