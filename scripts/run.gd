@@ -33,6 +33,7 @@ var gold := 0
 var materials := {}  # материалы, найденные в этом забеге
 var stats := {}
 var equipment := {}
+var bag: Array = []   # сумка: найденные предметы (в лагерь — только через портал)
 var hp := -1  # -1 — полное (при старте забега)
 var sp := -1
 
@@ -58,6 +59,7 @@ func reset() -> void:
 	equipment = {}
 	for slot: String in Items.SLOTS:
 		equipment[slot] = null
+	bag = []
 	hp = -1
 	sp = -1
 	changed.emit()
@@ -75,7 +77,7 @@ func _forward(method: String, args: Array) -> bool:
 func net_dict() -> Dictionary:
 	return {"cls": cls, "job": job, "level": level, "xp": xp, "points": points,
 		"skill_points": skill_points, "skill_levels": skill_levels, "stats": stats,
-		"equipment": equipment, "hp": hp, "sp": sp,
+		"equipment": equipment, "bag": bag, "hp": hp, "sp": sp,
 		"depth": Run.depth, "gold": Run.gold, "materials": Run.materials}
 
 
@@ -97,6 +99,7 @@ func apply_net(d: Dictionary) -> void:
 	for k: String in d["stats"]:
 		stats[k] = int(d["stats"][k])
 	equipment = d["equipment"]
+	bag = d.get("bag", [])
 	depth = int(d["depth"])
 	gold = int(d["gold"])
 	materials = d["materials"]
@@ -258,6 +261,57 @@ func equip(item: Dictionary) -> Array:
 		equipment["offhand"] = null
 	changed.emit()
 	return removed
+
+
+# ---------------- Сумка ----------------
+
+func bag_full() -> bool:
+	return bag.size() >= Meta.bag_max()
+
+
+func bag_add(item: Dictionary) -> bool:
+	if bag_full():
+		return false
+	bag.append(item)
+	changed.emit()
+	return true
+
+
+## Надеть предмет из сумки. Снятое кладётся в сумку; что не влезло — возвращается (выбросить на пол).
+func equip_from_bag(i: int) -> Array:
+	if i < 0 or i >= bag.size() or equip_block_reason(bag[i]) != "":
+		return []
+	var item: Dictionary = bag[i]
+	bag.remove_at(i)
+	var overflow := []
+	for old: Dictionary in equip(item):
+		if old.get("starter", false) and bag_full():
+			continue  # стартовое оружие не жалко
+		if not bag_add(old):
+			overflow.append(old)
+	changed.emit()
+	return overflow
+
+
+## Снять предмет в сумку.
+func unequip(slot: String) -> bool:
+	var it: Variant = equipment.get(slot)
+	if it == null or bag_full():
+		return false
+	equipment[slot] = null
+	bag.append(it)
+	changed.emit()
+	return true
+
+
+## Выбросить из сумки (возвращает предмет — его кладут на пол).
+func take_from_bag(i: int) -> Variant:
+	if i < 0 or i >= bag.size():
+		return null
+	var it: Dictionary = bag[i]
+	bag.remove_at(i)
+	changed.emit()
+	return it
 
 
 ## Сколько частей каждого комплекта надето: {set_id: count}.

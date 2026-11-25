@@ -6,6 +6,7 @@ signal died
 
 const Skills := preload("res://scripts/skills.gd")
 const PICKUP := preload("res://scripts/pickup.gd")
+const Items := preload("res://scripts/items.gd")
 const SLASH := preload("res://scripts/slash.gd")
 const PROJECTILE := preload("res://scripts/projectile.gd")
 const TELEGRAPH := preload("res://scripts/telegraph.gd")
@@ -1092,11 +1093,17 @@ func _interact() -> void:
 		return
 	var item_node := nearest_item()
 	if item_node:
-		var reason: String = st.equip_block_reason(item_node.item)
-		if reason != "":
-			_hint("Нельзя: " + reason, Color(1.0, 0.5, 0.45))
+		var it: Dictionary = item_node.item
+		var reason: String = st.equip_block_reason(it)
+		# Слот пуст и предмет подходит — сразу надеть; иначе — в сумку (I — инвентарь).
+		if reason != "" or st.equipment[it["slot"]] != null:
+			if st.bag_add(it):
+				item_node.queue_free()
+				_hint("В сумке (I): %s" % Items.display_name(it), Color(0.8, 0.9, 1.0))
+			else:
+				_hint("Сумка полна — I, чтобы разобрать", Color(1.0, 0.5, 0.45))
 			return
-		var removed: Array = st.equip(item_node.item)
+		var removed: Array = st.equip(it)
 		var pos := item_node.global_position
 		item_node.queue_free()
 		for i in removed.size():
@@ -1109,6 +1116,35 @@ func _interact() -> void:
 	var dungeon := get_tree().current_scene
 	if dungeon.has_method("is_near_stairs") and dungeon.is_near_stairs(global_position):
 		Game.next_floor()
+
+
+# ---------------- Инвентарь (сумка) ----------------
+
+## op: "equip" (индекс в сумке), "unequip" (слот), "drop" (индекс в сумке).
+## У гостя — просьба хозяину.
+func inv(op: String, arg: Variant) -> void:
+	if Net.is_guest():
+		Net.cmd("inv", [op, arg])
+		return
+	match op:
+		"equip":
+			for it: Dictionary in st.equip_from_bag(int(arg)):
+				_drop_item(it)
+		"unequip":
+			if not st.unequip(str(arg)):
+				_hint("Сумка полна", Color(1.0, 0.5, 0.45))
+		"drop":
+			var it: Variant = st.take_from_bag(int(arg))
+			if it != null:
+				_drop_item(it)
+
+
+func _drop_item(it: Dictionary) -> void:
+	var drop: Node2D = PICKUP.new()
+	drop.kind = "item"
+	drop.item = it
+	drop.position = position + Vector2(randf_range(-6, 6), 4)
+	get_parent().add_child(drop)
 
 
 # ---------------- Урон и смерть ----------------

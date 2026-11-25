@@ -23,6 +23,7 @@ const PLACES := {
 	"treasury": Vector2i(7, 12),
 	"mine": Vector2i(19, 12),
 	"workshop": Vector2i(23, 12),
+	"storage": Vector2i(16, 12),
 }
 
 @onready var map: TileMapLayer = $Map

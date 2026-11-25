@@ -553,7 +553,7 @@ func _make_camp() -> void:
 				tiles.set_pixel(48 + x, y, c)
 	_save(tiles, "res://assets/camp_tiles.png")
 
-	var img := Image.create(256, 32, false, Image.FORMAT_RGBA8)
+	var img := Image.create(288, 32, false, Image.FORMAT_RGBA8)
 	var roofs := [Color8(176, 60, 54), Color8(60, 92, 170), Color8(70, 66, 76), Color8(225, 225, 230), Color8(214, 170, 50)]
 	for i in roofs.size():
 		_house(img, i * 32, roofs[i])
@@ -571,7 +571,12 @@ func _make_camp() -> void:
 	# 7: мастерская — коричневая крыша, эмблема-молот.
 	_house(img, 224, Color8(130, 84, 52))
 	_emblem(img, 224, ["###", ".#.", ".#."], Color8(200, 205, 215))
-	_outline(img, Rect2i(0, 0, 256, 32), PAL["k"])
+	# 8: склад — зелёная крыша, эмблема-сундук, ящики у стены.
+	_house(img, 256, Color8(70, 130, 80))
+	_emblem(img, 256, ["###", "#.#", "###"], Color8(220, 180, 90))
+	img.fill_rect(Rect2i(256 + 2, 24, 5, 5), Color8(150, 105, 60))
+	img.fill_rect(Rect2i(256 + 25, 25, 5, 4), Color8(150, 105, 60))
+	_outline(img, Rect2i(0, 0, 288, 32), PAL["k"])
 	_save(img, "res://assets/buildings.png")
 
 

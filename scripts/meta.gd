@@ -22,11 +22,26 @@ const UPGRADES := {
 		"desc": "+15% золота с монстров за уровень."},
 	"mine": {"name": "Шахта", "max": 5, "cost": [40, 1.7],
 		"desc": "Добывает золото и руду, даже когда игра закрыта: 3 золота в минуту и 1 руду в 5 минут за уровень."},
+	"storage": {"name": "Склад", "max": 5, "cost": [60, 1.7],
+		"desc": "+15 мест на складе снаряжения и +2 места в сумке героя за уровень."},
 	"workshop": {"name": "Мастерская", "max": 3, "cost": [50, 2.0],
 		"desc": "Создание предметов из материалов, заточка, склад снаряжения. Уровень: сильнее и чаще редкие предметы, +3% к заточке."},
 }
 
-const STASH_MAX := 30
+const STASH_BASE := 30
+const STASH_PER_LEVEL := 15
+const BAG_BASE := 8
+const BAG_PER_LEVEL := 2
+
+
+## Мест на складе (постройка «Склад» добавляет).
+func stash_max() -> int:
+	return STASH_BASE + STASH_PER_LEVEL * level("storage")
+
+
+## Мест в сумке героя в забеге.
+func bag_max() -> int:
+	return BAG_BASE + BAG_PER_LEVEL * level("storage")
 
 var gold := 0
 var levels := {}
@@ -88,6 +103,7 @@ func effect(id: String, lvl: int) -> String:
 		"infirmary": return "+%d%% HP" % (lvl * 8)
 		"treasury": return "+%d%% золота" % (lvl * 15)
 		"mine": return "%d зол./мин, руда %d за 5 мин, запас %d зол. / %d руды" % [mine_rate(lvl), lvl, mine_cap(lvl), ore_cap(lvl)]
+		"storage": return "склад %d мест, сумка %d мест" % [STASH_BASE + STASH_PER_LEVEL * lvl, BAG_BASE + BAG_PER_LEVEL * lvl]
 		"workshop": return "предметы %d ур., +%d%% редких, +%d%% к заточке" % [1 + lvl, lvl * 6, lvl * 3]
 	return ""
 
@@ -159,7 +175,7 @@ func add_materials(mats: Dictionary) -> void:
 
 
 func stash_add(item: Dictionary) -> bool:
-	if stash.size() >= STASH_MAX:
+	if stash.size() >= stash_max():
 		return false
 	stash.append(item)
 	return true

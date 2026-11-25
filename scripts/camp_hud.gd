@@ -162,7 +162,7 @@ func _process(delta: float) -> void:
 		mine = "\nВ шахте: %d / %d зол., %d руды" % [int(Meta.mine_stored), Meta.mine_cap(), int(Meta.ore_stored)]
 	_info.text = "%s   Золото: %d   Материалы: %d   Склад: %d/%d\nРекорд: %d этаж   Забегов: %d%s" % [
 		"Лагерь хозяина" if Net.is_guest() else "Лагерь",
-		Meta.gold, Crafting.common_count(Meta.materials), Meta.stash.size(), Meta.STASH_MAX, Meta.best_depth, Meta.runs, mine]
+		Meta.gold, Crafting.common_count(Meta.materials), Meta.stash.size(), Meta.stash_max(), Meta.best_depth, Meta.runs, mine]
 	if Net.active():
 		_info.text += "\nКооператив: ключ %s, игроков %d   Tab — меню" % [Net.key, Net.player_count()]
 	_banner_time -= delta
@@ -283,7 +283,7 @@ func _fill_workshop() -> void:
 		_fill_upgrade("workshop")
 		return
 	var tabs := _hc(2)
-	for spec in [["craft", "Создание"], ["stash", "Склад %d/%d" % [Meta.stash.size(), Meta.STASH_MAX]], ["upgrade", "Улучшение"]]:
+	for spec in [["craft", "Создание"], ["stash", "Склад %d/%d" % [Meta.stash.size(), Meta.stash_max()]], ["upgrade", "Улучшение"]]:
 		var id: String = spec[0]
 		var b := _button(("▶ " if _tab == id else "") + spec[1], func() -> void:
 			_tab = id
@@ -337,7 +337,7 @@ func _fill_craft() -> void:
 	var list := _scroll(96)
 	for base: String in Crafting.RECIPES:
 		var b: Dictionary = Items.BASES[base]
-		var can := Crafting.can_craft(base, Meta.gold, Meta.materials) and Meta.stash.size() < Meta.STASH_MAX
+		var can := Crafting.can_craft(base, Meta.gold, Meta.materials) and Meta.stash.size() < Meta.stash_max()
 		var row := _hc()
 		row.add_child(_button("Создать", func() -> void: _craft(base, ""), can, 5))
 		row.add_child(_button("★", func() -> void: _craft(base, rare), can and rare != "", 5))
@@ -349,7 +349,7 @@ func _fill_craft() -> void:
 
 
 func _craft(base: String, rare: String) -> void:
-	if not Crafting.can_craft(base, Meta.gold, Meta.materials) or Meta.stash.size() >= Meta.STASH_MAX:
+	if not Crafting.can_craft(base, Meta.gold, Meta.materials) or Meta.stash.size() >= Meta.stash_max():
 		return
 	var r: Dictionary = Crafting.RECIPES[base]
 	Meta.gold -= r["gold"]

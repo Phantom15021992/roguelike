@@ -426,6 +426,10 @@ func _host_msg(from: int, kind: String, data: Variant) -> void:
 				"add_stat": st.add_stat(str(args[0]))
 				"learn_skill": st.learn_skill(str(args[0]))
 				"set_job": st.set_job(str(args[0]))
+				"inv":
+					var hero := hero_of(from)
+					if hero:
+						hero.inv(str(args[0]), args[1])
 		"class":
 			players[from]["cls"] = str(data)
 			players[from]["ready"] = true

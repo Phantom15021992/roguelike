@@ -3,7 +3,7 @@ extends StaticBody2D
 ## откроется её окно в интерфейсе лагеря.
 
 const SHEET := preload("res://assets/buildings.png")
-const FRAMES := {"training": 0, "library": 1, "forge": 2, "infirmary": 3, "treasury": 4, "mine": 5, "portal": 6, "workshop": 7}
+const FRAMES := {"training": 0, "library": 1, "forge": 2, "infirmary": 3, "treasury": 4, "mine": 5, "portal": 6, "workshop": 7, "storage": 8}
 
 var id := "training"
 var title := ""

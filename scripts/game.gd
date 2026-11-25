@@ -351,6 +351,15 @@ func _uitest() -> void:
 	for i in 5:
 		await get_tree().process_frame
 	_shot("ui_3_stats")
+	# Инвентарь: три предмета в сумке.
+	var IL := preload("res://scripts/items.gd")
+	Run.bag_add(IL.make("staff", 2, 3))
+	Run.bag_add(IL.make("chain", 1, 3))
+	Run.bag_add(IL.make("bow", 1, 3))
+	hud.toggle_panel("inv")
+	for i in 5:
+		await get_tree().process_frame
+	_shot("ui_3b_inventory")
 	hud.toggle_panel("skills")
 	for i in 5:
 		await get_tree().process_frame
@@ -436,6 +445,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				var hud := get_tree().current_scene.get_node_or_null("HUD")
 				if hud:
 					hud.toggle_map()
+			KEY_I:
+				var hud := get_tree().current_scene.get_node_or_null("HUD")
+				if hud:
+					hud.toggle_panel("inv")
 			KEY_K:
 				var hud := get_tree().current_scene.get_node_or_null("HUD")
 				if hud:
@@ -509,8 +522,8 @@ func return_to_camp(alive := false) -> void:
 	var items: Array = []
 	# В коопе на склад хозяина уходит снаряжение всех героев.
 	for st: Node in Net.all_states():
-		for slot: String in st.equipment:
-			var it: Variant = st.equipment[slot]
+		var all_items: Array = st.equipment.values() + st.bag  # надетое и сумка
+		for it: Variant in all_items:
 			if it != null and not it.get("starter", false):  # стартовое оружие на склад не нужно
 				items.append(it)
 	Meta.bank_run(Run.depth, Run.gold, Run.level, Run.title(), Run.materials, items, alive)
@@ -1021,6 +1034,14 @@ func _autotest() -> void:
 			items_picked += 1
 			print("  bot equips: %s" % item_node.item["name"])
 		_send_action("interact", want_e)
+		# Подобранное в сумку — надеть, если лучше.
+		if frame % 30 == 0:
+			for bi in Run.bag.size():
+				var bit: Dictionary = Run.bag[bi]
+				if Run.equip_block_reason(bit) == "" and _gear_score(Run.derived_with(bit)) > _gear_score(Run.derived()) + 0.5:
+					print("  bot equips from bag: %s" % bit["name"])
+					p.inv("equip", bi)
+					break
 
 		if frame % 300 == 0:
 			print("  status f=%d t=%.0fs depth=%d enemies=%d hp=%d time_scale=%.2f paused=%s pos=%s goal=%s" % [

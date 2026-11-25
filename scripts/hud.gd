@@ -110,6 +110,7 @@ func _ready() -> void:
 	_build_skills_panel()
 	_build_class_panel()
 	_build_anvil_panel()
+	_build_inv_panel()
 	_prompt = _label(6)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_prompt.position = Vector2(0, 144)
@@ -344,9 +345,11 @@ func _update_tooltip() -> void:
 	var reason := Run.equip_block_reason(item)
 	if reason != "":
 		t += "\n[color=#%s]Нельзя надеть: %s[/color]" % [BAD.to_html(false), reason]
+		t += "\n[color=#%s]E — в сумку[/color]" % GOLD.to_html(false)
 	else:
 		t += "\n" + _compare_text(item)
-		t += "\n[color=#%s]E — надеть[/color]" % GOLD.to_html(false)
+		var free: bool = Run.equipment[item["slot"]] == null
+		t += "\n[color=#%s]%s[/color]" % [GOLD.to_html(false), "E — надеть" if free else "E — в сумку (надеть — в инвентаре, I)"]
 	_tooltip_text.text = t
 	_tooltip.visible = true
 	_tooltip.reset_size()
@@ -445,6 +448,8 @@ func _refresh_panels() -> void:
 	_refresh_skills_panel()
 	if _panels.has("anvil"):
 		_refresh_anvil_panel()
+	if _panels.has("inv"):
+		_refresh_inv_panel()
 
 
 # ---------------- Наковальня (заточка в подземелье) ----------------
@@ -509,6 +514,110 @@ func _refresh_anvil_panel() -> void:
 	_center.call_deferred(_panels["anvil"])
 
 
+# ---------------- Инвентарь (I) ----------------
+
+var _inv_box: VBoxContainer
+
+
+func _build_inv_panel() -> void:
+	var panel := _panel()
+	_panels["inv"] = panel
+	_inv_box = VBoxContainer.new()
+	_inv_box.add_theme_constant_override("separation", 1)
+	panel.add_child(_inv_box)
+
+
+func _short_item(item: Dictionary) -> String:
+	var s := Crafting.effective_stats(item)
+	var parts: PackedStringArray = []
+	if s.has("atk_min"):
+		parts.append("урон %d–%d" % [s["atk_min"], s["atk_max"]])
+	for k: String in s:
+		if k != "atk_min" and k != "atk_max":
+			parts.append(Items.stat_text(k, s[k]))
+	return ", ".join(parts)
+
+
+func _inv_scroll(height: float) -> VBoxContainer:
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(285, height)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(v)
+	_inv_box.add_child(sc)
+	return v
+
+
+func _inv_button(text: String, enabled: bool, on_press: Callable) -> Button:
+	var b := _small_button(text)
+	b.custom_minimum_size = Vector2(26, 8)
+	b.disabled = not enabled
+	b.pressed.connect(on_press, CONNECT_DEFERRED)
+	return b
+
+
+func _refresh_inv_panel() -> void:
+	if open_panel != "inv":
+		return
+	for c in _inv_box.get_children():
+		_inv_box.remove_child(c)
+		c.queue_free()
+	var head := _rich(280)
+	head.text = "[b]Снаряжение и сумка[/b]   [color=#a8a0b8]сумка %d/%d — в лагерь попадёт только через портал[/color]" % [Run.bag.size(), Meta.bag_max()]
+	_inv_box.add_child(head)
+	var eq_list := _inv_scroll(58)
+	for slot: String in Items.SLOTS:
+		var it: Variant = Run.equipment[slot]
+		if it == null:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 3)
+		var s: String = slot
+		row.add_child(_inv_button("Снять", not it.get("starter", false) and Run.bag.size() < Meta.bag_max(), func() -> void:
+			if _player:
+				_player.inv("unequip", s)))
+		var t := _rich(250)
+		t.text = "%s: [color=#%s]%s[/color] [color=#a8a0b8]%s[/color]" % [Items.SLOT_NAMES[slot], Items.color(it).to_html(false), Items.display_name(it), _short_item(it)]
+		row.add_child(t)
+		eq_list.add_child(row)
+	var sub := _rich(280)
+	sub.text = "[b]Сумка[/b]" + ("  [color=#a8a0b8]пусто[/color]" if Run.bag.is_empty() else "")
+	_inv_box.add_child(sub)
+	var bag_list := _inv_scroll(62)
+	for i in Run.bag.size():
+		var it: Dictionary = Run.bag[i]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 3)
+		var idx := i
+		var reason: String = Run.equip_block_reason(it)
+		row.add_child(_inv_button("%d Надеть" % (i + 1) if i < 9 else "Надеть", reason == "", func() -> void:
+			if _player:
+				_player.inv("equip", idx)))
+		row.add_child(_inv_button("Бросить", true, func() -> void:
+			if _player:
+				_player.inv("drop", idx)))
+		var t := _rich(222)
+		var better := ""
+		if reason == "":
+			var now: Dictionary = Run.derived()
+			var then: Dictionary = Run.derived_with(it)
+			var gain: float = (then["atk_max"] - now["atk_max"]) * 2.0 + (then["max_hp"] - now["max_hp"]) * 0.3 + (then["dr"] - now["dr"]) * 2.0 + (then["crit"] - now["crit"]) + (then["aspd"] - now["aspd"]) * 0.5
+			better = " [color=#%s]▲[/color]" % GOOD.to_html(false) if gain > 0.5 else (" [color=#%s]▼[/color]" % BAD.to_html(false) if gain < -0.5 else "")
+		else:
+			better = " [color=#%s](%s)[/color]" % [BAD.to_html(false), reason]
+		t.text = "[color=#%s]%s[/color]%s [color=#a8a0b8]%s — %s[/color]" % [Items.color(it).to_html(false), Items.display_name(it), better, Items.SLOT_NAMES[it["slot"]], _short_item(it)]
+		row.add_child(t)
+		bag_list.add_child(row)
+	var hint := _label(4)
+	hint.text = "1–6 — надеть из сумки   ▲ — лучше надетого   I или E — закрыть"
+	hint.add_theme_color_override("font_color", DIM)
+	_inv_box.add_child(hint)
+	_center(_panels["inv"])
+	_center.call_deferred(_panels["inv"])
+
+
 func _do_refine(item: Dictionary, bonus: float) -> void:
 	if not Crafting.can_pay_refine(item, Run.gold, Run.materials):
 		return
@@ -532,6 +641,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if idx < 0:
 		return
 	match open_panel:
+		"inv":
+			if _player and idx < Run.bag.size():
+				_player.inv("equip", idx)
 		"anvil":
 			var items := []
 			for slot: String in Items.SLOTS:
