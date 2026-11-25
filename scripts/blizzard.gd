@@ -35,12 +35,19 @@ func _process(delta: float) -> void:
 		queue_free()
 
 
+func net_props() -> Array:
+	return ["radius"]
+
+
 func _hit() -> void:
+	if Net.is_guest():
+		return
 	if not is_instance_valid(caster) or caster.dead:
 		return
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(global_position) <= radius:
 			var r: Array = caster.roll(mult)
+			Game.attacker = caster
 			e.take_damage(r[0], global_position, r[1], false)
 			e.apply_slow(0.6)
 

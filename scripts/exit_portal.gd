@@ -19,6 +19,10 @@ func _ready() -> void:
 	Game.burst(global_position + Vector2(0, -12), Color(0.7, 0.5, 1.0), 20)
 
 
+func net_props() -> Array:
+	return []
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	if Engine.get_process_frames() % 20 == 0:

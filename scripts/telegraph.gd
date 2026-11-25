@@ -15,6 +15,20 @@ func _ready() -> void:
 	add_to_group("telegraphs")
 
 
+func net_props() -> Array:
+	return ["radius", "arc_half", "arc_dir", "rect_size", "color", "hostile", "progress"]
+
+
+func net_state() -> Array:
+	return [progress, radius, arc_dir]
+
+
+func net_apply(a: Array) -> void:
+	progress = a[0]
+	radius = a[1]
+	arc_dir = a[2]
+
+
 func _process(_delta: float) -> void:
 	queue_redraw()
 

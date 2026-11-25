@@ -43,7 +43,7 @@ var persist := true
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args)
 	# `--loadsave` — тест на настоящем сохранении: прочитать, но ничего не записывать.
 	if persist or "--loadsave" in args:
 		load_game()
@@ -107,10 +107,10 @@ func gold_mult() -> float:
 
 
 ## Стартовые очки — вызывается при начале забега.
-func apply_to_run() -> void:
-	Run.points += level("training")
-	Run.skill_points += level("library")
-	Run.changed.emit()
+func apply_to_run(st: Node = Run) -> void:
+	st.points += level("training")
+	st.skill_points += level("library")
+	st.changed.emit()
 
 
 # ---------------- Шахта ----------------
@@ -186,6 +186,54 @@ func bank_run(depth: int, run_gold: int, run_level: int, cls_name: String, mats:
 		"level": run_level, "class": cls_name,
 		"mats": mat_total if alive else 0, "mats_lost": 0 if alive else mat_total, "alive": alive, "kept": kept, "lost": 0 if alive else items.size()}
 	save_game()
+	changed.emit()
+
+
+# ---------------- Кооператив: у гостя — лагерь хозяина ----------------
+
+var _own_persist := true
+var _is_guest_copy := false
+
+
+## Хозяин: что показать гостям (постройки, склад, золото лагеря).
+func net_dict() -> Dictionary:
+	update_mine()
+	return {"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
+		"materials": materials, "stash": stash, "mine_stored": mine_stored, "ore_stored": ore_stored}
+
+
+## Гость: временно показывает лагерь хозяина. Своё сохранение не трогается.
+func apply_host(d: Dictionary) -> void:
+	if not _is_guest_copy:
+		_own_persist = persist
+		_is_guest_copy = true
+	persist = false
+	gold = int(d["gold"])
+	levels = {}
+	for k: String in d["levels"]:
+		levels[k] = int(d["levels"][k])
+	best_depth = int(d["best_depth"])
+	runs = int(d["runs"])
+	materials = d["materials"]
+	stash = d["stash"]
+	mine_stored = float(d["mine_stored"])
+	ore_stored = float(d["ore_stored"])
+	changed.emit()
+
+
+## Гость вышел из коопа — вернуть своё сохранение.
+func restore_own() -> void:
+	if not _is_guest_copy:
+		return
+	_is_guest_copy = false
+	persist = _own_persist
+	gold = 0
+	levels = {}
+	materials = {}
+	stash = []
+	if persist or "--loadsave" in OS.get_cmdline_user_args():
+		load_game()
+	update_mine()
 	changed.emit()
 
 

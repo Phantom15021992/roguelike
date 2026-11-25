@@ -31,6 +31,10 @@ const PLACES := {
 
 
 func _ready() -> void:
+	if Net.is_guest():
+		# Гость в лагере хозяина: героев (и своего) пришлёт хозяин.
+		entities.remove_child(player)
+		player.queue_free()
 	map.tile_set = _make_tileset()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -52,13 +56,23 @@ func _ready() -> void:
 		b.title = Meta.UPGRADES[id]["name"] if Meta.UPGRADES.has(id) else ""
 		b.position = Vector2(PLACES[id] * TILE) + Vector2(TILE / 2.0, TILE)
 		entities.add_child(b)
-	player.position = Vector2(12.5 * TILE + 8, 9 * TILE)
-	var cam: Camera2D = player.get_node("Camera")
+	if not Net.is_guest():
+		player.position = Vector2(12.5 * TILE + 8, 9 * TILE)
+		setup_camera(player.get_node("Camera"))
+		Game.spawn_guest_heroes()
+	Net.scene_loaded()
+
+
+func setup_camera(cam: Camera2D) -> void:
 	cam.limit_left = 0
 	cam.limit_top = 0
 	cam.limit_right = W * TILE
 	cam.limit_bottom = H * TILE
 	cam.reset_smoothing()
+
+
+func net_scene() -> Dictionary:
+	return {"kind": "camp"}
 
 
 func _path(x: int, y: int) -> void:

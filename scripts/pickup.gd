@@ -13,7 +13,7 @@ const PICK_RANGE := 14.0  # для предметов: на каком расс�
 var kind := "gold"       # "gold", "mat" или "item"
 var value := 1           # для золота
 var mat := ""            # для материала
-var item: Dictionary     # для предмета
+var item := {}           # для предмета
 
 var _z := 0.0            # высота подлёта при выпадении
 var _vz := 0.0
@@ -29,8 +29,23 @@ func _ready() -> void:
 	_t = randf() * TAU
 
 
+func net_props() -> Array:
+	return ["kind", "value", "mat", "item"]
+
+
+func net_state() -> Array:
+	return [_z]
+
+
+func net_apply(a: Array) -> void:
+	_z = a[0]
+
+
 func _process(delta: float) -> void:
 	_t += delta
+	if Net.is_guest():
+		queue_redraw()  # у гостя только картинка: подбирает хозяин
+		return
 	if _vz != 0.0 or _z > 0.0:
 		_z += _vz * delta
 		_vz -= 300.0 * delta

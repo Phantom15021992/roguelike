@@ -55,7 +55,14 @@ func prompt() -> String:
 	return "E — " + ("войти в подземелье" if id == "portal" else title)
 
 
-func interact(_player: Node) -> void:
+func interact(player: Node) -> void:
+	if not player.is_local():
+		# Гость в лагере хозяина: портал — выбор класса у себя, постройки — только хозяин.
+		if id == "portal":
+			Net.send_to(player.peer_id, "ui", {"open": "portal"})
+		else:
+			Game.hint_to(player, "Постройками управляет хозяин лагеря")
+		return
 	var hud := get_tree().current_scene.get_node_or_null("CampHUD")
 	if hud:
 		hud.open_building(id)

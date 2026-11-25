@@ -239,7 +239,7 @@ func _center(p: Control) -> void:
 
 func _process(delta: float) -> void:
 	if _player == null or not is_instance_valid(_player):
-		_player = get_tree().get_first_node_in_group("player")
+		_player = Game.local_hero()
 	if _player == null:
 		return
 
@@ -264,7 +264,11 @@ func _process(delta: float) -> void:
 	var enemies := get_tree().get_nodes_in_group("enemies").size()
 	if enemies > 0:
 		_had_enemies = true
-	if _player.dead:
+	if _player.dead and Net.active() and not Game.all_dead():
+		_message.text = "Ты пал. Возродишься на следующем этаже,\nесли напарники спустятся по лестнице"
+	elif _player.dead and Net.active():
+		_message.text = "Пали все. Добыча забега потеряна\nR — вернуться в лагерь"
+	elif _player.dead:
 		_message.text = "Вы погибли на %d этаже (уровень %d)\nПотеряно: %d золота, материалы и снаряжение\nR — вернуться в лагерь" % [Run.depth, Run.level, Run.gold]
 	elif _had_enemies and enemies == 0 and not _cleared_shown and not get_tree().current_scene.get("is_boss_floor"):
 		_cleared_shown = true
@@ -428,7 +432,7 @@ func _open(which: String) -> void:
 	_anvil_result = ""
 	_refresh_panels()
 	if which != "":
-		get_tree().paused = true
+		get_tree().paused = not Net.active()  # в коопе игра не останавливается
 	else:
 		# Снимаем паузу в конце кадра — иначе то же нажатие E сразу откроет окно снова.
 		get_tree().set_deferred("paused", false)

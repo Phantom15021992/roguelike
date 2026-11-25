@@ -18,7 +18,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	queue_redraw()
-	if _t < 0.3:  # секунду на «взвод», чтобы не срабатывала в момент установки сквозь монстра
+	if _t < 0.3 or Net.is_guest():  # у гостя ловушка только рисуется; секунду на «взвод», чтобы не срабатывала в момент установки сквозь монстра
 		return
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(global_position) < radius:
@@ -26,9 +26,14 @@ func _process(delta: float) -> void:
 			return
 
 
+func net_props() -> Array:
+	return []
+
+
 func _spring(e: Node) -> void:
 	if is_instance_valid(caster):
 		var r: Array = caster.roll(mult)
+		Game.attacker = caster
 		e.take_damage(r[0], global_position, r[1], false)
 	if not e.dead:
 		e.apply_stun(HOLD, "stun")

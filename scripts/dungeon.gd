@@ -92,6 +92,9 @@ var _gate_cells: Array[Vector2i] = []
 
 func _ready() -> void:
 	map.tile_set = _make_tileset()
+	if Net.is_guest():
+		_ready_guest()
+		return
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	is_boss_floor = Run.depth % BOSS_EVERY == 0
@@ -103,6 +106,49 @@ func _ready() -> void:
 		_dump_map(rows, "res://shots/map_floor%d_%d.png" % [Run.depth, randi() % 1000])
 		print("anvil on floor: %s" % ("".join(rows).contains("A")))
 	map.modulate = pool_for(Run.depth)["tint"]
+	Game.spawn_guest_heroes()
+	Net.scene_loaded()
+
+
+## Кооп, гость: карта — из присланной хозяином, монстров и предметы пришлёт он же.
+func _ready_guest() -> void:
+	var d: Dictionary = Net.scene_data
+	is_boss_floor = d.get("boss", false)
+	_gate_cells.clear()
+	for c: Vector2i in d.get("gate", []):
+		_gate_cells.append(c)
+	rows = d["rows"]
+	entities.remove_child(player)
+	player.queue_free()
+	_build(rows, true)
+	map.modulate = pool_for(Run.depth)["tint"]
+	Net.scene_loaded()
+
+
+## Кооп, хозяин: что прислать гостям для этой сцены.
+func net_scene() -> Dictionary:
+	return {"kind": "dungeon", "rows": rows, "depth": Run.depth, "boss": is_boss_floor, "gate": _gate_cells}
+
+
+## Камера героя (своего — у гостя появляется позже карты): границы этажа.
+func setup_camera(cam: Camera2D) -> void:
+	cam.limit_left = 0
+	cam.limit_top = 0
+	cam.limit_right = (rows[0] as String).length() * TILE if not rows.is_empty() else 10000
+	cam.limit_bottom = rows.size() * TILE
+	cam.reset_smoothing()
+
+
+## Кооп, гость: хозяин изменил карту. cells: [[x, y, тайл, твёрдая?], ...]; лестница — [x, y, "S"].
+func apply_cells(cells: Array) -> void:
+	for c: Array in cells:
+		var cell := Vector2i(c[0], c[1])
+		if str(c[2]) == "S":
+			map.set_cell(cell, 0, STAIRS)
+			stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
+			continue
+		map.set_cell(cell, 0, WALL_FACE if c[3] else FLOOR_VARIANTS[0])
+		astar.set_point_solid(cell, c[3])
 
 
 # ---------------- Арена босса ----------------
@@ -139,21 +185,34 @@ func _generate_boss() -> Array:
 
 
 func _on_boss_woke() -> void:
+	var edits: Array = []
 	for c in _gate_cells:
 		map.set_cell(c, 0, WALL_FACE)
 		astar.set_point_solid(c, true)
+		edits.append([c.x, c.y, "#", true])
+	Net.map_cells(edits)
+	# Кооп: кто не успел зайти в арену — переносится внутрь, к воротам.
+	var arena := Rect2(Vector2(BOSS_ARENA.position * TILE), Vector2(BOSS_ARENA.size * TILE))
+	var inside := Vector2((BOSS_ARENA.position.x + 1) * TILE + TILE / 2.0, _center(BOSS_ARENA).y * TILE + TILE - 2)
+	for h in get_tree().get_nodes_in_group("player"):
+		if not arena.has_point(h.global_position):
+			h.global_position = inside
 	Game.shake(3.0, 0.3)
 
 
 func _on_boss_died(boss: Node) -> void:
+	var edits: Array = []
 	for c in _gate_cells:
 		map.set_cell(c, 0, FLOOR_VARIANTS[0])
 		astar.set_point_solid(c, false)
+		edits.append([c.x, c.y, ".", false])
 	var cell := Vector2i(boss.global_position / TILE)
 	if astar.is_point_solid(cell):
 		cell = Vector2i(_center(BOSS_ARENA))
 	map.set_cell(cell, 0, STAIRS)
 	stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
+	edits.append([cell.x, cell.y, "S", false])
+	Net.map_cells(edits)
 	# Рядом — портал домой: вернуться в лагерь живым и сохранить снаряжение.
 	var portal: Node2D = EXIT_PORTAL.new()
 	var pcell := Vector2i(BOSS_ARENA.position.x + 5, _center(BOSS_ARENA).y)
@@ -356,7 +415,7 @@ func _set_floor(grid: Array, x: int, y: int) -> void:
 
 # ---------------- Постройка ----------------
 
-func _build(map_rows: Array) -> void:
+func _build(map_rows: Array, guest := false) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var h := map_rows.size()
@@ -384,6 +443,12 @@ func _build(map_rows: Array) -> void:
 				var v: Vector2i = FLOOR_VARIANTS[0] if r < 0.7 else (FLOOR_VARIANTS[1] if r < 0.85 else FLOOR_VARIANTS[2])
 				map.set_cell(cell, 0, v)
 			var spot := Vector2(x * TILE + TILE / 2.0, y * TILE + TILE - 2)
+			if guest:
+				if ch == "S":
+					stairs_pos = Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
+				elif ch == "A":
+					astar.set_point_solid(cell, true)
+				continue
 			match ch:
 				"P":
 					player.position = spot
@@ -405,6 +470,8 @@ func _build(map_rows: Array) -> void:
 							e.died.connect(_on_boss_died)
 						entities.add_child(e)
 
+	if guest:
+		return
 	# Портал у входа в логово: последний шанс вернуться в лагерь с добычей, не рискуя боем.
 	if is_boss_floor:
 		var portal: Node2D = EXIT_PORTAL.new()
@@ -413,12 +480,7 @@ func _build(map_rows: Array) -> void:
 		entities.add_child(portal)
 		astar.set_point_solid(pcell, true)
 
-	var cam: Camera2D = player.get_node("Camera")
-	cam.limit_left = 0
-	cam.limit_top = 0
-	cam.limit_right = w * TILE
-	cam.limit_bottom = h * TILE
-	cam.reset_smoothing()
+	setup_camera(player.get_node("Camera"))
 
 
 ## Отладка: сохранить карту этажа картинкой (1 тайл = 4x4 пикселя).

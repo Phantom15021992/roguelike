@@ -70,6 +70,30 @@ func _ready() -> void:
 		_banner_time = 6.0
 		Meta.last_run = {}
 	Meta.changed.connect(_reopen)
+	Net.status_changed.connect(func(_t: String) -> void: _reopen())
+	Net.players_changed.connect(_reopen)
+	# Меню в начале игры: одиночная игра или кооператив (в тестах — сразу одиночная).
+	if not Game.menu_done:
+		if _is_test():
+			Game.menu_done = true
+		else:
+			open_building("menu")
+
+
+func _is_test() -> bool:
+	for a: String in OS.get_cmdline_user_args():
+		if (a.begins_with("--") and a.ends_with("test")) or a == "--nethost" or a.begins_with("--netjoin"):
+			return true
+	return false
+
+
+func is_open() -> bool:
+	return _open_id != ""
+
+
+func show_banner(text: String, time := 4.0) -> void:
+	_banner.text = text
+	_banner_time = time
 
 
 func _reopen() -> void:
@@ -131,13 +155,16 @@ func _hc(sep := 3) -> HBoxContainer:
 
 func _process(delta: float) -> void:
 	if _player == null or not is_instance_valid(_player):
-		_player = get_tree().get_first_node_in_group("player")
+		_player = Game.local_hero()
 	Meta.update_mine()
 	var mine := ""
 	if Meta.level("mine") > 0:
 		mine = "\nВ шахте: %d / %d зол., %d руды" % [int(Meta.mine_stored), Meta.mine_cap(), int(Meta.ore_stored)]
-	_info.text = "Лагерь   Золото: %d   Материалы: %d   Склад: %d/%d\nРекорд: %d этаж   Забегов: %d%s" % [
+	_info.text = "%s   Золото: %d   Материалы: %d   Склад: %d/%d\nРекорд: %d этаж   Забегов: %d%s" % [
+		"Лагерь хозяина" if Net.is_guest() else "Лагерь",
 		Meta.gold, Crafting.common_count(Meta.materials), Meta.stash.size(), Meta.STASH_MAX, Meta.best_depth, Meta.runs, mine]
+	if Net.active():
+		_info.text += "\nКооператив: ключ %s, игроков %d   Tab — меню" % [Net.key, Net.player_count()]
 	_banner_time -= delta
 	_banner.modulate.a = clampf(_banner_time, 0.0, 1.0)
 	var thing: Node2D = null
@@ -147,8 +174,14 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _open_id == "" and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_TAB:
+		open_building("coop" if Net.active() else "menu")
+		get_viewport().set_input_as_handled()
+		return
 	if _open_id == "" or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
+	if _open_id == "menu":
+		return  # меню закрывается только кнопкой
 	match event.physical_keycode:
 		KEY_ESCAPE, KEY_E:
 			close()
@@ -177,6 +210,10 @@ func _clear() -> void:
 
 
 func open_building(id: String) -> void:
+	# Кооп: в подземелье — только вдвоём и больше.
+	if id == "portal" and Net.active() and Net.player_count() < 2:
+		show_banner("Портал откроется, когда подключится ещё хотя бы один игрок\nКлюч игры: %s" % Net.key)
+		return
 	_open_id = id
 	_portal_cls = ""
 	_loadout = {}
@@ -184,12 +221,16 @@ func open_building(id: String) -> void:
 	_tab = "craft" if Meta.level("workshop") > 0 else "upgrade"
 	_refill()
 	_panel.visible = true
-	get_tree().paused = true
+	get_tree().paused = not Net.active()  # в коопе игра не останавливается
 
 
 func _refill() -> void:
 	_clear()
 	match _open_id:
+		"menu":
+			_fill_menu()
+		"coop":
+			_fill_coop()
 		"portal":
 			if _portal_cls == "":
 				_fill_portal()
@@ -408,12 +449,23 @@ func _fill_portal() -> void:
 
 
 func _pick_class(cls: String) -> void:
+	if Net.is_guest():
+		# Гость: класс — хозяину; забег начнётся, когда все выберут.
+		Net.send_to(1, "class", cls)
+		close()
+		show_banner("Выбран класс: %s. Ждём остальных" % Skills.CLASSES[cls]["name"])
+		return
 	# Если на складе нет ничего подходящего — сразу в путь.
 	var any := false
 	for it: Dictionary in Meta.stash:
 		if Items.fits(it, cls, ""):
 			any = true
 	if not any:
+		if Net.is_host():
+			_portal_cls = cls
+			_loadout = {}
+			_go()
+			return
 		Game.start_run(cls)
 		return
 	_portal_cls = cls
@@ -457,6 +509,17 @@ func _fill_loadout() -> void:
 
 
 func _go() -> void:
+	if Net.is_host():
+		# Кооп: хозяин готов; снаряжение со склада заберётся, когда будут готовы все.
+		_coop_loadout = _loadout.duplicate()
+		Net.players[1]["cls"] = _portal_cls
+		Net.players[1]["ready"] = true
+		Net.send_lobby()
+		var cls_name: String = Skills.CLASSES[_portal_cls]["name"]
+		close()
+		show_banner("Выбран класс: %s. Ждём остальных" % cls_name)
+		Game.coop_try_start()
+		return
 	var items := []
 	var idx: Array = _loadout.values()
 	idx.sort()
@@ -465,3 +528,87 @@ func _go() -> void:
 		items.append(Meta.stash[i])
 		Meta.stash.remove_at(i)
 	Game.start_run(_portal_cls, items)
+
+
+var _coop_loadout := {}       # кооп: снаряжение хозяина, выбранное до того, как все готовы
+
+
+## Кооп, хозяин: забрать выбранное снаряжение со склада (когда все готовы).
+func take_loadout() -> Array:
+	var items := []
+	var idx: Array = _coop_loadout.values()
+	idx.sort()
+	idx.reverse()
+	for i: int in idx:
+		if i < Meta.stash.size():
+			items.append(Meta.stash[i])
+			Meta.stash.remove_at(i)
+	_coop_loadout = {}
+	return items
+
+
+# ---------------- Меню и кооператив ----------------
+
+func _fill_menu() -> void:
+	_panel_box.add_child(_rich(200, "[b]Roguelike[/b]\nКак играем?"))
+	_panel_box.add_child(_button("Одиночная игра", func() -> void:
+		Game.menu_done = true
+		if Net.active():
+			Net.leave()
+		close()))
+	_panel_box.add_child(_button("Кооператив (2–4 игрока)", func() -> void:
+		Game.menu_done = true
+		_open_id = "coop"
+		_refill()))
+
+
+var _key_edit: LineEdit
+
+
+func _fill_coop() -> void:
+	var t := "[b]Кооператив[/b]\n"
+	if not Net.active():
+		t += "Один игрок создаёт игру и сообщает ключ остальным. Остальные вводят ключ и подключаются. Играете в лагере того, кто создал игру: вся добыча идёт в его лагерь."
+		_panel_box.add_child(_rich(230, t))
+		_panel_box.add_child(_button("Создать игру", func() -> void:
+			Net.host_game()
+			_refill()))
+		var h := _hc(4)
+		_key_edit = LineEdit.new()
+		_key_edit.placeholder_text = "ключ"
+		_key_edit.max_length = 6
+		_key_edit.custom_minimum_size = Vector2(60, 0)
+		_key_edit.add_theme_font_size_override("font_size", 7)
+		h.add_child(_key_edit)
+		h.add_child(_button("Подключиться", func() -> void:
+			if _key_edit.text.strip_edges().length() >= 4:
+				Net.join_game(_key_edit.text)
+				_refill()))
+		_panel_box.add_child(h)
+		_panel_box.add_child(_button("Назад", func() -> void:
+			_open_id = "menu"
+			_refill()))
+		return
+	if Net.is_host():
+		t += "Ключ игры: [color=#%s][b]%s[/b][/color]\nСообщи его друзьям — они вводят его в «Подключиться».\n" % [GOLD.to_html(false), Net.key]
+	t += "[color=#a8a0b8]%s[/color]\n\n[b]Игроки:[/b]\n" % Net.status
+	for pid: int in Net.players:
+		var p: Dictionary = Net.players[pid]
+		var cls_text := ""
+		if p["ready"] and p["cls"] != "":
+			cls_text = " — готов: %s" % Skills.CLASSES[p["cls"]]["name"]
+		t += "%s%s%s\n" % [p["name"], " (хозяин)" if pid == 1 else "", cls_text]
+	if Net.player_count() < 2:
+		t += "\n[color=#%s]В подземелье можно только вдвоём и больше.[/color]" % BAD.to_html(false)
+	else:
+		t += "\nКаждый идёт к порталу и выбирает класс. Когда готовы все — забег начнётся."
+	_panel_box.add_child(_rich(230, t))
+	var h2 := _hc(4)
+	h2.add_child(_button("В лагерь", close))
+	h2.add_child(_button("Выйти из кооператива", func() -> void:
+		Net.leave()
+		if get_tree().current_scene.name != "Camp" or Run.cls != "":
+			Game.go_camp_offline()
+		_open_id = "menu"
+		_refill()))
+	_panel_box.add_child(h2)

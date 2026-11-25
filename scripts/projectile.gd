@@ -18,8 +18,21 @@ var explode_radius := 0.0    # > 0 — взрыв по площади при п�
 var lifetime := 4.0
 var color := Color(0.6, 0.35, 0.95)
 var on_explode := Callable()  # что сделать на месте взрыва (огненная земля Профессора)
+var source: Node              # герой-стрелок (для его вампиризма, точности и т.п.)
 var _t := 0.0
 var _hit := []
+
+
+func net_props() -> Array:
+	return ["team", "style", "direction", "speed", "lifetime", "color", "explode_radius"]
+
+
+func net_state() -> Array:
+	return [direction]
+
+
+func net_apply(a: Array) -> void:
+	direction = a[0]  # отражённый щитом снаряд меняет направление
 
 
 func _ready() -> void:
@@ -42,12 +55,19 @@ func _physics_process(delta: float) -> void:
 	_t += delta
 	queue_redraw()
 	if _t > lifetime:
+		if Net.is_guest():
+			queue_free()
+			return
 		if explode_radius > 0.0:
 			_explode()
 		queue_free()
 
 
 func _on_body_entered(body: Node) -> void:
+	if Net.is_guest():
+		return  # у гостя — только картинка, попадания считает хозяин
+	if is_instance_valid(source):
+		Game.attacker = source
 	if team == "enemy":
 		if body.is_in_group("player"):
 			if body.dead:
@@ -86,6 +106,8 @@ func _pop() -> void:
 
 
 func _explode() -> void:
+	if is_instance_valid(source):
+		Game.attacker = source
 	Game.ring(global_position, explode_radius, color)
 	Game.burst(global_position + Vector2(0, -6), color.lightened(0.2), 16)
 	Game.shake(2.0, 0.15)

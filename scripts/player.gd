@@ -1,6 +1,6 @@
 extends CharacterBody2D
 ## Герой: движение, атака своего класса, навыки (1–3), SP, здоровье, смерть, взаимодействие (E).
-## Характеристики берутся из Run.derived() — класс + статы + снаряжение + пассивные навыки.
+## Характеристики берутся из st.derived() — класс + статы + снаряжение + пассивные навыки.
 
 signal died
 
@@ -85,16 +85,41 @@ var _dash_mult := 0.0
 var _dash_hit := []
 var _hint_cd := 0.0
 
+# --- Кооператив ---
+# peer_id — чей это герой (1 — хозяин; в одиночной игре всегда 1).
+# st — состояние героя (Run у своего, у хозяина для гостя — Net.players[id].state).
+# ctrl — «пульт»: свой герой заполняет его с клавиатуры, герой гостя — из сети.
+var peer_id := 1
+var st: Node = Run
+var look := ""                     # как выглядит (профессия/класс) — для копий у гостей
+var ctrl := {"move": Vector2.ZERO, "attack": false, "attack_mouse": false, "mouse": Vector2.ZERO, "mouse_recent": false}
+var _presses := {}                 # нажатия гостя, ещё не обработанные (skill_1..3, interact)
+
+
+func is_local() -> bool:
+	return peer_id == Net.my_id()
+
 
 func _ready() -> void:
 	add_to_group("player")
+	var cam: Camera2D = get_node_or_null("Camera")
+	if cam:
+		cam.enabled = is_local()
+	if Net.is_guest():
+		# Копия героя: всё присылает хозяин.
+		_load_sprite()
+		var scene := get_tree().current_scene
+		if is_local() and cam and scene and scene.has_method("setup_camera"):
+			scene.setup_camera(cam)
+		return
+	st = Net.state_of(peer_id)
 	_apply_stats()
-	hp = max_hp if Run.hp < 0 else mini(Run.hp, max_hp)
-	sp = max_sp if Run.sp < 0 else minf(Run.sp, max_sp)
-	Run.changed.connect(_on_run_changed)
-	Run.leveled_up.connect(_on_level_up)
-	Run.class_chosen.connect(_on_class_chosen)
-	Run.job_chosen.connect(func(_j: String) -> void:
+	hp = max_hp if st.hp < 0 else mini(st.hp, max_hp)
+	sp = max_sp if st.sp < 0 else minf(st.sp, max_sp)
+	st.changed.connect(_on_run_changed)
+	st.leveled_up.connect(_on_level_up)
+	st.class_chosen.connect(_on_class_chosen)
+	st.job_chosen.connect(func(_j: String) -> void:
 		_load_sprite()
 		Game.burst(center(), Color(1.0, 0.9, 0.5), 30))
 	_load_sprite()
@@ -102,9 +127,116 @@ func _ready() -> void:
 
 ## Спрайт профессии, если выбрана, иначе — базового класса.
 func _load_sprite() -> void:
-	var look := Run.job if Run.job != "" else (Run.cls if Run.cls != "" else "warrior")
-	sprite.sprite_frames = _build_frames(load("res://assets/hero_%s.png" % look))
+	if not Net.is_guest():
+		look = st.job if st.job != "" else (st.cls if st.cls != "" else "warrior")
+	var l := look if look != "" else "warrior"
+	sprite.sprite_frames = _build_frames(load("res://assets/hero_%s.png" % l))
 	sprite.play("idle_" + facing)
+
+
+# ---------------- Сеть ----------------
+
+func net_props() -> Array:
+	return ["peer_id", "look"]
+
+
+func net_state() -> Array:
+	var cast: Array = []
+	if not _casting.is_empty():
+		cast = [_casting["id"], _casting["t"], _casting["total"], _casting["channel"]]
+	return [Net.pack_sprite(sprite), hp, max_hp, sp, max_sp, dead, skill_cd, look,
+		_shield_time, _shield_charges, _focus_time, cast, _invuln]
+
+
+func net_apply(a: Array) -> void:
+	Net.unpack_sprite(sprite, a[0])
+	hp = a[1]
+	max_hp = a[2]
+	sp = a[3]
+	max_sp = a[4]
+	dead = a[5]
+	skill_cd = a[6]
+	if a[7] != look:
+		look = a[7]
+		var anim := sprite.animation
+		_load_sprite()
+		sprite.play(anim)
+	_shield_time = a[8]
+	_shield_charges = a[9]
+	_focus_time = a[10]
+	var cast: Array = a[11]
+	_casting = {} if cast.is_empty() else {"id": cast[0], "t": cast[1], "total": cast[2], "channel": cast[3]}
+	_invuln = a[12]
+	if _shield_time > 0.0 or _focus_time > 0.0 or not _casting.is_empty():
+		_ensure_overlay()
+	if _overlay:
+		_overlay.queue_redraw()
+
+
+## Хозяин: ввод гостя (зажатые кнопки, мышь) — до следующего пакета.
+func set_remote_input(d: Dictionary) -> void:
+	ctrl["move"] = d["m"]
+	ctrl["attack"] = d["a"]
+	ctrl["attack_mouse"] = d["am"]
+	ctrl["mouse"] = d["mp"]
+	ctrl["mouse_recent"] = d["mr"]
+
+
+## Хозяин: гость нажал навык или E.
+func press(action: String) -> void:
+	_presses[action] = true
+
+
+## Было ли нажатие в этом кадре (свой герой — клавиатура, герой гостя — сеть).
+func _just(action: String) -> bool:
+	if is_local():
+		return Input.is_action_just_pressed(action) and not Game.ui_blocks_input()
+	if _presses.get(action, false):
+		_presses.erase(action)
+		return true
+	return false
+
+
+func _read_local_input() -> void:
+	var blocked := Game.ui_blocks_input()
+	ctrl["move"] = Vector2.ZERO if blocked else Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	ctrl["attack"] = not blocked and Input.is_action_pressed("attack")
+	ctrl["attack_mouse"] = not blocked and Input.is_action_pressed("attack_mouse")
+	ctrl["mouse"] = get_global_mouse_position()
+	ctrl["mouse_recent"] = Game.mouse_recent()
+
+
+## Удар по монстру от этого героя (его вампиризм, поджог, точность, урон боссам).
+func deal(e: Node, amount: int, from: Vector2, crit := false, missable := true) -> void:
+	Game.attacker = self
+	e.take_damage(amount, from, crit, missable)
+
+
+## Кооп: павший герой смотрит за живым напарником (камера переезжает к нему).
+func _spectate() -> void:
+	if not is_local():
+		return
+	var cam: Camera2D = get_node_or_null("Camera")
+	if cam == null:
+		return
+	if dead and Net.active():
+		for h in get_tree().get_nodes_in_group("player"):
+			if h != self and not h.dead:
+				cam.top_level = true
+				cam.global_position = h.global_position + Vector2(0, -8)
+				return
+	if cam.top_level:
+		cam.top_level = false
+		cam.position = Vector2(0, -8)
+
+
+## Куда смотрит мышь этого игрока (в мире).
+func mouse_pos() -> Vector2:
+	return ctrl["mouse"]
+
+
+func mouse_recent() -> bool:
+	return ctrl["mouse_recent"]
 
 
 func _on_class_chosen(_cls: String) -> void:
@@ -116,7 +248,7 @@ func _on_class_chosen(_cls: String) -> void:
 
 
 func _apply_stats() -> void:
-	var d := Run.derived()
+	var d: Dictionary = st.derived()
 	max_hp = d["max_hp"]
 	max_sp = d["max_sp"]
 	sp_regen = d["sp_regen"]
@@ -132,7 +264,7 @@ func _apply_stats() -> void:
 	attack_damage_min = d["atk_min"]
 	attack_damage_max = d["atk_max"]
 	crit_chance = d["crit"] / 100.0
-	attack_cooldown = Run.class_data()["attack_cd"] / (1.0 + d["aspd"] / 100.0)
+	attack_cooldown = st.class_data()["attack_cd"] / (1.0 + d["aspd"] / 100.0)
 	max_speed = BASE_SPEED * (1.0 + d["speed"] / 100.0)
 	if _focus_time > 0.0:  # «Сосредоточение» снайпера: −50% скорости атаки и бега
 		attack_cooldown *= 2.0
@@ -164,6 +296,12 @@ func _on_level_up(_level: int) -> void:
 # ---------------- Каждый кадр ----------------
 
 func _physics_process(delta: float) -> void:
+	if Net.is_guest():
+		_spectate()
+		return  # копия: позицию и вид присылает хозяин
+	if is_local():
+		_read_local_input()
+		_spectate()
 	if dead:
 		velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
 		move_and_slide()
@@ -204,7 +342,7 @@ func _physics_process(delta: float) -> void:
 	if spinning:
 		_process_spin(delta)
 
-	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var input: Vector2 = ctrl["move"]
 	if input != Vector2.ZERO:
 		velocity = velocity.move_toward(input * max_speed, acceleration * delta)
 		aim = input.normalized()
@@ -215,14 +353,14 @@ func _physics_process(delta: float) -> void:
 	# Атака: можно зажать кнопку. Во время вращения берсерка и под щитом паладина — нельзя.
 	if spinning or _shield_time > 0.0:
 		pass
-	elif Input.is_action_pressed("attack_mouse"):
-		_attack((get_global_mouse_position() - center()).normalized())
-	elif Input.is_action_pressed("attack"):
+	elif ctrl["attack_mouse"]:
+		_attack((mouse_pos() - center()).normalized())
+	elif ctrl["attack"]:
 		_attack(aim_dir())
 	for i in 3:
-		if Input.is_action_just_pressed("skill_%d" % (i + 1)):
+		if _just("skill_%d" % (i + 1)):
 			use_skill(i)
-	if Input.is_action_just_pressed("interact"):
+	if _just("interact"):
 		_interact()
 
 	_update_animation(input)
@@ -235,8 +373,8 @@ func center() -> Vector2:
 
 ## Направление для ударов и навыков: на курсор, если мышью недавно двигали, иначе — куда смотрит герой.
 func aim_dir() -> Vector2:
-	if Game.mouse_recent():
-		var d := get_global_mouse_position() - center()
+	if mouse_recent():
+		var d := mouse_pos() - center()
 		if d.length() > 4.0:
 			return d.normalized()
 	return aim
@@ -254,7 +392,7 @@ func roll(mult: float) -> Array:
 
 ## Магия не промахивается, оружие — может (против уклонения монстра).
 func _missable() -> bool:
-	return Run.cls != "mage"
+	return st.cls != "mage"
 
 
 # ---------------- Обычная атака ----------------
@@ -264,7 +402,7 @@ func _attack(dir: Vector2) -> void:
 		return
 	_attack_cd = attack_cooldown
 	_turn_to(dir)
-	match Run.cls:
+	match st.cls:
 		"archer":
 			_shoot("arrow", dir, 1.0, 230.0, 0.55)
 		"mage":
@@ -294,6 +432,7 @@ func _shoot(style: String, dir: Vector2, mult: float, speed: float, life: float,
 	var r := roll(mult)
 	var b: Area2D = PROJECTILE.new()
 	b.team = "player"
+	b.source = self
 	b.style = style
 	b.direction = dir
 	b.speed = speed
@@ -317,7 +456,7 @@ func hit_arc(dir: Vector2, reach: float, half_arc: float, mult: float, push := 0
 		var in_arc := absf(dir.angle_to(to)) <= half_arc or to.length() < 8.0
 		if to.length() <= reach and in_arc:
 			var r := roll(mult)
-			e.take_damage(r[0], center(), r[1], _missable())
+			deal(e, r[0], center(), r[1], _missable())
 			if push > 0.0:
 				e.push(to, push)
 			n += 1
@@ -330,7 +469,7 @@ func hit_circle(pos: Vector2, radius: float, mult: float) -> Array:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(pos) <= radius:
 			var r := roll(mult)
-			e.take_damage(r[0], pos, r[1], _missable())
+			deal(e, r[0], pos, r[1], _missable())
 			hit.append(e)
 	return hit
 
@@ -339,11 +478,11 @@ func hit_circle(pos: Vector2, radius: float, mult: float) -> Array:
 
 ## slot 0..2 — активные навыки класса по порядку.
 func use_skill(slot: int) -> bool:
-	var ids := Skills.actives_of(Run.skill_list())
+	var ids := Skills.actives_of(st.skill_list())
 	if slot >= ids.size():
 		return false
 	var id: String = ids[slot]
-	var lvl := Run.skill_level(id)
+	var lvl: int = st.skill_level(id)
 	if is_casting():
 		return false
 	if _shield_time > 0.0 and id != "holy_charge":  # под щитом можно только рывком
@@ -406,8 +545,8 @@ func is_casting() -> bool:
 
 
 func _cast_target(dir: Vector2, reach := 110.0) -> Vector2:
-	if Game.mouse_recent():
-		return global_position + (get_global_mouse_position() - global_position).limit_length(reach)
+	if mouse_recent():
+		return global_position + (mouse_pos() - global_position).limit_length(reach)
 	return global_position + dir * 70.0
 
 
@@ -440,7 +579,7 @@ func _start_cast(id: String, lvl: int, dir: Vector2, mult: float, time: float, c
 			marker.radius = CHAIN_RANGE
 			marker.position = global_position
 	Game.ground().add_child(marker)
-	var mobile: bool = id in MAGE_SPELLS and Run.skill_level("mobile_cast") > 0
+	var mobile: bool = id in MAGE_SPELLS and st.skill_level("mobile_cast") > 0
 	_casting = {"id": id, "lvl": lvl, "dir": dir, "mult": mult, "t": 0.0, "total": time, "target": target,
 		"marker": marker, "mobile": mobile, "channel": channel, "next_tick": 1.0}
 	if not mobile:
@@ -453,7 +592,7 @@ func _start_cast(id: String, lvl: int, dir: Vector2, mult: float, time: float, c
 func _process_cast(delta: float) -> void:
 	var input := Vector2.ZERO
 	if _casting["mobile"]:
-		input = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+		input = ctrl["move"]
 		velocity = velocity.move_toward(input * max_speed * 0.5, acceleration * delta)
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
@@ -634,7 +773,7 @@ func _release_chain_lightning(_lvl: int, _target: Vector2, mult: float) -> void:
 	for e: Node2D in hit:
 		if is_instance_valid(e) and not e.dead:
 			var r := roll(mult)
-			e.take_damage(r[0], center(), r[1], false)
+			deal(e, r[0], center(), r[1], false)
 	if hit.size() > 2:
 		Game.float_text(global_position + Vector2(0, -28), "Цепь ×%d" % hit.size(), CAST_COLOR)
 
@@ -673,7 +812,7 @@ func _cast_leap_strike(lvl: int, dir: Vector2, mult: float) -> void:
 		for e in get_tree().get_nodes_in_group("enemies"):
 			if e.global_position.distance_to(global_position) <= 28.0:
 				var r := roll(mult)
-				e.take_damage(r[0], global_position, r[1], _missable())
+				deal(e, r[0], global_position, r[1], _missable())
 				if not e.dead and not e.last_hit_missed and randf() < stun_chance:
 					e.apply_stun(2.0, "stun")
 		Game.hitstop(0.07)
@@ -710,7 +849,7 @@ func _cast_blood_slam(lvl: int, _dir: Vector2, mult: float) -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(global_position) <= METEOR_RADIUS:
 			var r := roll(mult)
-			e.take_damage(r[0], global_position, r[1], _missable())
+			deal(e, r[0], global_position, r[1], _missable())
 			if not e.last_hit_missed:
 				total += r[0]
 	var heal := int(round(total * heal_pct))
@@ -739,7 +878,7 @@ func _tick_prayer(lvl: int, _mult: float) -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(global_position) <= PRAYER_RADIUS:
 			var r := roll(harm)
-			e.take_damage(r[0], global_position, r[1], false)
+			deal(e, r[0], global_position, r[1], false)
 
 
 var _shield_time := 0.0
@@ -771,6 +910,7 @@ func try_reflect(b: Node) -> bool:
 		take_damage(part, b.global_position)
 	var r := roll(1.5)
 	b.team = "player"
+	b.source = self
 	b.set_deferred("collision_mask", 1 | 4)  # менять физику внутри сигнала столкновения можно только отложенно
 	b.direction = aim_dir()
 	b.damage = r[0]
@@ -796,7 +936,7 @@ func _cast_trap(_lvl: int, dir: Vector2, mult: float) -> void:
 	var t: Node2D = TRAP.new()
 	t.caster = self
 	t.mult = mult
-	t.position = _cast_target(dir, 80.0) if Game.mouse_recent() else global_position + dir * 22.0
+	t.position = _cast_target(dir, 80.0) if mouse_recent() else global_position + dir * 22.0
 	Game.ground().add_child(t)
 
 
@@ -857,8 +997,8 @@ func _cast_double_shot(_lvl: int, dir: Vector2, mult: float) -> void:
 
 func _cast_arrow_rain(_lvl: int, dir: Vector2, mult: float) -> void:
 	var target := global_position + dir * 70.0
-	if Game.mouse_recent():
-		target = global_position + (get_global_mouse_position() - global_position).limit_length(110.0)
+	if mouse_recent():
+		target = global_position + (mouse_pos() - global_position).limit_length(110.0)
 	Game.ring(target, 26.0, ARROW_COLOR, 0.4)
 	for wave in 3:
 		get_tree().create_timer(0.35 + wave * 0.25).timeout.connect(func() -> void:
@@ -906,7 +1046,7 @@ func _process_dash(delta: float) -> void:
 			if e.global_position.distance_to(global_position) < 16.0:
 				_dash_hit.append(e)
 				var r := roll(_dash_mult)
-				e.take_damage(r[0], global_position, r[1], _missable())
+				deal(e, r[0], global_position, r[1], _missable())
 				if _dash_stun and not e.dead:
 					e.apply_stun(3.0, "stun")
 	if _dash_time <= 0.0:
@@ -952,11 +1092,11 @@ func _interact() -> void:
 		return
 	var item_node := nearest_item()
 	if item_node:
-		var reason := Run.equip_block_reason(item_node.item)
+		var reason: String = st.equip_block_reason(item_node.item)
 		if reason != "":
 			_hint("Нельзя: " + reason, Color(1.0, 0.5, 0.45))
 			return
-		var removed: Array = Run.equip(item_node.item)
+		var removed: Array = st.equip(item_node.item)
 		var pos := item_node.global_position
 		item_node.queue_free()
 		for i in removed.size():
@@ -991,7 +1131,7 @@ func take_damage(amount: int, from: Vector2) -> void:
 				best_d = dd
 				best = e
 		if best:
-			best.take_damage(maxi(1, int(round(amount * special("thorns") / 100.0))), global_position, false, false)
+			deal(best, maxi(1, int(round(amount * special("thorns") / 100.0))), global_position, false, false)
 	if god:
 		amount = 0
 	elif damage_reduction > 0.0:

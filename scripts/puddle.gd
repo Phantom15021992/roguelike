@@ -19,9 +19,15 @@ func _ready() -> void:
 	add_to_group("puddles" if team == "enemy" else "player_zones")
 
 
+func net_props() -> Array:
+	return ["radius", "lifetime", "color", "team", "slow"]
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	_tick -= delta
+	if Net.is_guest():
+		_tick = 1.0  # у гостя только картинка: урон считает хозяин
 	if _tick <= 0.0:
 		_tick = 0.5 if slow <= 0.0 else 0.2
 		if team == "enemy":
@@ -35,6 +41,7 @@ func _process(delta: float) -> void:
 						e.apply_slow(slow)
 					if mult > 0.0 and is_instance_valid(caster):
 						var r: Array = caster.roll(mult)
+						Game.attacker = caster
 						e.take_damage(r[0], global_position, r[1], false)
 	if _t >= lifetime:
 		queue_free()

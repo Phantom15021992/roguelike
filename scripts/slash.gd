@@ -5,6 +5,10 @@ const DURATION := 0.15
 var _t := 0.0
 
 
+func net_props() -> Array:
+	return []
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	queue_redraw()

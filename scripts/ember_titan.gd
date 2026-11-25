@@ -367,3 +367,19 @@ func _drop_loot() -> void:
 	for spec in [["sulfur", 4], ["obsidian", 3], ["scale", 3], ["ember_heart", 1]]:
 		for i in spec[1]:
 			_spawn_pickup("mat", {}, spec[0])
+
+
+# ---------------- Сеть (кооп): фаза и особая графика для копии у гостя ----------------
+
+func _net_extra() -> Array:
+	return [state, phase, awake, _t, _beam_angle, _bob]
+
+
+func _net_apply_extra(a: Array) -> void:
+	state = a[0]
+	phase = a[1]
+	awake = a[2]
+	_t = a[3]
+	_beam_angle = a[4]
+	_bob = a[5]
+	_beam_fx.queue_redraw()

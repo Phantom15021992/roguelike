@@ -355,3 +355,18 @@ func _drop_loot() -> void:
 	for i in 3:
 		_spawn_pickup("mat", {}, "ore")
 	_spawn_pickup("mat", {}, "phylactery")
+
+
+# ---------------- Сеть (кооп): фаза и особая графика для копии у гостя ----------------
+
+func _net_extra() -> Array:
+	return [state, phase, awake, shielded, _bob]
+
+
+func _net_apply_extra(a: Array) -> void:
+	state = a[0]
+	phase = a[1]
+	awake = a[2]
+	shielded = a[3]
+	_bob = a[4]
+	_shield_fx.queue_redraw()

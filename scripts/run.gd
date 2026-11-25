@@ -1,7 +1,9 @@
 extends Node
 ## Состояние забега (autoload «Run»): класс, этаж, уровень, опыт, статы, навыки, снаряжение, золото.
 ## Переживает переход между этажами, сбрасывается при смерти.
-## Позже, для кооператива, это переедет в отдельный объект на каждого игрока.
+## В кооперативе у хозяина на каждого гостя свой экземпляр этого скрипта (Net.players[id].state);
+## у гостя autoload Run — копия его героя, присланная хозяином (apply_net), а изменения
+## (очки, навыки, профессия) отправляются хозяину (Net.cmd).
 
 signal changed
 signal leveled_up(level: int)
@@ -61,6 +63,53 @@ func reset() -> void:
 	changed.emit()
 
 
+## Гость: изменения своего героя делает хозяин.
+func _forward(method: String, args: Array) -> bool:
+	if self == Run and Net.is_guest():
+		Net.cmd(method, args)
+		return true
+	return false
+
+
+## Для отправки гостю: его герой + общие золото, материалы, этаж.
+func net_dict() -> Dictionary:
+	return {"cls": cls, "job": job, "level": level, "xp": xp, "points": points,
+		"skill_points": skill_points, "skill_levels": skill_levels, "stats": stats,
+		"equipment": equipment, "hp": hp, "sp": sp,
+		"depth": Run.depth, "gold": Run.gold, "materials": Run.materials}
+
+
+## Гость: применить присланное хозяином (и вызвать те же сигналы, что и при игре в одиночку).
+func apply_net(d: Dictionary) -> void:
+	var old_cls := cls
+	var old_job := job
+	var old_level := level
+	cls = d["cls"]
+	job = d["job"]
+	level = int(d["level"])
+	xp = int(d["xp"])
+	points = int(d["points"])
+	skill_points = int(d["skill_points"])
+	skill_levels = {}
+	for k: String in d["skill_levels"]:
+		skill_levels[k] = int(d["skill_levels"][k])
+	stats = {}
+	for k: String in d["stats"]:
+		stats[k] = int(d["stats"][k])
+	equipment = d["equipment"]
+	depth = int(d["depth"])
+	gold = int(d["gold"])
+	materials = d["materials"]
+	if cls != old_cls and cls != "":
+		class_chosen.emit(cls)
+	if job != old_job and job != "":
+		job_chosen.emit(job)
+	if level > old_level and old_cls == cls:
+		for l in range(old_level + 1, level + 1):
+			leveled_up.emit(l)
+	changed.emit()
+
+
 func add_material(id: String, n := 1) -> void:
 	materials[id] = materials.get(id, 0) + n
 	changed.emit()
@@ -78,6 +127,8 @@ func set_class(new_cls: String) -> void:
 
 ## Смена профессии: все очки навыков возвращаются, навыки — новые.
 func set_job(new_job: String) -> void:
+	if _forward("set_job", [new_job]):
+		return
 	var refund := skill_points
 	for id: String in skill_levels:
 		refund += skill_levels[id]
@@ -125,6 +176,8 @@ func add_xp(amount: int) -> void:
 func add_stat(key: String) -> bool:
 	if points <= 0:
 		return false
+	if _forward("add_stat", [key]):
+		return true
 	stats[key] += 1
 	points -= 1
 	changed.emit()
@@ -153,6 +206,8 @@ func learn_block_reason(id: String) -> String:
 func learn_skill(id: String) -> bool:
 	if learn_block_reason(id) != "":
 		return false
+	if _forward("learn_skill", [id]):
+		return true
 	skill_levels[id] = skill_level(id) + 1
 	skill_points -= 1
 	changed.emit()

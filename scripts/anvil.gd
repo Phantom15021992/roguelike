@@ -20,6 +20,10 @@ func _ready() -> void:
 	add_child(shape)
 
 
+func net_props() -> Array:
+	return []
+
+
 func map_color() -> Color:
 	return Color(1.0, 0.55, 0.2)
 
@@ -32,7 +36,10 @@ func prompt() -> String:
 	return "E — наковальня (заточка)"
 
 
-func interact(_player: Node) -> void:
+func interact(player: Node) -> void:
+	if not player.is_local():
+		Game.hint_to(player, "Наковальня пока только у хозяина игры")
+		return
 	var hud := get_tree().current_scene.get_node_or_null("HUD")
 	if hud:
 		hud.toggle_panel("anvil")

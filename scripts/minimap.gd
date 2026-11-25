@@ -65,7 +65,7 @@ func _process(delta: float) -> void:
 			visible = false
 			return
 	visible = true
-	var p: Node2D = get_tree().get_first_node_in_group("player")
+	var p: Node2D = Game.local_hero()
 	if p == null:
 		return
 	var cell := Vector2i(p.global_position / 16.0)
@@ -172,7 +172,7 @@ func _draw_markers(to_map: Callable, s: float) -> void:
 		if not b.dead and is_explored(b.global_position):
 			_dot(to_map.call(b.global_position), r + 1.0, BOSS_C)
 	# Герой — мигает.
-	var p: Node2D = get_tree().get_first_node_in_group("player")
+	var p: Node2D = Game.local_hero()
 	if p:
 		var blink := 0.6 + 0.4 * sin(_t * 8.0)
 		_dot(to_map.call(p.global_position), r + 0.5, Color(0.4, 1.0, 1.0, blink))

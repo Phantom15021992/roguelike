@@ -7,6 +7,9 @@ const DUNGEON_SCENE := "res://scenes/main.tscn"
 const CAMP_SCENE := "res://scenes/camp.tscn"
 
 var shots_seen := 0  # сколько снарядов выпустили монстры (для тестов)
+var attacker: Node   # герой, который сейчас наносит удар (см. player.deal)
+var menu_done := false  # меню «одиночная / кооператив» уже показано
+const PLAYER_SCENE := preload("res://scenes/player.tscn")
 var _shake_time := 0.0
 var _shake_strength := 0.0
 
@@ -66,6 +69,11 @@ func _ready() -> void:
 		_clicktest()
 	elif "--skilltest" in args:
 		_skilltest()
+	elif "--cooptest" in args:
+		get_tree().create_timer(150.0, true, false, true).timeout.connect(func() -> void:
+			print("COOPTEST WATCHDOG: timeout")
+			get_tree().quit(1))
+		_cooptest()
 
 
 ## Проверка навыков профессии (`--skilltest --job=paladin` или `--class=mage`):
@@ -411,9 +419,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				if not OS.has_feature("web"):
 					get_tree().quit()
 			KEY_R:
-				var p := get_tree().get_first_node_in_group("player")
+				var p := local_hero()
 				if p and p.dead:
-					return_to_camp()
+					if not Net.active():
+						return_to_camp()
+					elif all_dead():
+						if Net.is_host():
+							coop_restart()
+						else:
+							Net.send_to(1, "restart", true)
 			KEY_C:
 				var hud := get_tree().current_scene.get_node_or_null("HUD")
 				if hud:
@@ -471,6 +485,17 @@ func start_run(cls: String, loadout: Array = []) -> void:
 	for it: Dictionary in loadout:
 		Run.equipment[it["slot"]] = it
 	Meta.apply_to_run()
+	if Net.is_host():
+		# Кооп: каждый гость — своим классом, с бонусами лагеря хозяина.
+		for pid: int in Net.players:
+			if pid != 1:
+				var st: Node = Net.players[pid]["state"]
+				st.reset()
+				st.set_class(Net.players[pid]["cls"])
+				Meta.apply_to_run(st)
+				Net.players[pid]["ready"] = false
+		Net.players[1]["ready"] = false
+		Net.send_lobby()
 	Meta.save_game()
 	_change_scene(DUNGEON_SCENE)
 
@@ -479,35 +504,165 @@ func start_run(cls: String, loadout: Array = []) -> void:
 ## alive = true — вернулся через портал после босса: золото, материалы и снаряжение сохраняются.
 ## Погиб — всё найденное в забеге теряется.
 func return_to_camp(alive := false) -> void:
+	if Net.is_guest():
+		return  # в коопе забег заканчивает хозяин
 	var items: Array = []
-	for slot: String in Run.equipment:
-		var it: Variant = Run.equipment[slot]
-		if it != null and not it.get("starter", false):  # стартовое оружие на склад не нужно
-			items.append(it)
+	# В коопе на склад хозяина уходит снаряжение всех героев.
+	for st: Node in Net.all_states():
+		for slot: String in st.equipment:
+			var it: Variant = st.equipment[slot]
+			if it != null and not it.get("starter", false):  # стартовое оружие на склад не нужно
+				items.append(it)
 	Meta.bank_run(Run.depth, Run.gold, Run.level, Run.title(), Run.materials, items, alive)
-	Run.reset()
+	for st: Node in Net.all_states():
+		st.reset()
 	_change_scene(CAMP_SCENE)
 
 
 func _change_scene(path: String) -> void:
+	Net.scene_leaving()
 	Engine.time_scale = 1.0
 	get_tree().paused = false
 	get_tree().change_scene_to_file.call_deferred(path)
 
 
 func next_floor() -> void:
-	var p := get_tree().get_first_node_in_group("player")
-	if p:
-		Run.hp = p.hp
-		Run.sp = int(p.sp)
+	# HP/SP каждого героя переходят на следующий этаж; павшие в коопе возрождаются с половиной HP.
+	for p in get_tree().get_nodes_in_group("player"):
+		var st: Node = p.st
+		st.hp = maxi(1, p.max_hp / 2) if p.dead else p.hp
+		st.sp = int(p.sp)
 	Run.depth += 1
 	_reload()
 
 
 func _reload() -> void:
+	Net.scene_leaving()
 	Engine.time_scale = 1.0
 	get_tree().paused = false
 	get_tree().reload_current_scene.call_deferred()
+
+
+# --- Кооператив ---
+
+## Свой герой (в одиночной игре — единственный).
+func local_hero() -> Node:
+	for h in get_tree().get_nodes_in_group("player"):
+		if h.is_local():
+			return h
+	return null
+
+
+## Пали ли все герои (в одиночной — сам герой).
+func all_dead() -> bool:
+	for h in get_tree().get_nodes_in_group("player"):
+		if not h.dead:
+			return false
+	return true
+
+
+## Состояние случайного героя команды (под чей класс выпадет предмет).
+func random_hero_state() -> Node:
+	return Net.all_states().pick_random()
+
+
+## Открыто ли окно, которое перехватывает управление героем.
+func ui_blocks_input() -> bool:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return false
+	var hud := scene.get_node_or_null("HUD")
+	if hud and hud.open_panel != "":
+		return true
+	var camp_hud := scene.get_node_or_null("CampHUD")
+	return camp_hud != null and camp_hud.is_open()
+
+
+## Подсказка над героем: своему — сразу, гостю — по сети.
+func hint_to(hero: Node, text: String) -> void:
+	if hero.is_local():
+		hero._hint(text, Color(1.0, 0.85, 0.5))
+	else:
+		Net.send_to(hero.peer_id, "ui", {"hint": text})
+
+
+## Хозяин: в сцене (лагерь/подземелье) ставит героев гостей рядом со своим.
+func spawn_guest_heroes() -> void:
+	if not Net.is_host():
+		return
+	for pid: int in Net.players:
+		if pid != 1:
+			_spawn_guest_hero(pid)
+
+
+func _spawn_guest_hero(pid: int) -> void:
+	var scene := get_tree().current_scene
+	if Net.hero_of(pid) != null:
+		return
+	var mine := scene.get_node_or_null("Entities/Player")
+	var h: Node2D = PLAYER_SCENE.instantiate()
+	h.peer_id = pid
+	h.name = "Player%d" % pid
+	h.position = (mine.position if mine else Vector2(100, 100)) + Vector2(12 * (pid - 1), 6)
+	scene.get_node("Entities").add_child(h)
+
+
+## Хозяин: гость загрузил сцену — у него должен быть герой.
+func on_guest_scene_ready(pid: int) -> void:
+	_spawn_guest_hero(pid)
+
+
+## Хозяин: все выбрали класс у портала — в путь (нужно минимум двое).
+func coop_try_start() -> void:
+	if not Net.is_host() or Net.player_count() < 2:
+		return
+	for pid: int in Net.players:
+		if not Net.players[pid]["ready"]:
+			banner("Ждём игроков: %d/%d готовы" % [_ready_count(), Net.player_count()])
+			return
+	var hud := get_tree().current_scene.get_node_or_null("CampHUD")
+	var loadout: Array = hud.take_loadout() if hud and hud.has_method("take_loadout") else []
+	start_run(Net.players[1]["cls"], loadout)
+
+
+func _ready_count() -> int:
+	var n := 0
+	for pid: int in Net.players:
+		if Net.players[pid]["ready"]:
+			n += 1
+	return n
+
+
+## Хозяин: все пали — забег окончен, все в лагерь (добыча потеряна).
+func coop_restart() -> void:
+	if Net.is_host() and all_dead():
+		return_to_camp(false)
+
+
+## Гость: хозяин сменил сцену.
+func guest_load_scene(kind: String) -> void:
+	Engine.time_scale = 1.0
+	get_tree().paused = false
+	get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE if kind == "dungeon" else CAMP_SCENE)
+
+
+## Гость: связь потеряна — в свой лагерь.
+func go_camp_offline() -> void:
+	Run.reset()
+	_change_scene(CAMP_SCENE)
+
+
+## Гость: хозяин просит что-то показать (подсказку, окно портала).
+func guest_ui(d: Dictionary) -> void:
+	var scene := get_tree().current_scene
+	if d.has("hint"):
+		var h := local_hero()
+		if h:
+			h._hint(str(d["hint"]), Color(1.0, 0.85, 0.5))
+	if d.get("open", "") == "portal" and scene:
+		var camp_hud := scene.get_node_or_null("CampHUD")
+		if camp_hud:
+			camp_hud.open_building("portal")
 
 
 # --- Эффекты ---
@@ -530,12 +685,14 @@ func ground() -> Node:
 
 ## Крупная надпись по центру экрана (через HUD).
 func banner(text: String, time := 2.0) -> void:
+	Net.fx("banner", [text, time])
 	var hud := get_tree().current_scene.get_node_or_null("HUD")
 	if hud:
 		hud.show_banner(text, time)
 
 
 func shake(strength: float, duration: float) -> void:
+	Net.fx("shake", [strength, duration])
 	_shake_strength = maxf(strength, _shake_strength if _shake_time > 0.0 else 0.0)
 	_shake_time = maxf(duration, _shake_time)
 
@@ -548,6 +705,7 @@ func hitstop(duration: float) -> void:
 
 
 func damage_number(pos: Vector2, value: int, color := Color.WHITE) -> void:
+	Net.fx("damage_number", [pos, value, color])
 	var n: Node2D = DAMAGE_NUMBER.new()
 	n.value = value
 	n.color = color
@@ -557,6 +715,7 @@ func damage_number(pos: Vector2, value: int, color := Color.WHITE) -> void:
 
 ## Всплывающая надпись в мире (например, «Новый уровень!»).
 func float_text(pos: Vector2, text: String, color := Color.WHITE) -> void:
+	Net.fx("float_text", [pos, text, color])
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_size_override("font_size", 6)
@@ -576,6 +735,7 @@ func float_text(pos: Vector2, text: String, color := Color.WHITE) -> void:
 
 ## Расширяющееся кольцо на полу (взрывы, вихрь, ледяная волна).
 func ring(pos: Vector2, radius: float, color: Color, duration := 0.3) -> void:
+	Net.fx("ring", [pos, radius, color, duration])
 	var n := Node2D.new()
 	n.position = pos
 	n.set_meta("t", 0.0)
@@ -594,6 +754,7 @@ func ring(pos: Vector2, radius: float, color: Color, duration := 0.3) -> void:
 
 ## Молния-зигзаг между точками.
 func lightning(points: PackedVector2Array, color := Color(0.7, 0.85, 1.0)) -> void:
+	Net.fx("lightning", [points, color])
 	var line := Line2D.new()
 	line.width = 1.5
 	line.default_color = color
@@ -610,6 +771,7 @@ func lightning(points: PackedVector2Array, color := Color(0.7, 0.85, 1.0)) -> vo
 
 
 func burst(pos: Vector2, color: Color, amount := 12) -> void:
+	Net.fx("burst", [pos, color, amount])
 	var p := CPUParticles2D.new()
 	p.one_shot = true
 	p.amount = amount
@@ -933,3 +1095,145 @@ func _shot(shot_name: String) -> void:
 		img.resize(img.get_width() * 3, img.get_height() * 3, Image.INTERPOLATE_NEAREST)
 	img.save_png(ProjectSettings.globalize_path("res://shots/%s.png" % shot_name))
 	print("shot %s  depth=%d level=%d enemies=%d" % [shot_name, Run.depth, Run.level, get_tree().get_nodes_in_group("enemies").size()])
+
+
+# --- Тест кооператива: два окна, локальный сигнальный сервер ---
+# node tools/signal_server.js 9000
+# хозяин: godot --path . -- --cooptest --nethost --key=TEST01 --signal=ws://127.0.0.1:9000/peerjs --class=warrior
+# гость:  godot --path . -- --cooptest --netjoin=TEST01 --signal=ws://127.0.0.1:9000/peerjs --class=archer
+
+func _arg(prefix: String, def := "") -> String:
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with(prefix + "="):
+			return a.get_slice("=", 1)
+	return def
+
+
+func _wait(sec: float) -> void:
+	await get_tree().create_timer(sec, true, false, true).timeout
+
+
+## Ждёт условие не дольше limit секунд. Возвращает, выполнилось ли.
+func _wait_for(cond: Callable, limit: float) -> bool:
+	var t := 0.0
+	while not cond.call():
+		await _wait(0.1)
+		t += 0.1
+		if t > limit:
+			return false
+	return true
+
+
+func _scene_name() -> String:
+	var s := get_tree().current_scene
+	return String(s.name) if s else ""
+
+
+func _cooptest() -> void:
+	var cls := _arg("--class", "warrior")
+	if "--nethost" in OS.get_cmdline_user_args():
+		await _cooptest_host(cls)
+	else:
+		await _cooptest_guest(cls)
+	get_tree().quit()
+
+
+func _cooptest_host(cls: String) -> void:
+	await _wait(0.5)
+	Net.host_game(_arg("--key", "TEST01"))
+	var ok: bool = await _wait_for(func() -> bool: return Net.player_count() >= 2, 40.0)
+	print("COOP host: guest connected=%s status=%s" % [ok, Net.status])
+	if not ok:
+		return
+	ok = await _wait_for(func() -> bool: return Net.hero_of(2) != null, 15.0)
+	print("COOP host: guest hero in camp=%s" % ok)
+	await _wait(1.5)
+	_shot("coop_host_1_camp")
+	Net.players[1]["cls"] = cls
+	Net.players[1]["ready"] = true
+	coop_try_start()
+	ok = await _wait_for(func() -> bool: return _scene_name() == "Main" and Net._ready_peers.has(2), 20.0)
+	print("COOP host: dungeon with guest=%s" % ok)
+	await _wait(1.0)
+	var guest := Net.hero_of(2)
+	var me := local_hero()
+	print("COOP host: heroes=%d guest_class=%s guest_hp=%d enemies=%d" % [
+		get_tree().get_nodes_in_group("player").size(), guest.st.cls, guest.hp, get_tree().get_nodes_in_group("enemies").size()])
+	# Монстры рядом — посмотреть бой у обоих.
+	var slime: PackedScene = load("res://scenes/slime.tscn")
+	for i in 3:
+		var s: Node2D = slime.instantiate()
+		s.position = me.global_position + Vector2(40 + i * 12, -10 + i * 10)
+		get_tree().current_scene.get_node("Entities").add_child(s)
+	_send_action("attack", true)
+	await _wait(4.0)
+	_send_action("attack", false)
+	_shot("coop_host_2_fight")
+	print("COOP host: guest pos=%s guest_hp=%d guest_xp=%d host_xp=%d team_gold=%d" % [guest.global_position, guest.hp, guest.st.xp, Run.xp, Run.gold])
+	await _wait(3.0)
+	print("COOP host: guest dealt damage? enemies left=%d guest_lvl=%d" % [get_tree().get_nodes_in_group("enemies").size(), guest.st.level])
+	# Гость падает: игра продолжается, он смотрит за хозяином.
+	guest.take_damage(99999, guest.global_position + Vector2(5, 0))
+	await _wait(2.0)
+	print("COOP host: guest dead=%s all_dead=%s" % [guest.dead, all_dead()])
+	_shot("coop_host_3_guest_dead")
+	next_floor()
+	ok = await _wait_for(func() -> bool: return _scene_name() == "Main" and Net._ready_peers.has(2) and Net.hero_of(2) != null, 20.0)
+	await _wait(1.5)
+	guest = Net.hero_of(2)
+	print("COOP host: floor %d, guest revived=%s hp=%d/%d" % [Run.depth, guest != null and not guest.dead, guest.hp if guest else -1, guest.max_hp if guest else -1])
+	_shot("coop_host_4_floor2")
+	# Все пали — в лагерь.
+	for h in get_tree().get_nodes_in_group("player"):
+		h.take_damage(99999, h.global_position + Vector2(5, 0))
+	await _wait(1.0)
+	coop_restart()
+	ok = await _wait_for(func() -> bool: return _scene_name() == "Camp" and Net._ready_peers.has(2), 20.0)
+	await _wait(1.5)
+	print("COOP host: back in camp=%s heroes=%s" % [ok, get_tree().get_nodes_in_group("player").map(func(h: Node) -> String: return "%s(peer %d)" % [h.name, h.peer_id])])
+	_shot("coop_host_5_camp")
+	await _wait(2.0)
+
+
+func _cooptest_guest(cls: String) -> void:
+	await _wait(2.0)
+	Net.join_game(_arg("--netjoin", "TEST01"))
+	var ok: bool = await _wait_for(func() -> bool: return Net._peer_open(1) and Net.hero_of(Net.my_id()) != null and _scene_name() == "Camp", 40.0)
+	print("COOP guest: in host camp=%s id=%d status=%s gold_shown=%d" % [ok, Net.my_id(), Net.status, Meta.gold])
+	if not ok:
+		return
+	await _wait(1.0)
+	_shot("coop_guest_1_camp")
+	Net.send_to(1, "class", cls)
+	ok = await _wait_for(func() -> bool: return _scene_name() == "Main" and Net.hero_of(Net.my_id()) != null, 25.0)
+	await _wait(1.0)
+	var me := local_hero()
+	print("COOP guest: dungeon=%s class=%s hp=%d heroes=%d enemies=%d" % [ok, Run.cls, me.hp if me else -1,
+		get_tree().get_nodes_in_group("player").size(), get_tree().get_nodes_in_group("enemies").size()])
+	var cam := get_viewport().get_camera_2d()
+	print("COOP guest: camera of %s (peer %s), me=%s at %s, cam at %s" % [cam.get_parent().name if cam else "-", cam.get_parent().get("peer_id") if cam else "-", me.name if me else "-", me.global_position if me else Vector2.ZERO, cam.get_screen_center_position() if cam else Vector2.ZERO])
+	var start: Vector2 = me.global_position if me else Vector2.ZERO
+	_set_move(Vector2(1, 0))
+	await _wait(1.0)
+	_set_move(Vector2.ZERO)
+	me = local_hero()
+	print("COOP guest: moved %.1f px" % (me.global_position.distance_to(start) if me else -1.0))
+	_send_action("attack", true)
+	await _wait(3.0)
+	_send_action("attack", false)
+	_shot("coop_guest_2_fight")
+	print("COOP guest: xp=%d level=%d gold=%d" % [Run.xp, Run.level, Run.gold])
+	ok = await _wait_for(func() -> bool: return local_hero() != null and local_hero().dead, 20.0)
+	await _wait(0.5)
+	print("COOP guest: saw own death=%s" % ok)
+	_shot("coop_guest_3_dead")
+	var depth0 := Run.depth
+	ok = await _wait_for(func() -> bool: return Run.depth > depth0 and _scene_name() == "Main" and local_hero() != null and not local_hero().dead, 25.0)
+	await _wait(1.0)
+	print("COOP guest: next floor=%s depth=%d hp=%d" % [ok, Run.depth, local_hero().hp if local_hero() else -1])
+	_shot("coop_guest_4_floor2")
+	ok = await _wait_for(func() -> bool: return _scene_name() == "Camp" and local_hero() != null, 30.0)
+	await _wait(1.0)
+	print("COOP guest: back in camp=%s" % ok)
+	_shot("coop_guest_5_camp")
+	await _wait(4.0)  # хозяин ещё проверяет лагерь

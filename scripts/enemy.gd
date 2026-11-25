@@ -116,8 +116,38 @@ func _ready() -> void:
 	_setup()
 
 
+# ---------------- Сеть (кооп) ----------------
+# У гостя монстр — копия: не думает и не ранит, только показывает то, что прислал хозяин.
+
+func net_props() -> Array:
+	return []
+
+
+func net_state() -> Array:
+	return [Net.pack_sprite(sprite), hp, max_hp, dead, _net_extra()]
+
+
+func net_apply(a: Array) -> void:
+	Net.unpack_sprite(sprite, a[0])
+	hp = a[1]
+	max_hp = a[2]
+	if a[3] and not dead:
+		dead = true
+		remove_from_group("enemies")
+	_net_apply_extra(a[4])
+
+
+## Наследники (боссы) добавляют свои поля: фазы, щиты, лучи.
+func _net_extra() -> Array:
+	return []
+
+
+func _net_apply_extra(_a: Array) -> void:
+	pass
+
+
 func _physics_process(delta: float) -> void:
-	if dead:
+	if dead or Net.is_guest():
 		return
 	_flash = maxf(0.0, _flash - delta * 6.0)
 	_process_burn(delta)
@@ -245,7 +275,7 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 		return
 	last_hit_missed = false
 	if missable and not crit and evasion > 0:
-		var p := get_tree().get_first_node_in_group("player")
+		var p: Node = _attacker()
 		var miss_chance: int = evasion - (p.accuracy if p else 0)
 		if miss_chance > 0 and randf() * 100.0 < miss_chance:
 			last_hit_missed = true
@@ -255,7 +285,7 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 			return
 	# Особые свойства снаряжения героя: урон боссам, вампиризм, поджог, оглушение.
 	# Урон от горения сам ничего не запускает (иначе поджог поджигал бы сам себя).
-	var hero: Node = get_tree().get_first_node_in_group("player")
+	var hero: Node = _attacker()
 	if hero and not _in_dot and is_in_group("boss"):
 		amount = int(round(amount * (1.0 + hero.special("boss") / 100.0)))
 	hp -= amount
@@ -271,6 +301,14 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 		_die()
 
 
+## Кто ударил: герой, отметившийся в Game.attacker, иначе — первый герой.
+func _attacker() -> Node:
+	var a: Node = Game.attacker
+	if is_instance_valid(a) and a.is_in_group("player"):
+		return a
+	return get_tree().get_first_node_in_group("player")
+
+
 func _die() -> void:
 	dead = true
 	remove_from_group("enemies")
@@ -278,7 +316,9 @@ func _die() -> void:
 	collision_mask = 0
 	died.emit(self)
 	Game.burst(global_position + Vector2(0, -6), color, 16)
-	Run.add_xp(xp_reward)
+	# Опыт получают все герои (в коопе — каждый полностью).
+	for st: Node in Net.all_states():
+		st.add_xp(xp_reward)
 	_drop_loot()
 	var tw := create_tween()
 	tw.tween_property(sprite, "scale", Vector2(1.5, 0.2), 0.15)
@@ -294,8 +334,10 @@ func _drop_loot() -> void:
 	if mat_id != "" and randf() < mat_chance:
 		_spawn_pickup("mat", {}, mat_id)
 	# Удача героя повышает шанс выпадения предметов.
-	if randf() < item_chance * (1.0 + Run.derived()["drop"] / 100.0):
-		_spawn_pickup("item", Items.random_item(Run.depth, Run.cls, Run.job))
+	# Лут общий: предмет — под класс случайного героя команды.
+	var st: Node = Game.random_hero_state()
+	if randf() < item_chance * (1.0 + st.derived()["drop"] / 100.0):
+		_spawn_pickup("item", Items.random_item(Run.depth, st.cls, st.job))
 
 
 func _spawn_pickup(kind: String, item: Dictionary, mat := "") -> void:
