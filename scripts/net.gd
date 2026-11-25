@@ -431,7 +431,11 @@ func _host_msg(from: int, kind: String, data: Variant) -> void:
 					if hero:
 						hero.inv(str(args[0]), args[1])
 		"class":
-			players[from]["cls"] = str(data)
+			if typeof(data) == TYPE_DICTIONARY:
+				players[from]["cls"] = str(data["cls"])
+				players[from]["hero"] = data.get("hero", {})
+			else:
+				players[from]["cls"] = str(data)
 			players[from]["ready"] = true
 			players_changed.emit()
 			send_lobby()
@@ -484,6 +488,10 @@ func _guest_msg(kind: String, data: Variant) -> void:
 				scene.apply_cells(data)
 		"ui":
 			Game.guest_ui(data)
+		"hero_save":
+			Meta.save_hero(data)
+		"hero_best":
+			Meta.own_hero_best(int(data))
 
 
 ## Сцена начинает меняться: «исчезновения» старых узлов не рассылаем.

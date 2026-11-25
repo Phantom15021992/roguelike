@@ -9,6 +9,7 @@ const CAMP_SCENE := "res://scenes/camp.tscn"
 var shots_seen := 0  # сколько снарядов выпустили монстры (для тестов)
 var attacker: Node   # герой, который сейчас наносит удар (см. player.deal)
 var menu_done := false  # меню «одиночная / кооператив» уже показано
+var coop_depth := 1     # кооп: с какого этажа начнёт хозяин
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 var _shake_time := 0.0
 var _shake_strength := 0.0
@@ -69,6 +70,8 @@ func _ready() -> void:
 		_clicktest()
 	elif "--skilltest" in args:
 		_skilltest()
+	elif "--herotest" in args:
+		_herotest()
 	elif "--cooptest" in args:
 		get_tree().create_timer(150.0, true, false, true).timeout.connect(func() -> void:
 			print("COOPTEST WATCHDOG: timeout")
@@ -492,9 +495,10 @@ func _process(delta: float) -> void:
 
 ## Из лагеря в подземелье: новый забег выбранным классом с бонусами лагеря.
 ## loadout — предметы со склада, взятые в забег (их уже убрали со склада).
-func start_run(cls: String, loadout: Array = []) -> void:
+func start_run(cls: String, loadout: Array = [], depth := 1) -> void:
 	Run.reset()
-	Run.set_class(cls)
+	_load_or_new_hero(Run, cls, Meta.current_hero())
+	Run.depth = depth
 	for it: Dictionary in loadout:
 		Run.equipment[it["slot"]] = it
 	Meta.apply_to_run()
@@ -504,13 +508,43 @@ func start_run(cls: String, loadout: Array = []) -> void:
 			if pid != 1:
 				var st: Node = Net.players[pid]["state"]
 				st.reset()
-				st.set_class(Net.players[pid]["cls"])
+				_load_or_new_hero(st, Net.players[pid]["cls"], Net.players[pid].get("hero", {}))
+				st.depth = depth
 				Meta.apply_to_run(st)
 				Net.players[pid]["ready"] = false
 		Net.players[1]["ready"] = false
 		Net.send_lobby()
+	if not Meta.heroes.has(cls) or not Meta.current_hero().has("stats"):
+		Meta.save_hero(Run.to_hero())  # новый герой: класс закреплён сразу
 	Meta.save_game()
 	_change_scene(DUNGEON_SCENE)
+
+
+## Сохранённый герой этого класса — или новый 1-го уровня.
+func _load_or_new_hero(st: Node, cls: String, h: Dictionary) -> void:
+	if h.get("cls", "") == cls and h.has("stats"):
+		st.load_hero(h)
+	else:
+		st.set_class(cls)
+
+
+## Этаж-сохранение (5, 10, ...): герои запоминаются, отсюда можно начать следующий забег.
+func checkpoint(depth: int) -> void:
+	for h in get_tree().get_nodes_in_group("player"):
+		var st: Node = h.st
+		st.checkpoint = maxi(st.checkpoint, depth)
+		st.best = maxi(st.best, depth)
+		_save_hero_of(h.peer_id, st)
+	banner("Сохранение: теперь можно начинать с %d этажа" % depth, 3.0)
+
+
+## Сохранить героя: свой — в лагерь, гостя — ему (в его сохранение).
+func _save_hero_of(pid: int, st: Node) -> void:
+	var h: Dictionary = st.to_hero()
+	if pid == Net.my_id():
+		Meta.save_hero(h)
+	else:
+		Net.send_to(pid, "hero_save", h)
 
 
 ## Забег окончен: золото уносится в лагерь, итоги запоминаются.
@@ -527,6 +561,21 @@ func return_to_camp(alive := false) -> void:
 			if it != null and not it.get("starter", false):  # стартовое оружие на склад не нужно
 				items.append(it)
 	Meta.bank_run(Run.depth, Run.gold, Run.level, Run.title(), Run.materials, items, alive)
+	# Герои: живые сохраняются как есть; павшие возвращаются к последнему сохранению
+	# (запоминается только самый глубокий этаж — для смены класса).
+	for pid: int in (Net.players.keys() if Net.is_host() else [1]):
+		var st: Node = Net.state_of(pid)
+		if st.cls == "":
+			continue
+		if alive:
+			_save_hero_of(pid, st)
+		elif pid == Net.my_id():
+			var saved: Dictionary = Meta.heroes.get(st.cls, {})
+			if not saved.is_empty():
+				saved["best"] = maxi(int(saved.get("best", 0)), st.depth)
+				Meta.save_game()
+		else:
+			Net.send_to(pid, "hero_best", st.depth)
 	for st: Node in Net.all_states():
 		st.reset()
 	_change_scene(CAMP_SCENE)
@@ -635,7 +684,7 @@ func coop_try_start() -> void:
 			return
 	var hud := get_tree().current_scene.get_node_or_null("CampHUD")
 	var loadout: Array = hud.take_loadout() if hud and hud.has_method("take_loadout") else []
-	start_run(Net.players[1]["cls"], loadout)
+	start_run(Net.players[1]["cls"], loadout, coop_depth)
 
 
 func _ready_count() -> int:
@@ -1258,3 +1307,38 @@ func _cooptest_guest(cls: String) -> void:
 	print("COOP guest: back in camp=%s" % ok)
 	_shot("coop_guest_5_camp")
 	await _wait(4.0)  # хозяин ещё проверяет лагерь
+
+
+# --- Тест сохранения героя: `godot --path . -- --herotest` ---
+func _herotest() -> void:
+	await _wait(1.0)
+	Meta.heroes = {}
+	Meta.hero_cls = ""
+	Meta.levels = {}
+	start_run("thief")
+	await _wait_for(func() -> bool: return _scene_name() == "Main", 10.0)
+	await _wait(0.5)
+	print("HERO new: saved=%s cls=%s level=%d" % [Meta.heroes.has("thief"), Meta.hero_cls, Run.level])
+	Run.add_xp(400)
+	Run.depth = 5
+	checkpoint(5)
+	var h: Dictionary = Meta.current_hero()
+	print("HERO checkpoint: level=%d checkpoint=%d best=%d (run level %d)" % [h["level"], h["checkpoint"], h["best"], Run.level])
+	Run.add_xp(3000)
+	Run.depth = 7
+	var lvl_before_death := Run.level
+	return_to_camp(false)
+	await _wait_for(func() -> bool: return _scene_name() == "Camp", 10.0)
+	h = Meta.current_hero()
+	print("HERO after death on 7 (was level %d): saved level=%d best=%d checkpoint=%d" % [lvl_before_death, h["level"], h["best"], h["checkpoint"]])
+	print("HERO class change, training 0: '%s'" % Meta.class_change_reason())
+	Meta.levels["training"] = 3
+	print("HERO class change, training 3: '%s'" % Meta.class_change_reason())
+	start_run("thief", [], 5)
+	await _wait_for(func() -> bool: return _scene_name() == "Main", 10.0)
+	await _wait(0.5)
+	print("HERO start from 5: depth=%d level=%d cls=%s points=%d" % [Run.depth, Run.level, Run.cls, Run.points])
+	_shot("hero_start5")
+	Meta.change_class("acolyte")
+	print("HERO changed to %s, hero exists=%s" % [Meta.hero_cls, Meta.current_hero().has("cls")])
+	get_tree().quit()

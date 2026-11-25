@@ -273,7 +273,33 @@ func _fill_upgrade(id: String) -> void:
 		var price := Meta.cost(id)
 		var b := _button("%s — %d золота (у тебя %d)" % [verb, price, Meta.gold], func() -> void: Meta.upgrade(id), Meta.can_upgrade(id))
 		_panel_box.add_child(b)
+	if id == "training":
+		_fill_class_change()
 	_panel_box.add_child(_button("Закрыть (E)", close))
+
+
+## Плац: смена класса (плац ≥3 ур., герой прошёл 5-й этаж). У каждого класса свой герой.
+func _fill_class_change() -> void:
+	var reason := Meta.class_change_reason()
+	var t := "[b]Смена класса[/b]"
+	if Meta.hero_cls != "":
+		t += "  [color=#a8a0b8]сейчас: %s[/color]" % Skills.CLASSES[Meta.hero_cls]["name"]
+	if reason != "":
+		t += "\n[color=#%s]Недоступно: %s.[/color]" % [BAD.to_html(false), reason]
+		_panel_box.add_child(_rich(170, t))
+		return
+	t += "\n[color=#a8a0b8]У каждого класса свой герой: уровень и навыки сохраняются.[/color]"
+	_panel_box.add_child(_rich(170, t))
+	var h := _hc(2)
+	for cls: String in Skills.CLASSES:
+		if cls == Meta.hero_cls:
+			continue
+		var saved: Dictionary = Meta.heroes.get(cls, {})
+		var label: String = Skills.CLASSES[cls]["name"] + ((" %d" % int(saved.get("level", 1))) if saved.has("stats") else "")
+		h.add_child(_button(label, func() -> void:
+			Meta.change_class(cls)
+			show_banner("Теперь твой герой — %s" % Skills.CLASSES[cls]["name"]), true, 5))
+	_panel_box.add_child(h)
 
 
 # ---------------- Мастерская ----------------
@@ -342,8 +368,13 @@ func _fill_craft() -> void:
 		row.add_child(_button("Создать", func() -> void: _craft(base, ""), can, 5))
 		row.add_child(_button("★", func() -> void: _craft(base, rare), can and rare != "", 5))
 		var who := ""
-		if b["slot"] == "weapon":
-			who = " (%s)" % Skills.CLASSES[b["class"]]["name"]
+		if b.has("job"):
+			who = " (%s)" % Skills.JOBS[b["job"]]["name"]
+		elif b.has("class"):
+			var names: PackedStringArray = []
+			for c: String in (b["class"] if b["class"] is Array else [b["class"]]):
+				names.append(Skills.CLASSES[c]["name"])
+			who = " (%s)" % ", ".join(names)
 		row.add_child(_rich(190, "[b]%s[/b]%s — %s" % [b["name"], who, Crafting.recipe_text(base)]))
 		list.add_child(row)
 
@@ -432,8 +463,20 @@ func _short_stats(item: Dictionary) -> String:
 
 # ---------------- Портал: класс и снаряжение ----------------
 
+var _start_depth := 1        # с какого этажа начать (1 или этаж-сохранение)
+
+
+## Сохранённый герой этого игрока (у гостя — из своего сохранения).
+func _my_hero() -> Dictionary:
+	return Meta.own_hero() if Net.is_guest() else Meta.current_hero()
+
+
 func _fill_portal() -> void:
-	_panel_box.add_child(_rich(250, "[b]Вход в подземелье[/b]\nВыбери класс героя. Бонусы лагеря действуют на весь забег."))
+	var hero := _my_hero()
+	if hero.has("cls"):
+		_fill_portal_hero(hero)
+		return
+	_panel_box.add_child(_rich(250, "[b]Вход в подземелье[/b]\nВыбери класс своего героя. Его уровень и навыки сохраняются между забегами; сменить класс потом можно на Тренировочном плацу."))
 	var h := _hc(4)
 	_panel_box.add_child(h)
 	var n := 0
@@ -443,22 +486,63 @@ func _fill_portal() -> void:
 		var card := VBoxContainer.new()
 		var txt := "[b]%s[/b]\n%s\n[color=#a8a0b8]HP %d, SP %d[/color]" % [c["name"], c["desc"], c["hp"], c["sp"]]
 		card.add_child(_rich(56, txt))
-		card.add_child(_button("Выбрать (%d)" % n, func() -> void: _pick_class(cls)))
+		card.add_child(_button("Выбрать (%d)" % n, func() -> void:
+			_start_depth = 1
+			_pick_class(cls)))
 		h.add_child(card)
 	_panel_box.add_child(_button("Закрыть (E)", close))
 
 
+## Герой уже есть: показать его и выбрать этаж старта (1 или сохранения 5, 10, ...).
+func _fill_portal_hero(hero: Dictionary) -> void:
+	var cls: String = hero["cls"]
+	var job: String = str(hero.get("job", ""))
+	var title: String = Skills.JOBS[job]["name"] if job != "" else Skills.CLASSES[cls]["name"]
+	var lvl := int(hero.get("level", 1))
+	var cp := int(hero.get("checkpoint", 0))
+	var t := "[b]Вход в подземелье[/b]\nГерой: [color=#%s]%s, %d уровень[/color]   самый глубокий этаж: %d" % [GOLD.to_html(false), title, lvl, int(hero.get("best", 0))]
+	if Net.is_guest():
+		t += "\nЭтаж старта выбирает хозяин игры."
+	elif cp > 0:
+		t += "\nМожно начать с этажа-сохранения (каждый 5-й этаж). Погибнешь — герой вернётся к последнему сохранению."
+	else:
+		t += "\nНа 5, 10, 15… этаже герой сохраняется — потом можно начать оттуда."
+	_panel_box.add_child(_rich(250, t))
+	var h := _hc(3)
+	if Net.is_guest():
+		h.add_child(_button("Готов", func() -> void: _pick_class(cls)))
+	else:
+		h.add_child(_button("Этаж 1", func() -> void:
+			_start_depth = 1
+			_pick_class(cls)))
+		var d := 5
+		while d <= cp:
+			var dd := d
+			h.add_child(_button("Этаж %d" % d, func() -> void:
+				_start_depth = dd
+				_pick_class(cls)))
+			d += 5
+	_panel_box.add_child(h)
+	_panel_box.add_child(_button("Закрыть (E)", close))
+
+
+## Профессия сохранённого героя этого класса (её оружие можно взять в забег).
+func _hero_job(cls: String) -> String:
+	var h := _my_hero()
+	return str(h.get("job", "")) if h.get("cls", "") == cls else ""
+
+
 func _pick_class(cls: String) -> void:
 	if Net.is_guest():
-		# Гость: класс — хозяину; забег начнётся, когда все выберут.
-		Net.send_to(1, "class", cls)
+		# Гость: класс и свой герой — хозяину; забег начнётся, когда все будут готовы.
+		Net.send_to(1, "class", {"cls": cls, "hero": _my_hero()})
 		close()
 		show_banner("Выбран класс: %s. Ждём остальных" % Skills.CLASSES[cls]["name"])
 		return
 	# Если на складе нет ничего подходящего — сразу в путь.
 	var any := false
 	for it: Dictionary in Meta.stash:
-		if Items.fits(it, cls, ""):
+		if Items.fits(it, cls, _hero_job(cls)):
 			any = true
 	if not any:
 		if Net.is_host():
@@ -466,7 +550,7 @@ func _pick_class(cls: String) -> void:
 			_loadout = {}
 			_go()
 			return
-		Game.start_run(cls)
+		Game.start_run(cls, [], _start_depth)
 		return
 	_portal_cls = cls
 	_loadout = {}
@@ -480,8 +564,8 @@ func _fill_loadout() -> void:
 	var list := _scroll(90)
 	for i in Meta.stash.size():
 		var item: Dictionary = Meta.stash[i]
-		# Оружие профессии в забег не взять: профессия выбирается только на 5-м уровне.
-		if not Items.fits(item, _portal_cls, ""):
+		# Оружие профессии — только если у сохранённого героя уже есть эта профессия.
+		if not Items.fits(item, _portal_cls, _hero_job(_portal_cls)):
 			continue
 		var slot: String = item["slot"]
 		var taken: bool = _loadout.get(slot, -1) == i
@@ -513,6 +597,7 @@ func _go() -> void:
 		# Кооп: хозяин готов; снаряжение со склада заберётся, когда будут готовы все.
 		_coop_loadout = _loadout.duplicate()
 		Net.players[1]["cls"] = _portal_cls
+		Game.coop_depth = _start_depth
 		Net.players[1]["ready"] = true
 		Net.send_lobby()
 		var cls_name: String = Skills.CLASSES[_portal_cls]["name"]
@@ -527,7 +612,7 @@ func _go() -> void:
 	for i: int in idx:
 		items.append(Meta.stash[i])
 		Meta.stash.remove_at(i)
-	Game.start_run(_portal_cls, items)
+	Game.start_run(_portal_cls, items, _start_depth)
 
 
 var _coop_loadout := {}       # кооп: снаряжение хозяина, выбранное до того, как все готовы

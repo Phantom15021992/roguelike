@@ -35,6 +35,12 @@ var stats := {}
 var equipment := {}
 var bag: Array = []   # сумка: найденные предметы (в лагерь — только через портал)
 var hp := -1  # -1 — полное (при старте забега)
+# Сохраняемый герой (между забегами): сколько бонусных очков лагеря уже выдано,
+# самый глубокий этаж и этаж-сохранение (5, 10, ...), с которого можно начать.
+var training_given := 0
+var library_given := 0
+var best := 0
+var checkpoint := 0
 var sp := -1
 
 
@@ -62,6 +68,42 @@ func reset() -> void:
 	bag = []
 	hp = -1
 	sp = -1
+	training_given = 0
+	library_given = 0
+	best = 0
+	checkpoint = 0
+	changed.emit()
+
+
+## Герой для сохранения (без снаряжения — оно на складе и в риске забега).
+func to_hero() -> Dictionary:
+	return {"cls": cls, "job": job, "level": level, "xp": xp, "points": points,
+		"skill_points": skill_points, "skill_levels": skill_levels.duplicate(), "stats": stats.duplicate(),
+		"training_given": training_given, "library_given": library_given,
+		"best": maxi(best, depth), "checkpoint": checkpoint}
+
+
+## Загрузить сохранённого героя (класс со стартовым оружием, уровень, навыки).
+func load_hero(h: Dictionary) -> void:
+	set_class(str(h["cls"]))
+	job = str(h.get("job", ""))
+	level = int(h.get("level", 1))
+	xp = int(h.get("xp", 0))
+	points = int(h.get("points", 0))
+	skill_points = int(h.get("skill_points", 1))
+	skill_levels = {}
+	var sl: Dictionary = h.get("skill_levels", {})
+	for k: String in sl:
+		skill_levels[k] = int(sl[k])
+	var sts: Dictionary = h.get("stats", {})
+	for k: String in STAT_KEYS:
+		stats[k] = int(sts.get(k, 1))
+	training_given = int(h.get("training_given", 0))
+	library_given = int(h.get("library_given", 0))
+	best = int(h.get("best", 0))
+	checkpoint = int(h.get("checkpoint", 0))
+	if job != "":
+		job_chosen.emit(job)
 	changed.emit()
 
 

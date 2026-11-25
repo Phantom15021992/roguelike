@@ -108,6 +108,8 @@ func _ready() -> void:
 	map.modulate = pool_for(Run.depth)["tint"]
 	Game.spawn_guest_heroes()
 	Net.scene_loaded()
+	if Run.depth % 5 == 0:
+		Game.checkpoint.call_deferred(Run.depth)
 
 
 ## Кооп, гость: карта — из присланной хозяином, монстров и предметы пришлёт он же.

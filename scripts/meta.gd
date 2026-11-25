@@ -7,6 +7,7 @@ signal changed
 
 const SAVE_PATH := "user://save.json"
 const Items := preload("res://scripts/items.gd")
+const Skills := preload("res://scripts/skills.gd")
 
 # cost: [цена 1-го уровня, множитель за уровень]
 const UPGRADES := {
@@ -53,12 +54,14 @@ var mine_time := 0.0       # когда шахту проверяли после
 var materials := {}        # материалы лагеря
 var stash: Array = []      # склад снаряжения (предметы-словари)
 var last_run := {}         # итоги последнего забега — показать в лагере
+var heroes := {}           # сохранённые герои по классам (см. Run.to_hero)
+var hero_cls := ""        # активный класс ("" — героя ещё нет)
 var persist := true
 
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args)
 	# `--loadsave` — тест на настоящем сохранении: прочитать, но ничего не записывать.
 	if persist or "--loadsave" in args:
 		load_game()
@@ -123,9 +126,12 @@ func gold_mult() -> float:
 
 
 ## Стартовые очки — вызывается при начале забега.
+## Бонусные очки плаца и библиотеки: герой получает только то, что ещё не получал.
 func apply_to_run(st: Node = Run) -> void:
-	st.points += level("training")
-	st.skill_points += level("library")
+	st.points += maxi(0, level("training") - st.training_given)
+	st.skill_points += maxi(0, level("library") - st.library_given)
+	st.training_given = maxi(st.training_given, level("training"))
+	st.library_given = maxi(st.library_given, level("library"))
 	st.changed.emit()
 
 
@@ -205,10 +211,84 @@ func bank_run(depth: int, run_gold: int, run_level: int, cls_name: String, mats:
 	changed.emit()
 
 
+# ---------------- Сохранённый герой ----------------
+
+func current_hero() -> Dictionary:
+	return heroes.get(hero_cls, {})
+
+
+## Сохранить героя (контрольная точка или возвращение через портал).
+## Гость в коопе пишет в своё собственное сохранение, не в копию лагеря хозяина.
+func save_hero(h: Dictionary) -> void:
+	if _is_guest_copy:
+		_own_heroes[h["cls"]] = h
+		_own_hero_cls = h["cls"]
+		_write_own_heroes()
+		return
+	heroes[h["cls"]] = h
+	hero_cls = h["cls"]
+	save_game()
+	changed.emit()
+
+
+## Можно ли сменить класс: плац ≥3 ур. и текущий герой прошёл 5-й этаж.
+## Гость: герой пал — запомнить только самый глубокий этаж.
+func own_hero_best(depth: int) -> void:
+	var h := own_hero()
+	if h.is_empty():
+		return
+	h["best"] = maxi(int(h.get("best", 0)), depth)
+	if _is_guest_copy:
+		_write_own_heroes()
+	else:
+		save_game()
+
+
+func class_change_reason() -> String:
+	if level("training") < 3:
+		return "нужен Тренировочный плац 3 уровня"
+	if hero_cls != "" and int(current_hero().get("best", 0)) < 6:
+		return "герой должен пройти 5-й этаж"
+	return ""
+
+
+func change_class(cls: String) -> void:
+	if not heroes.has(cls):
+		heroes[cls] = {"cls": cls, "level": 1}
+	hero_cls = cls
+	save_game()
+	changed.emit()
+
+
 # ---------------- Кооператив: у гостя — лагерь хозяина ----------------
 
 var _own_persist := true
 var _is_guest_copy := false
+var _own_heroes := {}       # гость: свои герои (лагерь на экране — хозяина)
+var _own_hero_cls := ""
+
+
+## Гость: свой герой (для выбора у портала в лагере хозяина).
+func own_hero() -> Dictionary:
+	if _is_guest_copy:
+		return _own_heroes.get(_own_hero_cls, {})
+	return current_hero()
+
+
+## Гость: записать своих героев в своё сохранение, остальное в нём не трогая.
+func _write_own_heroes() -> void:
+	if not _own_persist:
+		return
+	var data: Variant = {}
+	if FileAccess.file_exists(SAVE_PATH):
+		data = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	if typeof(data) != TYPE_DICTIONARY:
+		data = {}
+	data["heroes"] = _own_heroes
+	data["hero_cls"] = _own_hero_cls
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(data, "  "))
 
 
 ## Хозяин: что показать гостям (постройки, склад, золото лагеря).
@@ -222,6 +302,8 @@ func net_dict() -> Dictionary:
 func apply_host(d: Dictionary) -> void:
 	if not _is_guest_copy:
 		_own_persist = persist
+		_own_heroes = heroes.duplicate(true)
+		_own_hero_cls = hero_cls
 		_is_guest_copy = true
 	persist = false
 	gold = int(d["gold"])
@@ -262,7 +344,7 @@ func save_game() -> void:
 	var data := {
 		"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
 		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
-		"materials": materials, "stash": stash,
+		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -295,6 +377,15 @@ func load_game() -> void:
 				stash.append(_fix_item(it))
 	levels = {}
 	_load_levels(data)
+	heroes = {}
+	var hs: Variant = data.get("heroes", {})
+	if typeof(hs) == TYPE_DICTIONARY:
+		for k: String in hs:
+			if Skills.CLASSES.has(k) and typeof(hs[k]) == TYPE_DICTIONARY:
+				heroes[k] = hs[k]
+	hero_cls = str(data.get("hero_cls", ""))
+	if not heroes.has(hero_cls):
+		hero_cls = ""
 
 
 ## JSON превращает все числа в дробные — возвращаем целые там, где нужно.

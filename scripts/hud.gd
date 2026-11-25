@@ -270,7 +270,8 @@ func _process(delta: float) -> void:
 	elif _player.dead and Net.active():
 		_message.text = "Пали все. Добыча забега потеряна\nR — вернуться в лагерь"
 	elif _player.dead:
-		_message.text = "Вы погибли на %d этаже (уровень %d)\nПотеряно: %d золота, материалы и снаряжение\nR — вернуться в лагерь" % [Run.depth, Run.level, Run.gold]
+		var cp_text := ("Герой вернётся к сохранению на %d этаже" % Run.checkpoint) if Run.checkpoint > 0 else "Герой вернётся к тому, каким был в начале забега"
+		_message.text = "Вы погибли на %d этаже (уровень %d)\nПотеряно: %d золота, материалы и снаряжение. %s\nR — вернуться в лагерь" % [Run.depth, Run.level, Run.gold, cp_text]
 	elif _had_enemies and enemies == 0 and not _cleared_shown and not get_tree().current_scene.get("is_boss_floor"):
 		_cleared_shown = true
 		_message.text = ""
