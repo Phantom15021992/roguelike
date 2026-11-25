@@ -361,10 +361,14 @@ func derived(equip_set: Dictionary = equipment) -> Dictionary:
 	var fort := skill_level("fortitude")
 	var hawk := skill_level("hawk_eye")
 	var med := skill_level("meditation")
+	var dodge := skill_level("dodge")
+	var faith := skill_level("faith")
 
 	var max_hp: int = c["hp"] + s.call("vit") * 10 + s.call("str") * 3 + g.call("hp")
 	if fort > 0:
 		max_hp = int(round(max_hp * (1.0 + Skills.value("fortitude", fort) / 100.0)))
+	if faith > 0:
+		max_hp = int(round(max_hp * (1.0 + Skills.value("faith", faith) / 100.0)))
 	max_hp = int(round(max_hp * Meta.hp_mult() * (1.0 + g.call("hp_pct") / 100.0)))  # Лазарет, комплекты
 	var dmg_mult: float = Meta.damage_mult() * (1.0 + g.call("dmg_pct") / 100.0)          # Кузница, комплекты
 	var dr: float = s.call("vit") * 0.5 + g.call("def") + (Skills.value("fortitude", fort, "v2") if fort > 0 else 0.0)
@@ -377,10 +381,11 @@ func derived(equip_set: Dictionary = equipment) -> Dictionary:
 		"sp_regen": (1.5 + s.call("int") * 0.2) * (1.0 + (Skills.value("meditation", med, "v2") / 100.0 if med > 0 else 0.0)),
 		"crit": 5 + s.call("luk") + g.call("crit") + (int(Skills.value("hawk_eye", hawk)) if hawk > 0 else 0),
 		"crit_mult": 2.0 + s.call("agi") * 0.03,                             # сила крита: x2 + 3% за Ловкость
-		"aspd": s.call("agi") * 2 + g.call("aspd") + (int(Skills.value("hawk_eye", hawk, "v2")) if hawk > 0 else 0),
+		"aspd": s.call("agi") * 2 + g.call("aspd") + (int(Skills.value("hawk_eye", hawk, "v2")) if hawk > 0 else 0) + (int(Skills.value("dodge", dodge, "v2")) if dodge > 0 else 0),
 		"speed": s.call("agi") + g.call("speed"),
 		"dr": minf(dr, 70.0),                                               # % срезаемого урона
-		"eva": mini(g.call("eva"), 50),                                     # % уклонения от ударов монстров
+		"eva": mini(g.call("eva") + (int(Skills.value("dodge", dodge)) if dodge > 0 else 0), 60),
+		"heal_pct": Skills.value("faith", faith, "v2") if faith > 0 else 0.0,   # сила лечения, %                                     # % уклонения от ударов монстров
 		"accuracy": s.call("dex"),                                           # против уклонения монстров
 		"cdr": minf(s.call("dex"), 40),                                      # % сокращения перезарядки навыков
 		"cast": s.call("dex") + g.call("cast") + (Skills.value("mobile_cast", skill_level("mobile_cast")) if skill_level("mobile_cast") > 0 else 0.0),

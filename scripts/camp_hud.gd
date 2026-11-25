@@ -186,10 +186,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_ESCAPE, KEY_E:
 			close()
 			get_viewport().set_input_as_handled()
-		KEY_1, KEY_2, KEY_3:
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			if _open_id == "portal" and _portal_cls == "":
 				var keys := Skills.CLASSES.keys()
-				_pick_class(keys[[KEY_1, KEY_2, KEY_3].find(event.physical_keycode)])
+				_pick_class(keys[[KEY_1, KEY_2, KEY_3, KEY_4, KEY_5].find(event.physical_keycode)])
 				get_viewport().set_input_as_handled()
 
 
@@ -442,7 +442,7 @@ func _fill_portal() -> void:
 		var c: Dictionary = Skills.CLASSES[cls]
 		var card := VBoxContainer.new()
 		var txt := "[b]%s[/b]\n%s\n[color=#a8a0b8]HP %d, SP %d[/color]" % [c["name"], c["desc"], c["hp"], c["sp"]]
-		card.add_child(_rich(80, txt))
+		card.add_child(_rich(56, txt))
 		card.add_child(_button("Выбрать (%d)" % n, func() -> void: _pick_class(cls)))
 		h.add_child(card)
 	_panel_box.add_child(_button("Закрыть (E)", close))

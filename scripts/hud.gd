@@ -721,7 +721,7 @@ func _refresh_stats_panel() -> void:
 
 	var d := Run.derived()
 	var t := "[b]Свободных очков: [color=#%s]%d[/color][/b]\n" % [GOLD.to_html(false), Run.points]
-	var attack_kind: String = {"str": "ближний бой", "dex": "дальний бой", "int": "магия"}[Run.class_data()["primary"]]
+	var attack_kind: String = "ближний бой" if Run.cls == "thief" or Run.job == "monk" else {"str": "ближний бой", "agi": "ближний бой", "dex": "дальний бой", "int": "магия"}[Run.class_data()["primary"]]
 	t += "Атака %d–%d (%s)\nHP %d (+%.1f/с)   SP %d (+%.1f/с)\nКрит %d%%, сила крита %d%%\nСкор. атаки %+d%%   бега %+d%%\nЗащита %.1f%%   Точность %d\nПерезарядка −%d%%   Скор. каста +%d%%\nДроп +%d%%   Крафт +%d\n" % [
 		d["atk_min"], d["atk_max"], attack_kind, d["max_hp"], d["hp_regen"], d["max_sp"], d["sp_regen"],
 		d["crit"], int(d["crit_mult"] * 100), d["aspd"], d["speed"], d["dr"], d["accuracy"], d["cdr"], d["cast"], d["drop"], d["craft"]]
@@ -834,10 +834,8 @@ func _build_class_panel() -> void:
 		card.add_theme_stylebox_override("panel", _box(Color(0.12, 0.1, 0.18), 1))
 		var cv := VBoxContainer.new()
 		card.add_child(cv)
-		var t := _rich(88)
-		var txt := "[b]%s[/b]\n%s\n\n[color=#a8a0b8]HP %d, SP %d[/color]\n[b]Навыки:[/b]\n" % [c["name"], c["desc"], c["hp"], c["sp"]]
-		for id: String in c["skills"]:
-			txt += "• %s\n" % Skills.SKILLS[id]["name"]
+		var t := _rich(56)
+		var txt := "[b]%s[/b]\n%s\n[color=#a8a0b8]HP %d, SP %d[/color]" % [c["name"], c["desc"], c["hp"], c["sp"]]
 		t.text = txt
 		cv.add_child(t)
 		var btn := Button.new()

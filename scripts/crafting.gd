@@ -63,6 +63,15 @@ const RECIPES := {
 	"crossbow": {"mats": {"ore": 4, "obsidian": 2, "bone": 2}, "gold": 70},
 	"element_staff": {"mats": {"sulfur": 4, "dust": 3}, "gold": 70},
 	"sage_book": {"mats": {"spore": 3, "dust": 3, "sulfur": 2}, "gold": 60},
+	# Вор и послушник
+	"knife": {"mats": {"ore": 2, "wing": 2}, "gold": 25},
+	"stiletto": {"mats": {"ore": 3, "bone": 2}, "gold": 35},
+	"cleaver": {"mats": {"ore": 4, "obsidian": 2}, "gold": 60},
+	"katar": {"mats": {"obsidian": 3, "scale": 2}, "gold": 65},
+	"acolyte_rod": {"mats": {"bone": 2, "dust": 3}, "gold": 25},
+	"beads": {"mats": {"bone": 3, "spore": 2}, "gold": 35},
+	"holy_staff": {"mats": {"dust": 4, "sulfur": 3}, "gold": 70},
+	"knuckles": {"mats": {"ore": 4, "scale": 2}, "gold": 60},
 }
 
 const REFINE_MAX := 10

@@ -285,6 +285,22 @@ var HERO_STYLES := {
 	"professor": {"a": Color8(58, 125, 112), "h": Color8(232, 232, 238), "b": Color8(200, 170, 60), "l": Color8(50, 60, 60),
 		"extras": [[4, 5, GOLDC, ["down"]], [6, 5, GOLDC, ["down"]], [7, 5, GOLDC, ["down"]], [8, 5, GOLDC, ["down"]], [9, 5, GOLDC, ["down"]], [11, 5, GOLDC, ["down"]],
 			[8, 5, GOLDC, ["side"]], [10, 5, GOLDC, ["side"]]]},
+	# Вор и его профессии: тёмные цвета, маска/повязка.
+	"thief": {"a": Color8(80, 76, 92), "h": Color8(52, 44, 40), "b": Color8(110, 80, 50), "l": Color8(48, 44, 56),
+		"extras": [[5, 4, Color8(40, 36, 48), ["down"]], [6, 4, Color8(40, 36, 48), ["down"]], [9, 4, Color8(40, 36, 48), ["down"]], [10, 4, Color8(40, 36, 48), ["down"]]]},
+	"bandit": {"a": Color8(140, 70, 40), "h": Color8(60, 40, 30), "b": Color8(70, 50, 40), "l": Color8(80, 60, 45),
+		"extras": [[4, 3, Color8(200, 40, 40), ["down", "up"]], [5, 3, Color8(200, 40, 40), ["down", "up"]], [6, 3, Color8(200, 40, 40), ["down", "up"]],
+			[7, 3, Color8(200, 40, 40), ["down", "up"]], [8, 3, Color8(200, 40, 40), ["down", "up"]], [9, 3, Color8(200, 40, 40), ["down", "up"]],
+			[10, 3, Color8(200, 40, 40), ["down", "up"]], [11, 3, Color8(200, 40, 40), ["down", "up"]], [12, 4, Color8(200, 40, 40), ["down", "up"]]]},
+	"assassin": {"a": Color8(40, 36, 52), "h": Color8(40, 36, 52), "b": Color8(150, 40, 60), "l": Color8(30, 28, 40),
+		"extras": [[5, 5, Color8(40, 36, 52), ["down"]], [6, 5, Color8(40, 36, 52), ["down"]], [7, 5, Color8(40, 36, 52), ["down"]],
+			[8, 5, Color8(40, 36, 52), ["down"]], [9, 5, Color8(40, 36, 52), ["down"]], [10, 5, Color8(40, 36, 52), ["down"]]]},
+	# Послушник и его профессии: светлые одежды.
+	"acolyte": {"a": Color8(210, 200, 170), "h": Color8(120, 80, 50), "b": Color8(150, 110, 60), "l": Color8(140, 120, 90)},
+	"priest": {"a": Color8(236, 236, 244), "h": Color8(200, 170, 90), "b": GOLDC, "l": Color8(200, 200, 215),
+		"extras": [[7, 8, GOLDC, ["down"]], [7, 9, GOLDC, ["down"]], [6, 9, GOLDC, ["down"]], [8, 9, GOLDC, ["down"]], [7, 10, GOLDC, ["down"]]]},
+	"monk": {"a": Color8(220, 140, 40), "h": Color8(242, 199, 154), "b": Color8(120, 60, 30), "l": Color8(160, 90, 30),
+		"extras": [[5, 7, Color8(120, 60, 30), ["down"]], [10, 7, Color8(120, 60, 30), ["down"]]]},
 }
 
 
@@ -945,4 +961,13 @@ var ICONS2 := [
 	[B12, ".kkkkkkkkkk.", "kmmmmmmmmmmk", ".kkkkbbkkkk.", "....kbbk....", "....kbbk....", "....kbbk....", "....kbbk....", "....kbbk....", "...kkbbkk...", "...kbbbbk...", "...kkkkkk..."],
 	["...kkk......", "..kfFfk.....", "..kFrFk.....", "..kfFfk.....", "...kbk......", "....kbk.....", ".....kbk....", "......kbk...", ".......kbk..", "........kbk.", ".........kk.", B12],
 	[B12, "..kkkkkkkk..", "..kdgggggk..", "..kdgyyggk..", "..kdgyyggk..", "..kdgggggk..", "..kdgggggk..", "..kdwwwwwk..", "..kkkkkkkk..", B12, B12, B12],
+	# 30 нож, 31 стилет, 32 тесак, 33 катар, 34 посох послушника, 35 чётки, 36 посох света, 37 кастеты.
+	[B12, "........kk..", ".......kmk..", "......kmMk..", ".....kmMk...", "....kmMk....", "...kmMk.....", "..kbkk......", ".kbbk.......", "kbbk........", "kkk.........", B12],
+	["..........k.", ".........kmk", "........kMk.", ".......kmk..", "......kMk...", ".....kmk....", "...kykk.....", "....kbk.....", "...kbk......", "..kbk.......", "..kk........", B12],
+	[B12, ".kkkkkkk....", ".kmmmmmmk...", ".kmMMMMmk...", ".kmmmmmmk...", ".kkkkmmmk...", "....kbbk....", "....kbbk....", "....kbbk....", "....kbbk....", "....kkkk....", B12],
+	[".....kk.....", "....kmMk....", "....kmMk....", "....kmMk....", "....kmMk....", "...kkmMkk...", "..kyk..kyk..", "..kyk..kyk..", "..kykkkkyk..", "..kyybbyyk..", "..kkkkkkkk..", B12],
+	[".....kk.....", "....kyyk....", "...kyyyyk...", "....kyyk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kk....."],
+	[B12, "....kkkk....", "...kykkyk...", "..ky....yk..", "..k......k..", "..ky....yk..", "...kykkyk...", "....kkyk....", ".....kyk....", "....kyyyk...", ".....kkk....", B12],
+	["....kkkk....", "...kwwwwk...", "...kwyywk...", "...kwwwwk...", "....kkkk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kbk....", ".....kk....."],
+	[B12, B12, "..kkkkkkkk..", ".kmMkmMkmMk.", ".kmmkmmkmmk.", ".kkkkkkkkkk.", ".kmmmmmmmmk.", "..kkkkkkkk..", B12, B12, B12, B12],
 ]

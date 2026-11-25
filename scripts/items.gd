@@ -27,7 +27,7 @@ const BASES := {
 		"stats": {"atk_min": 8, "atk_max": 12}},
 	"axe": {"slot": "weapon", "class": "warrior", "name": "Топор", "gender": 0, "icon": 1,
 		"stats": {"atk_min": 13, "atk_max": 19, "aspd": -15}},
-	"dagger": {"slot": "weapon", "class": "warrior", "name": "Кинжал", "gender": 0, "icon": 2,
+	"dagger": {"slot": "weapon", "class": ["warrior", "thief"], "name": "Кинжал", "gender": 0, "icon": 2,
 		"stats": {"atk_min": 5, "atk_max": 8, "aspd": 25, "crit": 5}},
 	"greataxe": {"slot": "weapon", "class": "warrior", "job": "berserker", "two_hand": true,
 		"name": "Двуручный топор", "gender": 0, "icon": 24,
@@ -53,14 +53,32 @@ const BASES := {
 		"stats": {"atk_min": 15, "atk_max": 21, "sp": 30, "aspd": -10}},
 	"sage_book": {"slot": "weapon", "class": "mage", "job": "professor", "name": "Книга мудреца", "gender": 1, "icon": 29,
 		"stats": {"atk_min": 9, "atk_max": 13, "sp": 20, "cast": 15}},
+	# --- Оружие вора ---
+	"knife": {"slot": "weapon", "class": "thief", "name": "Нож", "gender": 0, "icon": 30,
+		"stats": {"atk_min": 6, "atk_max": 9, "aspd": 15, "crit": 3}},
+	"stiletto": {"slot": "weapon", "class": "thief", "name": "Стилет", "gender": 0, "icon": 31,
+		"stats": {"atk_min": 8, "atk_max": 11, "crit": 8}},
+	"cleaver": {"slot": "weapon", "class": "thief", "job": "bandit", "name": "Тесак", "gender": 0, "icon": 32,
+		"stats": {"atk_min": 14, "atk_max": 20, "aspd": -5, "stun": 3}},
+	"katar": {"slot": "weapon", "class": "thief", "job": "assassin", "name": "Катар", "gender": 0, "icon": 33,
+		"stats": {"atk_min": 11, "atk_max": 15, "aspd": 10, "crit": 12}},
+	# --- Оружие послушника ---
+	"acolyte_rod": {"slot": "weapon", "class": "acolyte", "name": "Посох послушника", "gender": 0, "icon": 34,
+		"stats": {"atk_min": 7, "atk_max": 10, "sp": 15}},
+	"beads": {"slot": "weapon", "class": "acolyte", "name": "Чётки", "gender": 3, "icon": 35,
+		"stats": {"atk_min": 5, "atk_max": 8, "sp": 25, "int": 1, "aspd": 10}},
+	"holy_staff": {"slot": "weapon", "class": "acolyte", "job": "priest", "two_hand": true,
+		"name": "Посох света", "gender": 0, "icon": 36, "stats": {"atk_min": 12, "atk_max": 16, "sp": 35, "int": 2}},
+	"knuckles": {"slot": "weapon", "class": "acolyte", "job": "monk", "name": "Кастеты", "gender": 3, "icon": 37,
+		"stats": {"atk_min": 12, "atk_max": 17, "aspd": 15, "str": 1}},
 	# --- Вторая рука ---
-	"buckler": {"slot": "offhand", "class": "warrior", "name": "Баклер", "gender": 0, "icon": 11,
+	"buckler": {"slot": "offhand", "class": ["warrior", "thief", "acolyte"], "name": "Баклер", "gender": 0, "icon": 11,
 		"stats": {"hp": 10, "def": 4}},
 	"tower_shield": {"slot": "offhand", "class": "warrior", "name": "Башенный щит", "gender": 0, "icon": 12,
 		"stats": {"hp": 25, "def": 8, "speed": -5}},
 	"quiver": {"slot": "offhand", "class": "archer", "name": "Колчан", "gender": 0, "icon": 13,
 		"stats": {"atk": 2, "aspd": 5}},
-	"tome": {"slot": "offhand", "class": "mage", "name": "Гримуар", "gender": 0, "icon": 14,
+	"tome": {"slot": "offhand", "class": ["mage", "acolyte"], "name": "Гримуар", "gender": 0, "icon": 14,
 		"stats": {"sp": 15, "cast": 8}},
 	# --- Голова ---
 	"cap": {"slot": "head", "name": "Кожаная шапка", "gender": 1, "icon": 15, "stats": {"hp": 8, "eva": 2}},
@@ -154,8 +172,10 @@ static func stat_text(key: String, value: int) -> String:
 ## Может ли герой (класс + профессия) носить предмет / базу.
 static func fits_base(base_key: String, cls: String, job: String) -> bool:
 	var b: Dictionary = BASES[base_key]
-	if b.has("class") and cls != "" and b["class"] != cls:
-		return false
+	if b.has("class") and cls != "":
+		var c: Variant = b["class"]
+		if (c is Array and not (cls in c)) or (c is String and c != cls):
+			return false
 	if b.has("job") and b["job"] != job:
 		return false
 	return true

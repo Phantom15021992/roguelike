@@ -60,6 +60,8 @@ func on_damage_dealt(e: Node, amount: int) -> void:
 			_lifesteal_acc -= int(_lifesteal_acc)
 	if special("burn") > 0 and randf() * 100.0 < special("burn"):
 		e.apply_burn(amount * 0.3 / 3.0, 3.0)  # 30% удара за 3 секунды
+	if _poison_time > 0.0:
+		e.apply_burn(amount * _poison_pct / 3.0, 3.0)  # «Отравленный клинок»
 	if special("stun") > 0 and randf() * 100.0 < special("stun") and not e.dead:
 		e.apply_stun(1.0, "stun")
 var _hp_acc := 0.0                 # накопитель дробной регенерации
@@ -328,6 +330,10 @@ func _physics_process(delta: float) -> void:
 		_focus_time -= delta
 		if _focus_time <= 0.0:
 			_apply_stats()
+	_poison_time = maxf(0.0, _poison_time - delta)
+	_smoke_time = maxf(0.0, _smoke_time - delta)
+	_bless_time = maxf(0.0, _bless_time - delta)
+	_iron_time = maxf(0.0, _iron_time - delta)
 	if _overlay:
 		_overlay.queue_redraw()
 
@@ -388,12 +394,14 @@ func roll(mult: float) -> Array:
 	var dmg := randi_range(attack_damage_min, attack_damage_max) * mult * (crit_mult if crit else 1.0)
 	if _focus_time > 0.0:
 		dmg *= 1.5  # «Сосредоточение» снайпера: +50% урона
+	if _bless_time > 0.0:
+		dmg *= 1.0 + _bless_pct / 100.0  # «Благословение»
 	return [maxi(1, int(round(dmg))), crit]
 
 
 ## Магия не промахивается, оружие — может (против уклонения монстра).
 func _missable() -> bool:
-	return st.cls != "mage"
+	return st.cls != "mage" and not (st.cls == "acolyte" and st.job != "monk")
 
 
 # ---------------- Обычная атака ----------------
@@ -409,6 +417,15 @@ func _attack(dir: Vector2) -> void:
 		"mage":
 			var b := _shoot("bolt", dir, 1.0, 150.0, 0.8, BOLT_COLOR)
 			b.explode_radius = 10.0
+		"thief":
+			_slash(dir, 0.75)
+			hit_arc(dir, 22.0, 1.0, 1.0)
+		"acolyte":
+			if st.job == "monk":
+				_slash(dir, 0.7)
+				hit_arc(dir, 22.0, 1.0, 1.0)
+			else:
+				_shoot("bolt", dir, 1.0, 140.0, 0.55, HOLY_COLOR)
 		_:
 			_slash(dir, 1.0)
 			if hit_arc(dir, MELEE_RANGE, MELEE_HALF_ARC, 1.0) > 0:
@@ -571,6 +588,16 @@ func _start_cast(id: String, lvl: int, dir: Vector2, mult: float, time: float, c
 		"prayer":
 			marker.radius = PRAYER_RADIUS
 			marker.position = global_position
+		"holy_light":
+			marker.radius = 26.0
+		"great_heal":
+			marker.radius = 140.0
+			marker.position = global_position
+			marker.color = HEAL_COLOR
+		"resurrect":
+			marker.radius = 70.0
+			marker.position = global_position
+			marker.color = HOLY_COLOR
 		"power_shot":
 			marker.radius = 160.0 * _range_mult()
 			marker.arc_half = 0.04
@@ -1018,6 +1045,255 @@ func _cast_backstep(lvl: int, dir: Vector2, _mult: float) -> void:
 	Game.float_text(global_position + Vector2(0, -24), "Следующий выстрел — крит", Color(1.0, 0.85, 0.3))
 
 
+# ---------------- Вор, Бандит, Ассасин ----------------
+
+const POISON_COLOR := Color(0.45, 0.85, 0.3)
+const SMOKE_COLOR := Color(0.6, 0.6, 0.66)
+var _poison_time := 0.0          # «Отравленный клинок»: удары отравляют
+var _poison_pct := 0.0
+var _smoke_time := 0.0           # «Дымовая шашка»: +уклонение
+var _smoke_eva := 0.0
+var _bless_time := 0.0           # «Благословение»: +урон
+var _bless_pct := 0.0
+var _iron_time := 0.0            # «Железная кожа»: −получаемый урон
+var _iron_pct := 0.0
+
+
+## Серия ударов по дуге с паузами (шквал уколов, град ударов).
+func _flurry(dir: Vector2, hits: int, gap: float, mult: float, reach := 34.0) -> void:
+	for i in hits:
+		get_tree().create_timer(gap * i, false).timeout.connect(func() -> void:
+			if dead:
+				return
+			_slash(dir, 0.6)
+			hit_arc(dir, reach, 0.8, mult))
+
+
+func _cast_stab_flurry(_lvl: int, dir: Vector2, mult: float) -> void:
+	_flurry(dir, 3, 0.1, mult)
+
+
+func _cast_poison_blade(_lvl: int, _dir: Vector2, mult: float) -> void:
+	_poison_time = 8.0
+	_poison_pct = mult
+	Game.burst(center(), POISON_COLOR, 14)
+	Game.float_text(global_position + Vector2(0, -24), "Клинок отравлен", POISON_COLOR)
+
+
+func _cast_smoke_bomb(lvl: int, _dir: Vector2, _mult: float) -> void:
+	var cloud: Node2D = PUDDLE.new()
+	cloud.team = "player"
+	cloud.caster = self
+	cloud.radius = 36.0
+	cloud.lifetime = 4.0
+	cloud.slow = 0.6
+	cloud.color = SMOKE_COLOR
+	cloud.position = global_position
+	Game.ground().add_child(cloud)
+	_smoke_time = 4.0
+	_smoke_eva = Skills.value("smoke_bomb", lvl)
+	Game.burst(center(), SMOKE_COLOR, 24)
+
+
+func _cast_knife_fan(_lvl: int, dir: Vector2, mult: float) -> void:
+	for i in 5:
+		var d := dir.rotated(-0.4 + 0.2 * i)
+		_shoot("arrow", d, mult, 210.0, 0.45, Color(0.8, 0.82, 0.9))
+
+
+func _cast_mug(lvl: int, dir: Vector2, mult: float) -> void:
+	_slash(dir, 1.1)
+	var chance := Skills.value("mug", lvl, "v2") / 100.0
+	for e in _enemies_in_arc(dir, 36.0, MELEE_HALF_ARC):
+		var r := roll(mult)
+		deal(e, r[0], center(), r[1], _missable())
+		if randf() < chance and is_instance_valid(e):
+			for k in randi_range(2, 4):
+				e._spawn_pickup("gold", {})
+			Game.float_text(e.global_position + Vector2(0, -22), "Ограблен!", Color(1.0, 0.85, 0.3))
+
+
+func _cast_stun_club(_lvl: int, dir: Vector2, mult: float) -> void:
+	_slash(dir, 1.2)
+	for e in _enemies_in_arc(dir, 36.0, MELEE_HALF_ARC):
+		var r := roll(mult)
+		deal(e, r[0], center(), r[1], _missable())
+		if is_instance_valid(e) and not e.dead:
+			e.apply_stun(2.0, "stun")
+	Game.shake(2.0, 0.15)
+
+
+func _cast_shadow_step(_lvl: int, dir: Vector2, mult: float) -> void:
+	var best: Node2D = null
+	var best_d := 140.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		var d: float = e.global_position.distance_to(global_position)
+		if d < best_d:
+			best_d = d
+			best = e
+	if best == null:
+		_hint("Некого — рядом нет монстров", Color(0.8, 0.8, 0.85))
+		return
+	Game.burst(center(), Color(0.4, 0.3, 0.55), 16)
+	var from_hero := (best.global_position - global_position).normalized()
+	if from_hero == Vector2.ZERO:
+		from_hero = dir
+	global_position = best.global_position + from_hero * 12.0
+	_turn_to(-from_hero)
+	_next_crit = true
+	var r := roll(mult)
+	_slash(-from_hero, 1.0)
+	deal(best, r[0], center(), true, false)
+	Game.burst(center(), Color(0.4, 0.3, 0.55), 16)
+
+
+func _cast_venom_cloud(_lvl: int, dir: Vector2, mult: float) -> void:
+	var cloud: Node2D = PUDDLE.new()
+	cloud.team = "player"
+	cloud.caster = self
+	cloud.mult = mult
+	cloud.radius = 30.0
+	cloud.lifetime = 5.0
+	cloud.color = POISON_COLOR
+	cloud.position = _cast_target(dir, 110.0)
+	Game.ground().add_child(cloud)
+
+
+func _cast_execute(_lvl: int, dir: Vector2, mult: float) -> void:
+	_slash(dir, 1.2)
+	for e in _enemies_in_arc(dir, 36.0, MELEE_HALF_ARC):
+		var low: bool = e.hp < e.max_hp * 0.3
+		var r := roll(mult * (2.0 if low else 1.0))
+		deal(e, r[0], center(), r[1], _missable())
+		if low:
+			Game.float_text(e.global_position + Vector2(0, -24), "Казнь!", Color(1.0, 0.4, 0.4))
+
+
+func _enemies_in_arc(dir: Vector2, reach: float, half_arc: float) -> Array:
+	var out := []
+	for e in get_tree().get_nodes_in_group("enemies"):
+		var to: Vector2 = (e.global_position + Vector2(0, -6)) - center()
+		if to.length() <= reach and (absf(dir.angle_to(to)) <= half_arc or to.length() < 8.0):
+			out.append(e)
+	return out
+
+
+# ---------------- Послушник, Священник, Монах ----------------
+
+const HEAL_COLOR := Color(0.5, 1.0, 0.55)
+
+
+## Сколько лечит навык: база + за Интеллект, с «Верой».
+func _heal_amount(base: float, per_int: float) -> int:
+	var d: Dictionary = st.derived()
+	return int(round((base + per_int * (d["stats"]["int"] - 1)) * (1.0 + d["heal_pct"] / 100.0)))
+
+
+## Вылечить себя и союзников в радиусе.
+func _heal_allies(radius: float, amount: int) -> void:
+	for h in get_tree().get_nodes_in_group("player"):
+		if not h.dead and h.global_position.distance_to(global_position) <= radius:
+			h.heal_by(amount)
+	Game.ring(global_position, radius, HEAL_COLOR, 0.4)
+
+
+func heal_by(amount: int) -> void:
+	if dead or amount <= 0 or hp >= max_hp:
+		return
+	var got := mini(amount, max_hp - hp)
+	hp += got
+	Game.float_text(global_position + Vector2(0, -24), "+%d" % got, HEAL_COLOR)
+	Game.burst(center(), HEAL_COLOR, 8)
+
+
+func bless(time: float, pct: float) -> void:
+	if dead:
+		return
+	_bless_time = time
+	_bless_pct = pct
+	Game.burst(center(), HOLY_COLOR, 12)
+
+
+## Поднять павшего (Воскрешение священника).
+func revive(pct: float) -> void:
+	if not dead:
+		return
+	dead = false
+	hp = maxi(1, int(max_hp * pct / 100.0))
+	collision_layer = 2
+	sprite.rotation = 0.0
+	sprite.modulate = Color.WHITE
+	_invuln = 2.0
+	Game.burst(center(), HOLY_COLOR, 30)
+	Game.float_text(global_position + Vector2(0, -26), "Воскрешён!", HOLY_COLOR)
+
+
+func _cast_heal(lvl: int, _dir: Vector2, _mult: float) -> void:
+	_heal_allies(80.0, _heal_amount(Skills.value("heal", lvl), 2.0))
+
+
+func _cast_blessing(lvl: int, _dir: Vector2, _mult: float) -> void:
+	for h in get_tree().get_nodes_in_group("player"):
+		if h.global_position.distance_to(global_position) <= 80.0:
+			h.bless(20.0, Skills.value("blessing", lvl))
+	Game.ring(global_position, 80.0, HOLY_COLOR, 0.4)
+
+
+func _release_holy_light(_lvl: int, target: Vector2, mult: float) -> void:
+	Game.ring(target, 26.0, HOLY_COLOR, 0.35)
+	Game.burst(target + Vector2(0, -10), HOLY_COLOR, 20)
+	hit_circle(target, 26.0, mult)
+
+
+func _release_great_heal(lvl: int, _target: Vector2, _mult: float) -> void:
+	_heal_allies(140.0, _heal_amount(Skills.value("great_heal", lvl), 3.0))
+
+
+func _release_resurrect(lvl: int, _target: Vector2, _mult: float) -> void:
+	var best: Node = null
+	var best_d := 70.0
+	for h in get_tree().get_nodes_in_group("player"):
+		if h != self and h.dead:
+			var d: float = h.global_position.distance_to(global_position)
+			if d < best_d:
+				best_d = d
+				best = h
+	if best == null:
+		_hint("Некого воскрешать", Color(0.8, 0.8, 0.85))
+		return
+	best.revive(Skills.value("resurrect", lvl))
+
+
+func _cast_sanctuary(lvl: int, dir: Vector2, _mult: float) -> void:
+	var zone: Node2D = PUDDLE.new()
+	zone.team = "player"
+	zone.caster = self
+	zone.mult = Skills.value("sanctuary", lvl, "v2") / 100.0
+	zone.heal = int(round(Skills.value("sanctuary", lvl) * (1.0 + st.derived()["heal_pct"] / 100.0)))
+	zone.radius = 40.0
+	zone.lifetime = 6.0
+	zone.color = HOLY_COLOR
+	zone.position = _cast_target(dir, 110.0)
+	Game.ground().add_child(zone)
+
+
+func _cast_chi_flurry(_lvl: int, dir: Vector2, mult: float) -> void:
+	_flurry(dir, 5, 0.08, mult, 34.0)
+
+
+func _cast_chi_wave(_lvl: int, dir: Vector2, mult: float) -> void:
+	var b := _shoot("bolt", dir, mult, 170.0, 0.7, Color(0.75, 0.9, 1.0))
+	b.pierce = 99
+	b.missable = false
+
+
+func _cast_iron_skin(lvl: int, _dir: Vector2, _mult: float) -> void:
+	_iron_time = 6.0
+	_iron_pct = Skills.value("iron_skin", lvl)
+	Game.burst(center(), Color(0.75, 0.75, 0.8), 16)
+	Game.float_text(global_position + Vector2(0, -24), "Железная кожа", Color(0.85, 0.85, 0.9))
+
+
 # ---------------- Рывок / отскок ----------------
 
 var _dash_stun := false          # святой рывок паладина оглушает задетых
@@ -1153,7 +1429,8 @@ func take_damage(amount: int, from: Vector2) -> void:
 	if dead or _invuln > 0.0:
 		return
 	# Уклонение (снаряжение): удар не прошёл.
-	if evasion > 0 and randf() * 100.0 < evasion:
+	var eva: float = evasion + (_smoke_eva if _smoke_time > 0.0 else 0.0)
+	if eva > 0.0 and randf() * 100.0 < eva:
 		_invuln = 0.3
 		Game.float_text(global_position + Vector2(0, -22), "Уклонение", Color(0.8, 0.9, 1.0))
 		return
@@ -1170,8 +1447,9 @@ func take_damage(amount: int, from: Vector2) -> void:
 			deal(best, maxi(1, int(round(amount * special("thorns") / 100.0))), global_position, false, false)
 	if god:
 		amount = 0
-	elif damage_reduction > 0.0:
-		amount = maxi(1, int(round(amount * (1.0 - damage_reduction / 100.0))))
+	elif damage_reduction > 0.0 or _iron_time > 0.0:
+		var cut: float = damage_reduction + (_iron_pct if _iron_time > 0.0 else 0.0)
+		amount = maxi(1, int(round(amount * (1.0 - minf(cut, 85.0) / 100.0))))
 	hp = maxi(0, hp - amount)
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("  PLAYER hurt %d from %s -> hp %d" % [amount, from, hp])
