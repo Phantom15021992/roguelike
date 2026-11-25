@@ -404,7 +404,14 @@ func _fill_stash() -> void:
 	if Meta.stash.is_empty():
 		_panel_box.add_child(_rich(250, "Склад пуст. Создай предмет или вернись из подземелья через портал после босса."))
 		return
-	var list := _scroll(96)
+	# Удобство: разобрать разом все обычные (белые) незаточенные предметы.
+	var commons := 0
+	for it: Dictionary in Meta.stash:
+		if int(it["rarity"]) == 0 and Crafting.refine_level(it) == 0:
+			commons += 1
+	if commons > 0:
+		_panel_box.add_child(_button("Разобрать все обычные (%d)" % commons, _salvage_commons, true, 5))
+	var list := _scroll(90)
 	for i in Meta.stash.size():
 		var item: Dictionary = Meta.stash[i]
 		var row := _hc()
@@ -429,6 +436,26 @@ func _refine_stash(item: Dictionary, bonus: float) -> void:
 	var ok := Crafting.try_refine(item, bonus)
 	_result = ("[color=#%s]Успех! %s[/color]" if ok else "[color=#%s]Неудача… %s[/color]") % [
 		(GOOD if ok else BAD).to_html(false), Items.display_name(item)]
+	Meta.save_game()
+	Meta.changed.emit()
+
+
+func _salvage_commons() -> void:
+	var total := {}
+	var n := 0
+	for i in range(Meta.stash.size() - 1, -1, -1):
+		var it: Dictionary = Meta.stash[i]
+		if int(it["rarity"]) == 0 and Crafting.refine_level(it) == 0:
+			var got := Crafting.salvage(it)
+			for id: String in got:
+				total[id] = total.get(id, 0) + got[id]
+			Meta.stash.remove_at(i)
+			n += 1
+	Meta.add_materials(total)
+	var parts: PackedStringArray = []
+	for id: String in total:
+		parts.append("%s ×%d" % [Crafting.mat_name(id), total[id]])
+	_result = "Разобрано предметов: %d → %s" % [n, ", ".join(parts)]
 	Meta.save_game()
 	Meta.changed.emit()
 

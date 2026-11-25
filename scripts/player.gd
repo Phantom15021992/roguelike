@@ -420,11 +420,11 @@ func _attack(dir: Vector2) -> void:
 			b.explode_radius = 10.0
 		"thief":
 			_slash(dir, 0.75)
-			hit_arc(dir, 22.0, 1.0, 1.0)
+			hit_arc(dir, MELEE_RANGE, 1.0, 1.0)
 		"acolyte":
 			if st.job == "monk":
 				_slash(dir, 0.7)
-				hit_arc(dir, 22.0, 1.0, 1.0)
+				hit_arc(dir, MELEE_RANGE, 1.0, 1.0)
 			else:
 				_shoot("bolt", dir, 1.0, 140.0, 0.55, HOLY_COLOR)
 		_:

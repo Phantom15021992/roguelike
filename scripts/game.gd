@@ -11,6 +11,8 @@ var attacker: Node   # герой, который сейчас наносит у
 var menu_done := false  # меню «одиночная / кооператив» уже показано
 var coop_depth := 1     # кооп: с какого этажа начнёт хозяин
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
+const PAUSE_MENU := preload("res://scripts/pause_menu.gd")
+var pause_menu: CanvasLayer
 var _shake_time := 0.0
 var _shake_strength := 0.0
 
@@ -35,6 +37,8 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	pause_menu = PAUSE_MENU.new()
+	add_child(pause_menu)
 	# Для тестов: `--depth=3` — начать сразу с нужного этажа.
 	# `--class=archer` — сразу выбрать класс (в автотесте без него — случайный).
 	for arg in OS.get_cmdline_user_args():
@@ -48,7 +52,7 @@ func _ready() -> void:
 			Run.set_class(Skills.JOBS[j]["base"])
 			Run.set_job(j)
 	if Run.cls == "" and ("--autotest" in OS.get_cmdline_user_args()):
-		Run.set_class(["warrior", "archer", "mage"].pick_random())
+		Run.set_class(["warrior", "archer", "mage", "thief", "acolyte"].pick_random())
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
@@ -385,6 +389,14 @@ func _uitest() -> void:
 		await get_tree().process_frame
 	_shot("ui_6_map")
 	hud.toggle_map()
+	pause_menu.open()
+	await _wait(0.3)
+	_shot("ui_6b_pause")
+	pause_menu.open("help")
+	await _wait(0.3)
+	_shot("ui_6c_help")
+	pause_menu.close()
+	await _wait(0.2)
 	# Каст мага: метеорит (полоса + синий круг), потом метель.
 	for id in ["meteor", "chain_lightning", "blizzard"]:
 		Run.skill_levels[id] = 3
@@ -429,9 +441,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_ESCAPE:
-				# В браузере выход только «замораживает» вкладку — там Esc ничего не делает.
-				if not OS.has_feature("web"):
-					get_tree().quit()
+				# Меню паузы (выход из игры — кнопкой в нём; в браузере выхода нет).
+				if not pause_menu.is_open():
+					pause_menu.open()
+			KEY_F1:
+				if not pause_menu.is_open():
+					pause_menu.open("help")
 			KEY_R:
 				var p := local_hero()
 				if p and p.dead:
@@ -632,6 +647,8 @@ func random_hero_state() -> Node:
 
 ## Открыто ли окно, которое перехватывает управление героем.
 func ui_blocks_input() -> bool:
+	if pause_menu and pause_menu.is_open():
+		return true
 	var scene := get_tree().current_scene
 	if scene == null:
 		return false
@@ -757,6 +774,8 @@ func banner(text: String, time := 2.0) -> void:
 
 func shake(strength: float, duration: float) -> void:
 	Net.fx("shake", [strength, duration])
+	if not Meta.setting("shake"):
+		return
 	_shake_strength = maxf(strength, _shake_strength if _shake_time > 0.0 else 0.0)
 	_shake_time = maxf(duration, _shake_time)
 
@@ -770,6 +789,8 @@ func hitstop(duration: float) -> void:
 
 func damage_number(pos: Vector2, value: int, color := Color.WHITE) -> void:
 	Net.fx("damage_number", [pos, value, color])
+	if not Meta.setting("numbers"):
+		return
 	var n: Node2D = DAMAGE_NUMBER.new()
 	n.value = value
 	n.color = color
@@ -952,7 +973,7 @@ func _autotest() -> void:
 				if Run.learn_skill(id):
 					print("  bot learns %s -> %d" % [id, Run.skill_level(id)])
 					break
-		var ranged := Run.cls != "warrior"
+		var ranged := not (Run.cls in ["warrior", "thief"] or Run.job == "monk")
 		var attack_range := 60.0 if ranged else 24.0
 		var keep_range := 45.0 if ranged else 16.0
 

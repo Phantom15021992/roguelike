@@ -281,6 +281,7 @@ func _process(delta: float) -> void:
 
 	_update_tooltip()
 	_update_boss_bar()
+	_update_stairs_arrow(enemies)
 	var thing: Node2D = null if (_player.dead or stats_open) else _player.nearest_interactable()
 	_prompt.text = thing.prompt() if thing else ""
 
@@ -879,6 +880,47 @@ func _build_boss_bar() -> void:
 	_boss_box.add_child(_boss_bar)
 	_boss_box.visible = false
 	add_child(_boss_box)
+
+
+# ---------------- Стрелка к лестнице (удобство) ----------------
+# Когда этаж зачищен, а лестница за краем экрана — у края экрана стрелка в её сторону.
+
+var _arrow: Control
+var _arrow_pos := Vector2.ZERO
+var _arrow_dir := Vector2.ZERO
+
+
+func _update_stairs_arrow(enemies: int) -> void:
+	if _arrow == null:
+		_arrow = Control.new()
+		_arrow.size = Vector2(320, 180)
+		_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_arrow.draw.connect(_draw_arrow)
+		add_child(_arrow)
+	var scene := get_tree().current_scene
+	var stairs: Variant = scene.get("stairs_pos") if scene else null
+	_arrow_dir = Vector2.ZERO
+	if stairs != null and enemies == 0 and stairs.x > -1000 and _player and not _player.dead:
+		var screen: Vector2 = get_viewport().get_canvas_transform() * (stairs as Vector2)
+		var vp := get_viewport().get_visible_rect().size
+		var k := 320.0 / vp.x
+		var p := screen * k
+		if p.x < 0 or p.y < 0 or p.x > 320 or p.y > 180:
+			var c := Vector2(160, 90)
+			_arrow_dir = (p - c).normalized()
+			_arrow_pos = c + _arrow_dir * Vector2(148, 76).length() * 0.6
+			_arrow_pos = _arrow_pos.clamp(Vector2(10, 22), Vector2(310, 150))
+	_arrow.queue_redraw()
+
+
+func _draw_arrow() -> void:
+	if _arrow_dir == Vector2.ZERO:
+		return
+	var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 150.0)
+	var tip := _arrow_pos + _arrow_dir * 6.0
+	var side := _arrow_dir.orthogonal() * 4.0
+	var base := _arrow_pos - _arrow_dir * 2.0
+	_arrow.draw_colored_polygon(PackedVector2Array([tip, base + side, base - side]), Color(1.0, 0.85, 0.3, pulse))
 
 
 func _update_boss_bar() -> void:

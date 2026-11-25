@@ -54,6 +54,7 @@ var mine_time := 0.0       # когда шахту проверяли после
 var materials := {}        # материалы лагеря
 var stash: Array = []      # склад снаряжения (предметы-словари)
 var last_run := {}         # итоги последнего забега — показать в лагере
+var settings := {"shake": true, "numbers": true}  # настройки (меню по Esc)
 var heroes := {}           # сохранённые герои по классам (см. Run.to_hero)
 var hero_cls := ""        # активный класс ("" — героя ещё нет)
 var persist := true
@@ -211,6 +212,19 @@ func bank_run(depth: int, run_gold: int, run_level: int, cls_name: String, mats:
 	changed.emit()
 
 
+# ---------------- Настройки ----------------
+
+func setting(key: String) -> bool:
+	return bool(settings.get(key, true))
+
+
+func set_setting(key: String, value: bool) -> void:
+	settings[key] = value
+	if _is_guest_copy:
+		return  # у гостя на экране лагерь хозяина — настройку применим, но не запишем
+	save_game()
+
+
 # ---------------- Сохранённый герой ----------------
 
 func current_hero() -> Dictionary:
@@ -345,6 +359,7 @@ func save_game() -> void:
 		"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
 		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
 		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
+		"settings": settings,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -384,6 +399,10 @@ func load_game() -> void:
 			if Skills.CLASSES.has(k) and typeof(hs[k]) == TYPE_DICTIONARY:
 				heroes[k] = hs[k]
 	hero_cls = str(data.get("hero_cls", ""))
+	var se: Variant = data.get("settings", {})
+	if typeof(se) == TYPE_DICTIONARY:
+		for k: String in se:
+			settings[k] = se[k]
 	if not heroes.has(hero_cls):
 		hero_cls = ""
 

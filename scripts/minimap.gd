@@ -1,4 +1,6 @@
 extends Control
+
+const Items := preload("res://scripts/items.gd")
 ## Карта этажа с туманом войны. Открывается по мере исследования (герой видит REVEAL клеток вокруг).
 ## Маленькая — в правом верхнем углу (участок вокруг героя), большая — по клавише M, весь этаж.
 ## Метки: герой, лестница, наковальня, порталы, босс — только там, где уже побывал.
@@ -167,6 +169,14 @@ func _draw_markers(to_map: Callable, s: float) -> void:
 	for n in get_tree().get_nodes_in_group("interactables"):
 		if n.has_method("map_color") and is_explored(n.global_position):
 			_dot(to_map.call(n.global_position), r + 0.5, n.map_color())
+	# Предметы на полу — цветом редкости (удобство: не пропустить лут).
+	for it in get_tree().get_nodes_in_group("pickups"):
+		if it.kind == "item" and is_explored(it.global_position):
+			_dot(to_map.call(it.global_position), maxf(0.5, r - 0.5), Items.color(it.item))
+	# Другие герои (кооп).
+	for h in get_tree().get_nodes_in_group("player"):
+		if not h.is_local():
+			_dot(to_map.call(h.global_position), r + 0.5, Color(0.4, 1.0, 0.5) if not h.dead else Color(0.5, 0.5, 0.55))
 	# Босс.
 	for b in get_tree().get_nodes_in_group("boss"):
 		if not b.dead and is_explored(b.global_position):
