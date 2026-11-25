@@ -1,0 +1,185 @@
+extends RefCounted
+## Крафт: материалы, рецепты, заточка (как в Ragnarok: +1…+10).
+##
+## Материалы выпадают с монстров (у каждого вида свой), руду даёт шахта лагеря,
+## редкие материалы — с боссов (с ними создание гарантирует редкий предмет).
+## Заточка: каждый уровень +10% ко всем положительным свойствам предмета.
+## До +4 всегда успешно, дальше шанс падает; неудача — уровень заточки −1.
+
+const Items := preload("res://scripts/items.gd")
+
+const MATERIALS := {
+	"gel": {"name": "Слизь", "icon": 0},
+	"dust": {"name": "Эфирная пыль", "icon": 1},
+	"wing": {"name": "Перепонка", "icon": 2},
+	"bone": {"name": "Кость", "icon": 3},
+	"spore": {"name": "Споры", "icon": 4},
+	"ore": {"name": "Руда", "icon": 5},
+	"crown": {"name": "Корона слизней", "icon": 6, "rare": true},
+	"phylactery": {"name": "Филактерия", "icon": 7, "rare": true},
+	"sulfur": {"name": "Сера", "icon": 8},
+	"obsidian": {"name": "Обсидиан", "icon": 9},
+	"scale": {"name": "Чешуя", "icon": 10},
+	"ember_heart": {"name": "Сердце пламени", "icon": 11, "rare": true},
+}
+
+# Обычные материалы (не редкие) — ими платят за заточку.
+const COMMON := ["gel", "dust", "wing", "bone", "spore", "ore", "sulfur", "obsidian", "scale"]
+# Редкие (с боссов): при создании гарантируют редкий предмет.
+const RARE := ["crown", "phylactery", "ember_heart"]
+
+# Рецепты: база предмета → материалы и золото.
+const RECIPES := {
+	"sword": {"mats": {"ore": 3, "bone": 2}, "gold": 30},
+	"axe": {"mats": {"ore": 5, "bone": 2}, "gold": 40},
+	"dagger": {"mats": {"ore": 2, "wing": 3}, "gold": 30},
+	"bow": {"mats": {"bone": 3, "wing": 3}, "gold": 30},
+	"longbow": {"mats": {"bone": 5, "wing": 3}, "gold": 40},
+	"wand": {"mats": {"dust": 3, "gel": 2}, "gold": 30},
+	"staff": {"mats": {"dust": 5, "spore": 2}, "gold": 40},
+	"leather": {"mats": {"gel": 4, "wing": 2}, "gold": 25},
+	"chain": {"mats": {"ore": 6, "bone": 2}, "gold": 45},
+	"ring": {"mats": {"dust": 3, "ore": 1}, "gold": 30},
+	"amulet": {"mats": {"spore": 3, "dust": 2}, "gold": 30},
+	# Вторая рука
+	"buckler": {"mats": {"ore": 2, "bone": 2}, "gold": 25},
+	"tower_shield": {"mats": {"ore": 6, "obsidian": 2}, "gold": 50},
+	"quiver": {"mats": {"wing": 3, "bone": 2}, "gold": 25},
+	"tome": {"mats": {"dust": 4, "spore": 2}, "gold": 30},
+	# Голова, плащ, обувь, украшения
+	"cap": {"mats": {"gel": 3, "wing": 1}, "gold": 20},
+	"helm": {"mats": {"ore": 4}, "gold": 30},
+	"circlet": {"mats": {"dust": 3, "ore": 2}, "gold": 35},
+	"cape": {"mats": {"wing": 4, "gel": 2}, "gold": 25},
+	"mantle": {"mats": {"dust": 3, "spore": 3}, "gold": 30},
+	"shoes": {"mats": {"gel": 2, "scale": 2}, "gold": 25},
+	"greaves": {"mats": {"ore": 4, "obsidian": 1}, "gold": 35},
+	"band": {"mats": {"ore": 2, "sulfur": 2}, "gold": 35},
+	"talisman": {"mats": {"bone": 3, "obsidian": 1}, "gold": 35},
+	# Оружие профессий — из материалов глубоких этажей
+	"greataxe": {"mats": {"obsidian": 4, "ore": 4}, "gold": 70},
+	"mace": {"mats": {"ore": 4, "bone": 3}, "gold": 55},
+	"hunter_bow": {"mats": {"scale": 3, "wing": 3}, "gold": 55},
+	"crossbow": {"mats": {"ore": 4, "obsidian": 2, "bone": 2}, "gold": 70},
+	"element_staff": {"mats": {"sulfur": 4, "dust": 3}, "gold": 70},
+	"sage_book": {"mats": {"spore": 3, "dust": 3, "sulfur": 2}, "gold": 60},
+}
+
+const REFINE_MAX := 10
+const REFINE_STEP := 0.10
+# Шанс успеха при заточке ДО уровня N (индекс = текущий уровень): +1..+4 — 100%.
+const REFINE_CHANCE := [100, 100, 100, 100, 80, 65, 50, 35, 25, 15]
+
+
+static func mat_name(id: String) -> String:
+	return MATERIALS[id]["name"]
+
+
+# ---------------- Заточка ----------------
+
+static func refine_level(item: Dictionary) -> int:
+	return item.get("refine", 0)
+
+
+## Свойства предмета с учётом заточки (положительные значения растут на 10% за уровень).
+static func effective_stats(item: Dictionary) -> Dictionary:
+	var r := refine_level(item)
+	var out := {}
+	for k: String in item["stats"]:
+		var v: int = item["stats"][k]
+		out[k] = int(round(v * (1.0 + REFINE_STEP * r))) if v > 0 and r > 0 else v
+	return out
+
+
+## Шанс успеха (%) с учётом бонуса (Удача в подземелье, мастерская в лагере).
+static func refine_chance(item: Dictionary, bonus: float) -> int:
+	var lvl := refine_level(item)
+	if lvl >= REFINE_MAX:
+		return 0
+	return clampi(int(REFINE_CHANCE[lvl] + bonus), 0, 100)
+
+
+## Цена заточки: золото и любые обычные материалы.
+static func refine_cost(item: Dictionary) -> Dictionary:
+	var lvl := refine_level(item)
+	return {"gold": 15 * (lvl + 1), "mats": lvl + 1}
+
+
+## Хватает ли ресурсов. mats — словарь материалов (забега или лагеря).
+static func can_pay_refine(item: Dictionary, gold: int, mats: Dictionary) -> bool:
+	var c := refine_cost(item)
+	return refine_level(item) < REFINE_MAX and gold >= c["gold"] and common_count(mats) >= c["mats"]
+
+
+static func common_count(mats: Dictionary) -> int:
+	var n := 0
+	for id in COMMON:
+		n += mats.get(id, 0)
+	return n
+
+
+## Списать N обычных материалов — начиная с тех, которых больше всего.
+static func take_common(mats: Dictionary, n: int) -> void:
+	while n > 0:
+		var best := ""
+		for id in COMMON:
+			if mats.get(id, 0) > 0 and (best == "" or mats[id] > mats[best]):
+				best = id
+		if best == "":
+			return
+		mats[best] -= 1
+		n -= 1
+
+
+## Попытка заточки. Возвращает true при успехе. Ресурсы списывает вызывающий.
+static func try_refine(item: Dictionary, bonus: float) -> bool:
+	var ok := randf() * 100.0 < refine_chance(item, bonus)
+	if ok:
+		item["refine"] = refine_level(item) + 1
+	elif refine_level(item) > 0:
+		item["refine"] = refine_level(item) - 1
+	return ok
+
+
+# ---------------- Создание ----------------
+
+static func can_craft(base: String, gold: int, mats: Dictionary) -> bool:
+	var r: Dictionary = RECIPES[base]
+	if gold < r["gold"]:
+		return false
+	for id: String in r["mats"]:
+		if mats.get(id, 0) < r["mats"][id]:
+			return false
+	return true
+
+
+## Создать предмет. rare_mat — id редкого материала ("" — без него): гарантирует редкий.
+## workshop_level повышает шанс хорошей редкости и силу предмета.
+static func craft(base: String, workshop_level: int, rare_mat := "") -> Dictionary:
+	var rarity := 0
+	var r := randf()
+	if rare_mat != "" or r < 0.08 + 0.06 * workshop_level:
+		rarity = 2
+	elif r < 0.45:
+		rarity = 1
+	var item := Items.make(base, rarity, 1 + workshop_level)
+	item["crafted"] = true
+	return item
+
+
+## Разобрать предмет: вернуть примерно половину материалов рецепта (минимум 1).
+static func salvage(item: Dictionary) -> Dictionary:
+	var out := {}
+	var recipe: Dictionary = RECIPES.get(item["base"], {"mats": {"ore": 2}})
+	for id: String in recipe["mats"]:
+		out[id] = maxi(1, int(recipe["mats"][id] / 2.0 + refine_level(item) * 0.5))
+	return out
+
+
+static func recipe_text(base: String) -> String:
+	var r: Dictionary = RECIPES[base]
+	var parts: PackedStringArray = []
+	for id: String in r["mats"]:
+		parts.append("%s ×%d" % [mat_name(id), r["mats"][id]])
+	parts.append("%d зол." % r["gold"])
+	return ", ".join(parts)
