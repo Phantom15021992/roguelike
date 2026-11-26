@@ -842,6 +842,13 @@ func _fill_coop() -> void:
 		_key_edit.max_length = 6
 		_key_edit.custom_minimum_size = Vector2(60, 0)
 		_key_edit.add_theme_font_size_override("font_size", 7)
+		if Game.touch_enabled():
+			# Телефон: ключ набирается кнопками ниже, клавиатура телефона не вылезает.
+			_key_edit.editable = false
+			_key_edit.virtual_keyboard_enabled = false
+			_key_edit.focus_mode = Control.FOCUS_NONE
+			_key_edit.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_key_edit.add_theme_color_override("font_uneditable_color", Color(1.0, 0.85, 0.3))
 		h.add_child(_key_edit)
 		h.add_child(_button("Подключиться", func() -> void:
 			if _key_edit.text.strip_edges().length() >= 4:
