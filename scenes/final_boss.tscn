@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/final_boss.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/shadow.png" id="2_shadow"]
+
+[sub_resource type="CircleShape2D" id="body"]
+radius = 10.0
+
+[node name="FinalBoss" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 5
+motion_mode = 1
+script = ExtResource("1_script")
+max_hp = 1800
+contact_damage = 0
+color = Color(1, 0.45, 0.15, 1)
+xp_reward = 500
+item_chance = 0.0
+evasion = 5
+
+[node name="Shadow" type="Sprite2D" parent="."]
+position = Vector2(0, -1)
+scale = Vector2(2.4, 2.0)
+texture = ExtResource("2_shadow")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -18)
+
+[node name="Body" type="CollisionShape2D" parent="."]
+position = Vector2(0, -6)
+shape = SubResource("body")

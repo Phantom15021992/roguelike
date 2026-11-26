@@ -23,7 +23,7 @@ const PUDDLE := preload("res://scripts/puddle.gd")
 const FIRE := Color(1.0, 0.45, 0.15)
 
 const SPRITE_Y := -18.0
-const IDLE_TIME := [1.3, 1.0, 0.8]
+const IDLE_TIME := [1.3, 1.0, 0.8, 0.6]   # по фазам (4-я — только у финального босса)
 const STUN_BONUS := 1.5
 const BEAM_LEN := 170.0
 const BEAM_WIDTH := 9.0
@@ -47,12 +47,14 @@ var _beam_angle := 0.0
 var _beam_dir := 1.0
 var _beam_cd := 0.0
 var _beam_fx: Node2D
+var minion_scene: PackedScene = IMP   # кого призывает (финальные боссы — монстров своего биома)
+var beam_cooldown := 12.0
 
 
 func _setup() -> void:
 	add_to_group("boss")
 	knockback_power = 0.0
-	var k := 1.0 + 0.15 * (Run.depth - 1)
+	var k := (1.0 + 0.15 * (Run.depth - 1)) * power
 	meteor_damage = int(round(meteor_damage * k))
 	breath_damage = int(round(breath_damage * k))
 	wave_damage = int(round(wave_damage * k))
@@ -103,7 +105,7 @@ func _think(delta: float) -> Vector2:
 			_beam_fx.queue_redraw()
 			if _t <= 0.0:
 				_beam_fx.queue_redraw()
-				_beam_cd = 12.0
+				_beam_cd = beam_cooldown
 				_idle()
 	return Vector2.ZERO
 
@@ -117,13 +119,14 @@ func _wake() -> void:
 	awake = true
 	_idle()
 	woke.emit()
-	Game.banner(BOSS_NAME, 2.5)
+	if not is_mini:
+		Game.banner(BOSS_NAME, 2.5)
 	Game.shake(3.0, 0.4)
 	_log("woke")
 
 
 func _choose_action() -> void:
-	if phase == 3 and _beam_cd <= 0.0:
+	if phase >= 3 and _beam_cd <= 0.0:
 		_start_beams()
 		return
 	var r := randf()
@@ -176,7 +179,7 @@ func _do_cast() -> void:
 
 
 func _meteors() -> void:
-	var count: int = [6, 8, 10][phase - 1]
+	var count: int = [6, 8, 10, 12][phase - 1]
 	var p := nearest_player()
 	var inner := arena.grow(-16.0)
 	for i in count:
@@ -253,7 +256,7 @@ func _wave() -> void:
 
 func _summon() -> void:
 	for i in 2:
-		var s: Node2D = IMP.instantiate()
+		var s: Node2D = minion_scene.instantiate()
 		s.position = position + Vector2.from_angle(randf() * TAU) * 30.0
 		s.xp_reward = 3
 		s.gold_min = 0
@@ -326,13 +329,24 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 	if dead:
 		return
 	var ratio := float(hp) / max_hp
-	var new_phase := 1 if ratio > 0.6 else (2 if ratio > 0.3 else 3)
+	var new_phase := _phase_for(ratio)
 	if new_phase > phase:
 		phase = new_phase
 		phase_changed.emit(phase)
-		Game.banner("Фаза %d" % phase, 1.5)
+		_on_phase(phase)
+		if not is_mini:
+			Game.banner("Фаза %d" % phase, 1.5)
 		Game.shake(4.0, 0.4)
 		_log("phase %d (hp %d/%d)" % [phase, hp, max_hp])
+
+
+## Фаза по доле здоровья (финальный босс переопределяет: у него 4 фазы).
+func _phase_for(ratio: float) -> int:
+	return 1 if ratio > 0.6 else (2 if ratio > 0.3 else 3)
+
+
+func _on_phase(_p: int) -> void:
+	pass
 
 
 func _extra_flash() -> float:
@@ -342,6 +356,9 @@ func _extra_flash() -> float:
 
 
 func _die() -> void:
+	if is_mini:
+		super._die()  # мини-копия: без уборки арены и заставки
+		return
 	for m in get_tree().get_nodes_in_group("boss_minions"):
 		if not m.dead:
 			m._die()
@@ -358,6 +375,13 @@ func _die() -> void:
 
 
 func _drop_loot() -> void:
+	if is_mini:
+		for i in randi_range(3, 5):
+			_spawn_pickup("gold", {})
+		return
+	if not loot_mats.is_empty():
+		_boss_loot(randi_range(25, 32), loot_mats)
+		return
 	for i in randi_range(25, 30):
 		_spawn_pickup("gold", {})
 	_spawn_pickup("item", Items.make(Items.random_base(Run.cls, Run.job), 2, Run.depth))

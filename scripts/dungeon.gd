@@ -48,51 +48,61 @@ const SPAWNS := {
 	"n": preload("res://scenes/necromancer.tscn"),
 	"d": preload("res://scenes/demon.tscn"),
 	"k": preload("res://scenes/horror.tscn"),
+	# Вторая половина биомов (этажи 6–10 каждого биома) — по 3 новых монстра.
+	"1": preload("res://scenes/slime_splitter.tscn"),
+	"2": preload("res://scenes/vampire_bat.tscn"),
+	"3": preload("res://scenes/bomb_shroom.tscn"),
+	"4": preload("res://scenes/skeleton_archer.tscn"),
+	"5": preload("res://scenes/ghost.tscn"),
+	"6": preload("res://scenes/bone_guard.tscn"),
+	"7": preload("res://scenes/fire_slime.tscn"),
+	"8": preload("res://scenes/fire_wisp.tscn"),
+	"9": preload("res://scenes/bomber_imp.tscn"),
+	"a": preload("res://scenes/ice_golem.tscn"),
+	"e": preload("res://scenes/snow_bat.tscn"),
+	"g": preload("res://scenes/frost_shroom.tscn"),
+	"j": preload("res://scenes/poison_slime.tscn"),
+	"l": preload("res://scenes/gnat.tscn"),
+	"p": preload("res://scenes/rot_skeleton.tscn"),
+	"q": preload("res://scenes/shadow_slime.tscn"),
+	"r": preload("res://scenes/mirror_shade.tscn"),
+	"v": preload("res://scenes/phantom_knight.tscn"),
+	"y": preload("res://scenes/demon_slime.tscn"),
+	"C": preload("res://scenes/hellhound.tscn"),
+	"E": preload("res://scenes/soul_eater.tscn"),
 }
-# Боссы глубин: по биомам (каждый 3-й этаж), на 50-м — финальный.
-const DEEP_BOSSES := {
-	10: preload("res://scenes/ice_queen.tscn"),
-	20: preload("res://scenes/swamp_queen.tscn"),
-	30: preload("res://scenes/shadow_reaper.tscn"),
-	40: preload("res://scenes/abyss_prince.tscn"),
-}
-const FINAL_BOSS := preload("res://scenes/abyss_lord.tscn")
-const FINAL_DEPTH := 50
+# Биомы по 10 этажей (всего 70): боссы на 3-м, 6-м, 9-м этаже биома, 10-й — логово финального
+# босса биома. Кто какой босс — boss_roster.gd.
+const Roster := preload("res://scripts/boss_roster.gd")
+const MAX_DEPTH := Roster.MAX_DEPTH
 
 
-## Какой босс на этом этаже.
-static func boss_for(depth: int) -> PackedScene:
-	if depth >= FINAL_DEPTH and depth % 10 == 0:
-		return FINAL_BOSS
-	var best: PackedScene = null
-	for from: int in DEEP_BOSSES:
-		if depth >= from:
-			best = DEEP_BOSSES[from]
-	if best:
-		return best
-	return BOSSES[(depth / BOSS_EVERY - 1) % BOSSES.size()]
+## Настройки босса этого этажа (см. boss_roster.gd).
+static func boss_for(depth: int) -> Dictionary:
+	return Roster.config_for(depth)
 
 
-## Этаж с боссом: каждый 3-й и 50-й (финал).
 static func is_boss_depth(depth: int) -> bool:
-	return depth % BOSS_EVERY == 0 or depth == FINAL_DEPTH
-# Боссы по очереди: 3-й этаж — Король слизней, 6-й — Повелитель костей, 9-й — снова король...
-const BOSSES := [
-	preload("res://scenes/boss_slime.tscn"),
-	preload("res://scenes/bone_lord.tscn"),
-	preload("res://scenes/ember_titan.tscn"),
-]
+	return Roster.is_boss_depth(depth)
 
-# Наборы монстров по глубине: [символ, вес]. Этажи 4+ — Катакомбы.
+
+# Монстры биомов: [символ, вес]. «monsters» — с 1-го этажа биома, «extra» — добавляются
+# с 6-го этажа биома (по 3 новых монстра).
 const POOLS := [
-	{"from": 1, "name": "", "tint": Color(1, 1, 1), "monsters": [["s", 6], ["b", 2], ["w", 2]]},
-	{"from": 2, "name": "", "tint": Color(1, 1, 1), "monsters": [["s", 5], ["b", 2], ["w", 2], ["m", 1]]},
-	{"from": 4, "name": "Катакомбы", "tint": Color(0.82, 0.86, 1.0), "monsters": [["x", 4], ["b", 2], ["w", 2], ["m", 2], ["s", 1]]},
-	{"from": 7, "name": "Огненные пещеры", "tint": Color(1.0, 0.8, 0.68), "monsters": [["i", 3], ["z", 3], ["o", 2], ["b", 1], ["x", 1]]},
-	{"from": 10, "name": "Ледяные пещеры", "tint": Color(0.78, 0.9, 1.15), "monsters": [["f", 3], ["c", 3], ["b", 2], ["x", 1], ["o", 1]]},
-	{"from": 20, "name": "Ядовитые топи", "tint": Color(0.78, 1.0, 0.72), "monsters": [["t", 3], ["u", 2], ["s", 2], ["m", 2], ["z", 1]]},
-	{"from": 30, "name": "Теневой лабиринт", "tint": Color(0.75, 0.68, 0.95), "monsters": [["h", 3], ["n", 2], ["x", 3], ["w", 1], ["f", 1]]},
-	{"from": 40, "name": "Бездна", "tint": Color(0.95, 0.62, 0.68), "monsters": [["d", 3], ["k", 2], ["i", 2], ["h", 2], ["n", 1]]},
+	{"from": 1, "name": "Подземелье", "tint": Color(1, 1, 1),
+		"monsters": [["s", 6], ["b", 2], ["w", 2], ["m", 1]], "extra": [["1", 2], ["2", 2], ["3", 2]]},
+	{"from": 11, "name": "Катакомбы", "tint": Color(0.82, 0.86, 1.0),
+		"monsters": [["x", 4], ["b", 2], ["w", 2], ["m", 2], ["s", 1]], "extra": [["4", 2], ["5", 2], ["6", 2]]},
+	{"from": 21, "name": "Огненные пещеры", "tint": Color(1.0, 0.8, 0.68),
+		"monsters": [["i", 3], ["z", 3], ["o", 2], ["b", 1], ["x", 1]], "extra": [["7", 2], ["8", 2], ["9", 2]]},
+	{"from": 31, "name": "Ледяные пещеры", "tint": Color(0.78, 0.9, 1.15),
+		"monsters": [["f", 3], ["c", 3], ["b", 2], ["x", 1], ["o", 1]], "extra": [["a", 2], ["e", 2], ["g", 2]]},
+	{"from": 41, "name": "Ядовитые топи", "tint": Color(0.78, 1.0, 0.72),
+		"monsters": [["t", 3], ["u", 2], ["s", 2], ["m", 2], ["z", 1]], "extra": [["j", 2], ["l", 2], ["p", 2]]},
+	{"from": 51, "name": "Теневой лабиринт", "tint": Color(0.75, 0.68, 0.95),
+		"monsters": [["h", 3], ["n", 2], ["x", 3], ["w", 1], ["f", 1]], "extra": [["q", 2], ["r", 2], ["v", 2]]},
+	{"from": 61, "name": "Бездна", "tint": Color(0.95, 0.62, 0.68),
+		"monsters": [["d", 3], ["k", 2], ["i", 2], ["h", 2], ["n", 1]], "extra": [["y", 2], ["C", 2], ["E", 2]]},
 ]
 
 
@@ -102,6 +112,17 @@ static func pool_for(depth: int) -> Dictionary:
 		if depth >= p["from"]:
 			result = p
 	return result
+
+
+## Монстры этажа: первые 5 этажей биома — основной набор, с 6-го — ещё 3 новых.
+static func monsters_for(depth: int) -> Array:
+	var p := pool_for(depth)
+	var out: Array = p["monsters"].duplicate()
+	if depth == 1:
+		out = out.filter(func(m: Array) -> bool: return m[0] != "m")  # на самом первом этаже без грибов
+	if Roster.local_floor(depth) >= 6:
+		out += p["extra"]
+	return out
 
 
 static func _pick_monster(rng: RandomNumberGenerator, monsters: Array) -> String:
@@ -115,7 +136,6 @@ static func _pick_monster(rng: RandomNumberGenerator, monsters: Array) -> String
 			return m[0]
 	return monsters[0][0]
 
-const BOSS_EVERY := 3  # каждый 3-й этаж — арена с боссом
 var arena_rect := Rect2i()      # пол арены босса (в тайлах), задаёт _generate_boss
 var arena_name := ""
 var _portal_cell := Vector2i(-1, -1)  # портал домой — в зале перед ареной
@@ -253,7 +273,7 @@ func _generate_boss(rng: RandomNumberGenerator) -> Array:
 	_portal_cell = _open_cell_in(grid, hall * BLOCK + Vector2i(BLOCK / 2, BLOCK / 2), Vector2i(BLOCK / 2, BLOCK / 2))
 
 	# Арена.
-	var boss_id := boss_for(Run.depth).resource_path.get_file().get_basename()
+	var boss_id := Roster.kind_of(boss_for(Run.depth))
 	var arena := Arenas.pick(rng, boss_id)
 	arena_name = arena["name"]
 	var ax := 3 * BLOCK
@@ -335,9 +355,12 @@ func _on_boss_died(boss: Node) -> void:
 	var cell := Vector2i(boss.global_position / TILE)
 	if astar.is_point_solid(cell):
 		cell = _open_cell_near(_center(arena_rect))
-	map.set_cell(cell, 0, STAIRS)
-	stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
-	edits.append([cell.x, cell.y, "S", false])
+	# На последнем этаже (70-м) дальше идти некуда — только портал домой.
+	var last := Run.depth >= MAX_DEPTH
+	if not last:
+		map.set_cell(cell, 0, STAIRS)
+		stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
+		edits.append([cell.x, cell.y, "S", false])
 	Net.map_cells(edits)
 	# Рядом — портал домой: вернуться в лагерь живым и сохранить снаряжение.
 	var portal: Node2D = EXIT_PORTAL.new()
@@ -346,7 +369,8 @@ func _on_boss_died(boss: Node) -> void:
 		pcell = _open_cell_near(pcell + Vector2i(3, 0))
 	portal.position = Vector2(pcell * TILE) + Vector2(TILE / 2.0, TILE - 2)
 	entities.add_child(portal)
-	Game.banner("Лестница вниз — или портал домой", 3.0)
+	if not last and not Roster.is_final_depth(Run.depth):
+		Game.banner("Лестница вниз — или портал домой", 3.0)
 
 
 # ---------------- Генерация из блоков ----------------
@@ -421,7 +445,7 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 		forge_cell = middle[rng.randi() % middle.size()]
 
 	# 2. Блоки.
-	var monsters: Array = pool_for(depth)["monsters"]
+	var monsters: Array = monsters_for(depth)
 	for c in cells:
 		var tag := "start" if c == start else ("exit" if c == exit_cell else ("forge" if c == forge_cell else ""))
 		var v := _pick_variant(rng, tag, need[c])
@@ -587,8 +611,9 @@ func _build(map_rows: Array, guest := false) -> void:
 					astar.set_point_solid(cell, true)
 				_:
 					if SPAWNS.has(ch) or ch == "B":
-						var scene: PackedScene = boss_for(Run.depth) if ch == "B" else SPAWNS[ch]
-						var e: Node2D = scene.instantiate()
+						var e: Node2D = Roster.make(boss_for(Run.depth), Run.depth) if ch == "B" else SPAWNS[ch].instantiate()
+						if ch == "B" and "--weakboss" in OS.get_cmdline_user_args():
+							e.hp_mult = 0.08  # тест: быстро пройти логово и проверить лестницу дальше
 						e.position = spot
 						if ch == "B":
 							e.arena = Rect2(Vector2(arena_rect.position * TILE), Vector2(arena_rect.size * TILE))

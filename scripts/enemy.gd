@@ -20,6 +20,14 @@ signal died(enemy: Node)
 
 var last_hit_missed := false
 
+# Настройки, которые задаёт список боссов (boss_roster.gd) до появления монстра:
+var is_mini := false          # мини-копия босса (её призывает финальный босс биома): без добычи и заставок
+var power := 1.0           # множитель урона атак (у боссов)
+var hp_mult := 1.0         # множитель здоровья
+var tint := Color(1, 1, 1, 1)
+var size := 1.0
+var loot_mats: Array = []  # добыча-материалы босса [[id, сколько], ...]; пусто — как задумано в его скрипте
+
 const FLASH_SHADER := preload("res://shaders/flash.gdshader")
 const PICKUP := preload("res://scripts/pickup.gd")
 const Items := preload("res://scripts/items.gd")
@@ -104,7 +112,7 @@ func push(dir: Vector2, power: float) -> void:
 func _ready() -> void:
 	# Чем глубже этаж, тем крепче, больнее и щедрее монстры.
 	var d := Run.depth - 1
-	max_hp = int(round(max_hp * (1.0 + 0.25 * d)))
+	max_hp = int(round(max_hp * (1.0 + 0.25 * d) * hp_mult))
 	contact_damage = int(round(contact_damage * (1.0 + 0.15 * d)))
 	xp_reward = int(round(xp_reward * (1.0 + 0.3 * d)))
 	hp = max_hp
@@ -114,6 +122,14 @@ func _ready() -> void:
 	sprite.material = mat
 	_win_start = global_position
 	_setup()
+	if tint != Color(1, 1, 1, 1):
+		sprite.self_modulate = tint
+	if size != 1.0:
+		scale = Vector2(size, size)
+	if is_mini:
+		# Мини-копия: не главный босс этажа (полоса здоровья и ворота — не про неё).
+		remove_from_group("boss")
+		add_to_group("boss_minions")
 
 
 # ---------------- Сеть (кооп) ----------------
@@ -356,6 +372,62 @@ func _spawn_pickup(kind: String, item: Dictionary, mat := "") -> void:
 	p.item = item
 	p.position = position
 	get_parent().add_child.call_deferred(p)
+
+
+# ---------------- Помощники для монстров ----------------
+
+const _E_PUDDLE := preload("res://scripts/puddle.gd")
+const _E_SHOT := preload("res://scripts/projectile.gd")
+const _E_WARN := preload("res://scripts/telegraph.gd")
+
+
+## Число, выросшее с глубиной этажа (урон атак: +15% за этаж).
+func scaled(v: float) -> int:
+	return int(round(v * (1.0 + 0.15 * (Run.depth - 1))))
+
+
+## Лужа на земле: урон героям внутри и/или замедление (chill).
+func spawn_puddle(pos: Vector2, radius: float, lifetime: float, damage: int, col: Color, chill := 0.0) -> Node2D:
+	var f: Node2D = _E_PUDDLE.new()
+	f.radius = radius
+	f.lifetime = lifetime
+	f.damage = damage
+	f.color = col
+	f.chill = chill
+	f.position = pos
+	Game.ground().add_child(f)
+	return f
+
+
+## Снаряд монстра в сторону dir.
+func spawn_shot(dir: Vector2, damage: int, speed := 75.0, col := Color(0.6, 0.35, 0.95), style := "orb", chill := 0.0) -> Area2D:
+	var b: Area2D = _E_SHOT.new()
+	b.direction = dir.normalized()
+	b.damage = damage
+	b.speed = speed
+	b.color = col
+	b.style = style
+	b.chill = chill
+	b.position = global_position
+	Game.fx().add_child(b)
+	return b
+
+
+## Красный круг-предупреждение (заполняется за time секунд; убирает владелец).
+func spawn_warning(pos: Vector2, radius: float, col := Color(1.0, 0.25, 0.2)) -> Node2D:
+	var t: Node2D = _E_WARN.new()
+	t.radius = radius
+	t.color = col
+	t.position = pos
+	Game.ground().add_child(t)
+	return t
+
+
+## Ранить героев в радиусе.
+func hurt_players_in(pos: Vector2, radius: float, damage: int) -> void:
+	for pl in get_tree().get_nodes_in_group("player"):
+		if not pl.dead and pl.global_position.distance_to(pos) < radius:
+			pl.take_damage(damage, pos)
 
 
 ## anims: {"имя": [[номера кадров], fps]} — квадратные кадры size x size по горизонтали.

@@ -94,8 +94,8 @@ func _ready() -> void:
 	_banner.position = Vector2(10, 36)
 	_banner.size = Vector2(300, 20)
 	var biome: String = DUNGEON.pool_for(Run.depth)["name"]
-	_banner.text = "Этаж %d%s%s" % [Run.depth, (" — " + biome) if biome != "" else "", " — логово босса" if Run.depth % 3 == 0 else ""]
-	if Run.depth % 3 == 0:
+	_banner.text = "Этаж %d%s%s" % [Run.depth, (" — " + biome) if biome != "" else "", (" — логово финального босса биома" if DUNGEON.Roster.is_final_depth(Run.depth) else " — логово босса") if DUNGEON.is_boss_depth(Run.depth) else ""]
+	if DUNGEON.is_boss_depth(Run.depth):
 		_banner.text += "\nРядом портал: можно уйти в лагерь с добычей"
 		_banner_time = 4.0
 	add_child(_banner)

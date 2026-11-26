@@ -33,18 +33,17 @@ func _think(delta: float) -> Vector2:
 				sprite.play("puff")
 		"windup":
 			if _t <= 0.0:
-				var cloud: Node2D = PUDDLE.new()
-				cloud.radius = 26.0
-				cloud.lifetime = 3.5
-				cloud.damage = cloud_damage
-				cloud.color = Color(0.6, 0.4, 0.75)
-				cloud.position = global_position
-				Game.ground().add_child(cloud)
-				Game.burst(global_position + Vector2(0, -10), Color(0.7, 0.5, 0.85), 14)
+				_release_cloud()
 				state = "idle"
 				_t = cooldown
 				sprite.play("idle")
 	return Vector2.ZERO
+
+
+## Облако спор (наследники меняют: морозный гриб — холод).
+func _release_cloud() -> void:
+	spawn_puddle(global_position, 26.0, 3.5, cloud_damage, Color(0.6, 0.4, 0.75))
+	Game.burst(global_position + Vector2(0, -10), Color(0.7, 0.5, 0.85), 14)
 
 
 func _extra_flash() -> float:

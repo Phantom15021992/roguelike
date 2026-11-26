@@ -48,7 +48,7 @@ var _shield_hint := 0.0
 func _setup() -> void:
 	add_to_group("boss")
 	knockback_power = 0.0
-	var k := 1.0 + 0.15 * (Run.depth - 1)
+	var k := (1.0 + 0.15 * (Run.depth - 1)) * power
 	spear_damage = int(round(spear_damage * k))
 	orb_damage = int(round(orb_damage * k))
 	grave_damage = int(round(grave_damage * k))
@@ -112,7 +112,8 @@ func _wake() -> void:
 	awake = true
 	_idle()
 	woke.emit()
-	Game.banner(BOSS_NAME, 2.5)
+	if not is_mini:
+		Game.banner(BOSS_NAME, 2.5)
 	Game.shake(3.0, 0.4)
 	_log("woke")
 
@@ -320,10 +321,11 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 	if new_phase > phase:
 		phase = new_phase
 		phase_changed.emit(phase)
-		Game.banner("Фаза %d" % phase, 1.5)
+		if not is_mini:
+			Game.banner("Фаза %d" % phase, 1.5)
 		Game.shake(4.0, 0.4)
 		_log("phase %d (hp %d/%d)" % [phase, hp, max_hp])
-		if phase == 3 and not _shield_done:
+		if phase == 3 and not _shield_done and not is_mini:
 			_raise_shield()
 
 
@@ -334,6 +336,9 @@ func _extra_flash() -> float:
 
 
 func _die() -> void:
+	if is_mini:
+		super._die()  # мини-копия: без уборки арены и заставки
+		return
 	for m in get_tree().get_nodes_in_group("boss_minions"):
 		if not m.dead:
 			m._die()
@@ -346,6 +351,13 @@ func _die() -> void:
 
 
 func _drop_loot() -> void:
+	if is_mini:
+		for i in randi_range(3, 5):
+			_spawn_pickup("gold", {})
+		return
+	if not loot_mats.is_empty():
+		_boss_loot(randi_range(25, 32), loot_mats)
+		return
 	for i in randi_range(20, 26):
 		_spawn_pickup("gold", {})
 	_spawn_pickup("item", Items.make(Items.random_base(Run.cls, Run.job), 2, Run.depth))

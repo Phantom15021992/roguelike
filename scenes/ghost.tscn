@@ -1,0 +1,36 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ghost.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/shadow.png" id="2_shadow"]
+
+[sub_resource type="CircleShape2D" id="body"]
+radius = 4.0
+
+[node name="Ghost" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 1
+motion_mode = 1
+script = ExtResource("1_script")
+mat_id = "dust"
+mat_chance = 0.4
+max_hp = 30
+contact_damage = 12
+contact_radius = 8.0
+color = Color(0.55, 0.4, 0.65, 1)
+xp_reward = 12
+gold_min = 0
+gold_max = 2
+item_chance = 0.06
+evasion = 25
+
+[node name="Shadow" type="Sprite2D" parent="."]
+position = Vector2(0, -1)
+scale = Vector2(0.6, 0.6)
+texture = ExtResource("2_shadow")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -12)
+
+[node name="Body" type="CollisionShape2D" parent="."]
+position = Vector2(0, -3)
+shape = SubResource("body")

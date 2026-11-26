@@ -1538,32 +1538,69 @@ func _herotest() -> void:
 
 # --- «Зоопарк»: каждый новый монстр и босс рядом с героем (`--zootest --god`) ---
 func _zootest() -> void:
+	# `--zootest` — все новые монстры биомов и все боссы (с мини-копиями у финальных) рядом с героем.
+	# `--zootest --bosses-only` — только боссы. Герой бессмертен.
 	await _wait(1.5)
 	var p: Node2D = local_hero()
 	p.god = true
-	var scenes := ["frost_wisp", "ice_slime", "toad", "lurker", "shade", "necromancer", "demon", "horror"]
-	for n: String in scenes:
-		var e: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
-		e.position = p.position + Vector2(50, 0).rotated(randf() * TAU)
-		get_tree().current_scene.get_node("Entities").add_child(e)
-		await _wait(2.5)
-		print("ZOO %s hp=%d/%d alive=%s" % [n, e.hp if is_instance_valid(e) else -1, e.max_hp if is_instance_valid(e) else -1, is_instance_valid(e)])
-		_shot("zoo_%s" % n)
-		if is_instance_valid(e):
-			e.queue_free()
-	for n: String in ["ice_queen", "swamp_queen", "shadow_reaper", "abyss_prince", "abyss_lord"]:
-		var b: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
-		b.position = p.position + Vector2(70, 0)
-		b.arena = Rect2(p.position - Vector2(200, 150), Vector2(400, 300))
-		get_tree().current_scene.get_node("Entities").add_child(b)
-		await _wait(0.5)
-		b.take_damage(1, p.position)  # разбудить
-		await _wait(5.0)
-		print("ZOO %s name=%s hp=%d/%d phase=%d" % [n, b.BOSS_NAME, b.hp, b.max_hp, b.phase])
-		_shot("zoo_%s" % n)
-		b.take_damage(b.hp + 99999, p.position, true, false)
-		await _wait(1.5)
-	print("ZOO pickups=%d" % get_tree().get_nodes_in_group("pickups").size())
+	var ents: Node = get_tree().current_scene.get_node("Entities")
+	for e in get_tree().get_nodes_in_group("enemies"):
+		e.queue_free()
+	var Roster := preload("res://scripts/boss_roster.gd")
+	if not "--bosses-only" in OS.get_cmdline_user_args():
+		for n: String in ["slime_splitter", "vampire_bat", "bomb_shroom", "skeleton_archer", "ghost", "bone_guard",
+				"fire_slime", "fire_wisp", "bomber_imp", "ice_golem", "snow_bat", "frost_shroom",
+				"poison_slime", "gnat", "rot_skeleton", "shadow_slime", "mirror_shade", "phantom_knight",
+				"demon_slime", "hellhound", "soul_eater"]:
+			var e: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
+			e.position = p.position + Vector2(45, 0).rotated(randf() * TAU)
+			ents.add_child(e)
+			await _wait(2.0)
+			var alive: bool = is_instance_valid(e) and not e.dead
+			var hp0: int = e.hp if alive else -1
+			if alive:
+				e.take_damage(int(e.max_hp * 0.6), p.position, false, false)  # ранить (двойник, рассыпание…)
+			await _wait(1.2)
+			var count := get_tree().get_nodes_in_group("enemies").size()
+			print("ZOO %s hp=%d -> %d enemies_now=%d" % [n, hp0, e.hp if is_instance_valid(e) else -1, count])
+			_shot("zoo_%s" % n)
+			for x in get_tree().get_nodes_in_group("enemies"):
+				x.queue_free()
+			for x in get_tree().get_nodes_in_group("puddles"):
+				x.queue_free()
+			await _wait(0.2)
+	var arena := Rect2(p.position - Vector2(200, 110), Vector2(400, 220))
+	for bi in Roster.ROSTER.size():
+		for k in 4:
+			var cfg: Dictionary = Roster.ROSTER[bi][k]
+			var depth: int = bi * 10 + [3, 6, 9, 10][k]
+			Run.depth = depth
+			var b: Node2D = Roster.make(cfg, depth)
+			b.position = p.position + Vector2(80, 0)
+			b.arena = arena
+			ents.add_child(b)
+			await _wait(0.4)
+			b.take_damage(1, p.position)  # разбудить
+			await _wait(2.5)
+			var phases := [b.phase]
+			# Финальный: пройти все 4 фазы и посмотреть на мини-копии.
+			if Roster.kind_of(cfg) == "final_boss":
+				for ratio: float in [0.7, 0.45, 0.2]:
+					var target := int(b.max_hp * ratio)
+					b.take_damage(maxi(1, b.hp - target), p.position, true, false)
+					await _wait(2.0)
+					phases.append(b.phase)
+				_shot("zoo_final_%d" % bi)
+			var minis := get_tree().get_nodes_in_group("boss_minions").filter(func(m: Node) -> bool: return m.get("is_mini") == true and not m.dead).size()
+			print("ZOO boss d%d %s [%s] hp=%d/%d phases=%s minis=%d" % [depth, cfg["name"], Roster.kind_of(cfg), b.hp, b.max_hp, phases, minis])
+			b.take_damage(b.hp + 999999, p.position, true, false)
+			await _wait(1.0)
+			for x in get_tree().get_nodes_in_group("enemies"):
+				x.queue_free()
+			for x in get_tree().get_nodes_in_group("pickups"):
+				x.queue_free()
+			await _wait(0.3)
+	print("ZOO done")
 	get_tree().quit()
 
 

@@ -53,7 +53,7 @@ var _second_slam := false  # второй прыжок серии — треть
 func _setup() -> void:
 	add_to_group("boss")
 	knockback_power = 0.0
-	var k := 1.0 + 0.15 * (Run.depth - 1)
+	var k := (1.0 + 0.15 * (Run.depth - 1)) * power
 	slam_damage = int(round(slam_damage * k))
 	spit_damage = int(round(spit_damage * k))
 	puddle_damage = int(round(puddle_damage * k))
@@ -127,7 +127,8 @@ func _wake() -> void:
 	awake = true
 	_set_state("idle", 1.2)
 	woke.emit()
-	Game.banner(BOSS_NAME, 2.5)
+	if not is_mini:
+		Game.banner(BOSS_NAME, 2.5)
 	Game.shake(3.0, 0.4)
 	_log("woke")
 
@@ -267,7 +268,8 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 	if new_phase > phase:
 		phase = new_phase
 		phase_changed.emit(phase)
-		Game.banner("Фаза %d" % phase, 1.5)
+		if not is_mini:
+			Game.banner("Фаза %d" % phase, 1.5)
 		Game.shake(4.0, 0.4)
 		_log("phase %d (hp %d/%d)" % [phase, hp, max_hp])
 		if state == "idle":
@@ -286,6 +288,9 @@ func _extra_flash() -> float:
 
 
 func _die() -> void:
+	if is_mini:
+		super._die()  # мини-копия: без уборки арены и заставки
+		return
 	if is_instance_valid(_telegraph):
 		_telegraph.queue_free()
 	for m in get_tree().get_nodes_in_group("boss_minions"):
@@ -300,6 +305,13 @@ func _die() -> void:
 
 
 func _drop_loot() -> void:
+	if is_mini:
+		for i in randi_range(3, 5):
+			_spawn_pickup("gold", {})
+		return
+	if not loot_mats.is_empty():
+		_boss_loot(randi_range(25, 32), loot_mats)
+		return
 	for i in randi_range(15, 20):
 		_spawn_pickup("gold", {})
 	_spawn_pickup("item", Items.make(Items.random_base(Run.cls, Run.job), 2, Run.depth))
