@@ -207,6 +207,28 @@ func _read_local_input() -> void:
 	ctrl["attack_mouse"] = not blocked and Input.is_action_pressed("attack_mouse")
 	ctrl["mouse"] = get_global_mouse_position()
 	ctrl["mouse_recent"] = Game.mouse_recent()
+	if Game.touch_enabled():
+		# Телефон: мыши нет — атака и навыки сами целятся в ближайшего монстра.
+		ctrl["attack_mouse"] = false
+		var target := _auto_target()
+		if target:
+			ctrl["mouse"] = target.global_position + Vector2(0, -6)
+			ctrl["mouse_recent"] = true
+			if ctrl["attack"]:
+				ctrl["attack"] = false
+				ctrl["attack_mouse"] = true
+
+
+## Ближайший живой монстр в пределах досягаемости (автоприцел на телефоне).
+func _auto_target() -> Node2D:
+	var best: Node2D = null
+	var best_d := 150.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		var d := global_position.distance_to(e.global_position)
+		if d < best_d and not e.get("dead"):
+			best = e
+			best_d = d
+	return best
 
 
 ## Удар по монстру от этого героя (его вампиризм, поджог, точность, урон боссам).

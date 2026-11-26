@@ -65,14 +65,23 @@ func _label(text: String, size := 6) -> RichTextLabel:
 	return t
 
 
-func _button(text: String, on_press: Callable) -> Button:
+func _button(text: String, on_press: Callable, parent: Node = null) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_size_override("font_size", 6)
 	b.pressed.connect(on_press, CONNECT_DEFERRED)  # окно перестраивается — кнопку удалять только отложенно
-	_box.add_child(b)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	(parent if parent else _box).add_child(b)
 	return b
+
+
+## Ряд из двух кнопок (меню не должно вылезать за экран).
+func _row() -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 3)
+	_box.add_child(h)
+	return h
 
 
 func _fill() -> void:
@@ -86,17 +95,27 @@ func _fill() -> void:
 			_fill())
 	else:
 		_box.add_child(_label("[b]Пауза[/b]" if not Net.active() else "[b]Меню[/b]  [color=#a8a0b8](в кооперативе игра не останавливается)[/color]"))
-		_button("Продолжить (Esc)", close)
+		var r1 := _row()
+		_button("Продолжить (Esc)", close, r1)
 		_button("Управление (F1)", func() -> void:
 			_page = "help"
-			_fill())
+			_fill(), r1)
+		var r2 := _row()
 		_button("Тряска экрана: %s" % ("вкл" if Meta.setting("shake") else "выкл"), func() -> void:
 			Meta.set_setting("shake", not Meta.setting("shake"))
-			_fill())
+			_fill(), r2)
 		_button("Цифры урона: %s" % ("вкл" if Meta.setting("numbers") else "выкл"), func() -> void:
 			Meta.set_setting("numbers", not Meta.setting("numbers"))
-			_fill())
-		var in_dungeon := get_tree().current_scene != null and get_tree().current_scene.name == "Main"
+			_fill(), r2)
+		var r3 := _row()
+		_button("Сенсорное управление: %s" % ("вкл" if Game.touch_enabled() else "выкл"), func() -> void:
+			Meta.set_setting("touch", not Game.touch_enabled())
+			_fill(), r3)
+		_button("Полный экран: %s" % ("вкл" if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else "выкл"), func() -> void:
+			var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+			_fill.call_deferred(), r3)
+		var in_dungeon :=get_tree().current_scene != null and get_tree().current_scene.name == "Main"
 		if in_dungeon and not Net.is_guest():
 			_button("Сдаться — в лагерь (добыча забега потеряется)", func() -> void:
 				close()
@@ -131,6 +150,7 @@ I — снаряжение и сумка    C — характеристики  
 M — большая карта этажа    Esc — это меню    F11 — полный экран
 R — в лагерь после гибели
 В лагере: Tab — меню кооператива
+Телефон: левая часть экрана — джойстик; справа — удар (сам целится в ближайшего), навыки 1–3, E
 
 [b]Подсказки[/b]
 • Предмет под ногами: E — надеть (если слот пуст) или в сумку; надеть из сумки — I.

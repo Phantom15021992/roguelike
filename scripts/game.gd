@@ -39,6 +39,8 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	pause_menu = PAUSE_MENU.new()
 	add_child(pause_menu)
+	_touch_auto = _detect_touch()
+	add_child(preload("res://scripts/touch_controls.gd").new())
 	# Для тестов: `--depth=3` — начать сразу с нужного этажа.
 	# `--class=archer` — сразу выбрать класс (в автотесте без него — случайный).
 	for arg in OS.get_cmdline_user_args():
@@ -56,7 +58,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -78,6 +80,8 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--touchtest" in args:
+		_touchtest()
 	elif "--coopsave" in args:
 		_coopsavetest()
 	elif "--savetest" in args:
@@ -492,7 +496,7 @@ func _input(event: InputEvent) -> void:
 
 ## Пользовались ли мышью последние 3 секунды (тогда навыки целятся в курсор).
 func mouse_recent() -> bool:
-	if _ignore_mouse:
+	if _ignore_mouse or touch_enabled():
 		return false
 	return Time.get_ticks_msec() / 1000.0 - _mouse_time < 3.0
 
@@ -516,6 +520,31 @@ func _process(delta: float) -> void:
 		cam.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)).round() * _shake_strength
 	else:
 		cam.offset = Vector2.ZERO
+
+
+# --- Телефон ---
+
+var _touch_auto := false
+
+
+## Телефон/планшет: браузер на Android/iOS (или для проверки: `--touch`, адрес `?touch=1`).
+func _detect_touch() -> bool:
+	if "--touch" in OS.get_cmdline_user_args():
+		return true
+	if OS.has_feature("web"):
+		var q: Variant = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('touch') || ''")
+		if str(q) == "1":
+			return true
+		if str(q) == "0":
+			return false
+	return OS.has_feature("web_android") or OS.has_feature("web_ios") or OS.has_feature("android") or OS.has_feature("ios")
+
+
+## Сенсорное управление включено (само на телефоне; переключатель — в меню паузы).
+func touch_enabled() -> bool:
+	if Meta.settings.has("touch"):
+		return bool(Meta.settings["touch"])
+	return _touch_auto
 
 
 # --- Забег ---
@@ -1648,4 +1677,71 @@ func _coopsavetest() -> void:
 	await _wait(0.8)
 	print("CSAVE guest: in dungeon=%s scene=%s depth=%d cls=%s level=%d net=%s" % [ok2, _scene_name(), Run.depth, Run.cls, Run.level, Net.status])
 	await _wait_for(func() -> bool: return not Net.active(), 30.0)
+	get_tree().quit()
+
+
+# --- Телефон (`--touchtest`): нажатия пальцем по экранным кнопкам ---
+func _touch(idx: int, pos: Vector2, pressed: bool) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = idx
+	ev.position = pos
+	ev.pressed = pressed
+	Input.parse_input_event(ev)
+
+
+func _drag(idx: int, pos: Vector2) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = idx
+	ev.position = pos
+	Input.parse_input_event(ev)
+
+
+## Точка экрана в окне (касания приходят в пикселях окна, игра — 320x180).
+func _win(p: Vector2) -> Vector2:
+	return p * (Vector2(get_window().size) / Vector2(320, 180))
+
+
+func _touchtest() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(1.0)
+	var me := local_hero()
+	print("TOUCH enabled=%s" % touch_enabled())
+	_shot("touch_1_controls")
+	var start: Vector2 = me.global_position
+	_touch(0, _win(Vector2(46, 128)), true)
+	_drag(0, _win(Vector2(66, 128)))
+	await _wait(0.8)
+	_shot("touch_2_stick")
+	_touch(0, _win(Vector2(66, 128)), false)
+	await _wait(0.2)
+	print("TOUCH stick moved %.1f px (x %+.1f)" % [me.global_position.distance_to(start), me.global_position.x - start.x])
+	# Слизень сбоку-сзади: удар должен сам повернуться к нему.
+	var s: Node2D = load("res://scenes/slime.tscn").instantiate()
+	s.position = me.global_position + Vector2(-40, 10)
+	get_tree().current_scene.get_node("Entities").add_child(s)
+	await _wait(0.3)
+	var hp0: int = s.hp
+	_touch(1, _win(Vector2(290, 146)), true)
+	await _wait(1.5)
+	_touch(1, _win(Vector2(290, 146)), false)
+	print("TOUCH auto-aim attack: slime hp %d -> %d" % [hp0, s.hp if is_instance_valid(s) else 0])
+	_touch(2, _win(Vector2(160, 6)), true)  # верхняя строка — где-то «Сумка»/«Хар-ки»
+	_touch(2, _win(Vector2(160, 6)), false)
+	await _wait(0.4)
+	var hud := get_tree().current_scene.get_node_or_null("HUD")
+	print("TOUCH top bar opened panel: '%s'" % (hud.open_panel if hud else "-"))
+	_shot("touch_3_panel")
+	pause_menu.open()
+	await _wait(0.4)
+	_shot("touch_4_pause")
+	pause_menu.close()
+	open_camp("coop")
+	await _wait_for(func() -> bool: return _scene_name() == "Camp", 10.0)
+	await _wait(0.6)
+	var ch := get_tree().current_scene.get_node("CampHUD")
+	ch._key_edit.text = "AB"
+	_shot("touch_5_coop_keypad")
+	ch.close()
+	await _wait(0.3)
+	_shot("touch_6_camp")
 	get_tree().quit()

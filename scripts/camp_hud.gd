@@ -810,6 +810,22 @@ func _after_slot() -> void:
 var _key_edit: LineEdit
 
 
+## Телефон: кнопки-буквы для ввода ключа (экранная клавиатура браузера появляется не всегда).
+func _key_pad() -> Control:
+	var g := GridContainer.new()
+	g.columns = 11
+	g.add_theme_constant_override("h_separation", 1)
+	g.add_theme_constant_override("v_separation", 1)
+	for ch: String in Net.KEY_CHARS:
+		g.add_child(_button(ch, func() -> void:
+			if _key_edit and _key_edit.text.length() < Net.KEY_LEN:
+				_key_edit.text += ch, true, 6))
+	g.add_child(_button("<", func() -> void:
+		if _key_edit:
+			_key_edit.text = _key_edit.text.left(-1), true, 6))
+	return g
+
+
 func _fill_coop() -> void:
 	var t := "[b]Кооператив[/b]\n"
 	if not Net.active():
@@ -832,6 +848,8 @@ func _fill_coop() -> void:
 				Net.join_game(_key_edit.text)
 				_refill()))
 		_panel_box.add_child(h)
+		if Game.touch_enabled():
+			_panel_box.add_child(_key_pad())
 		_panel_box.add_child(_button("Назад", func() -> void:
 			_open_id = "menu"
 			_refill()))
