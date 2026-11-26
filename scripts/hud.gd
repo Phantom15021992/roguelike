@@ -99,6 +99,7 @@ func _ready() -> void:
 		_banner.text += "\nРядом портал: можно уйти в лагерь с добычей"
 		_banner_time = 4.0
 	add_child(_banner)
+	_show_modifier.call_deferred()  # модификатор этажа подземелье выбирает уже после интерфейса
 
 	_skill_bar = Control.new()
 	_skill_bar.position = Vector2(4, 156)
@@ -261,7 +262,15 @@ func _process(delta: float) -> void:
 	if Run.skill_points > 0:
 		hints.append("Очки навыков: %d — K" % Run.skill_points)
 	_points_hint.text = "\n".join(hints)
-	_info.text = "Этаж %d\nЗолото %d\nМатериалы %d" % [Run.depth, Run.gold, Crafting.common_count(Run.materials)]
+	# Три строки справа сверху (ниже — миникарта): модификатор этажа и поручение — в тех же строках.
+	var m := Game.floor_mod()
+	var head := "Этаж %d" % Run.depth
+	if m != "" and DUNGEON.MODIFIERS.has(m):
+		head = "%s · %s" % [DUNGEON.MODIFIERS[m]["name"], head]
+	var mats := "Материалы %d" % Crafting.common_count(Run.materials)
+	if not Meta.quest.is_empty():
+		mats = "Поручение %d/%d · %s" % [int(Meta.quest.get("progress", 0)), int(Meta.quest.get("need", 1)), mats]
+	_info.text = "%s\nЗолото %d\n%s" % [head, Run.gold, mats]
 	_skill_bar.queue_redraw()
 
 	_banner_time -= delta
@@ -289,6 +298,16 @@ func _process(delta: float) -> void:
 	_update_stairs_arrow(enemies)
 	var thing: Node2D = null if (_player.dead or stats_open) else _player.nearest_interactable()
 	_prompt.text = thing.prompt() if thing else ""
+
+
+## Модификатор этажа — в баннер при входе.
+func _show_modifier() -> void:
+	var m := Game.floor_mod()
+	if m == "" or not DUNGEON.MODIFIERS.has(m):
+		return
+	var d: Dictionary = DUNGEON.MODIFIERS[m]
+	_banner.text += "\n%s: %s" % [d["name"], d["desc"]]
+	_banner_time = 4.5
 
 
 func show_banner(text: String, time: float) -> void:

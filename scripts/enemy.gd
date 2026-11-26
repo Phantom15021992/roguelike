@@ -27,6 +27,8 @@ var hp_mult := 1.0         # множитель здоровья
 var tint := Color(1, 1, 1, 1)
 var size := 1.0
 var loot_mats: Array = []  # добыча-материалы босса [[id, сколько], ...]; пусто — как задумано в его скрипте
+var elite := false         # элитный монстр (крупнее, сильнее, с особым свойством, богатая добыча)
+var elite_kind := ""       # armored / swift / explosive / regen (см. dungeon.ELITE_KINDS)
 
 const FLASH_SHADER := preload("res://shaders/flash.gdshader")
 const PICKUP := preload("res://scripts/pickup.gd")
@@ -112,7 +114,8 @@ func push(dir: Vector2, power: float) -> void:
 func _ready() -> void:
 	# Чем глубже этаж, тем крепче, больнее и щедрее монстры.
 	var d := Run.depth - 1
-	max_hp = int(round(max_hp * (1.0 + 0.25 * d) * hp_mult))
+	var mod := Game.floor_mod()
+	max_hp = int(round(max_hp * (1.0 + 0.25 * d) * hp_mult * (2.5 if elite else 1.0) * (1.5 if mod == "gold_rush" and not is_in_group("boss") else 1.0)))
 	contact_damage = int(round(contact_damage * (1.0 + 0.15 * d)))
 	xp_reward = int(round(xp_reward * (1.0 + 0.3 * d)))
 	hp = max_hp
@@ -130,13 +133,15 @@ func _ready() -> void:
 		# Мини-копия: не главный босс этажа (полоса здоровья и ворота — не про неё).
 		remove_from_group("boss")
 		add_to_group("boss_minions")
+	if elite:
+		_make_elite()
 
 
 # ---------------- Сеть (кооп) ----------------
 # У гостя монстр — копия: не думает и не ранит, только показывает то, что прислал хозяин.
 
 func net_props() -> Array:
-	return []
+	return ["elite", "elite_kind", "tint", "is_mini"]
 
 
 func net_state() -> Array:
@@ -180,6 +185,13 @@ func _physics_process(delta: float) -> void:
 			sprite.modulate = Color(0.6, 0.8, 1.0) if _slow_time > 0.0 else Color.WHITE
 		return
 	var desired := _avoid_stuck(_think(delta), delta)
+	if elite_kind == "swift":
+		desired *= 1.45
+	elif elite_kind == "regen" and hp < max_hp:
+		_regen_acc += max_hp * 0.03 * delta
+		if _regen_acc >= 1.0:
+			hp = mini(max_hp, hp + int(_regen_acc))
+			_regen_acc -= int(_regen_acc)
 	if _slow_time > 0.0:
 		_slow_time -= delta
 		desired *= 0.5
@@ -301,6 +313,10 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 			return
 	# Особые свойства снаряжения героя: урон боссам, вампиризм, поджог, оглушение.
 	# Урон от горения сам ничего не запускает (иначе поджог поджигал бы сам себя).
+	if elite_kind == "armored":
+		amount = maxi(1, int(round(amount * 0.5)))
+	if Game.floor_mod() == "glass":
+		amount = int(round(amount * 1.4))
 	var hero: Node = _attacker()
 	if hero and not _in_dot and is_in_group("boss"):
 		amount = int(round(amount * (1.0 + hero.special("boss") / 100.0)))
@@ -334,6 +350,12 @@ func _attacker() -> Node:
 
 
 func _die() -> void:
+	if elite and not Net.is_guest():
+		Game.quest_progress("elites")
+		if elite_kind == "explosive":
+			_elite_blast()
+	if not Net.is_guest() and not is_in_group("boss") and not is_mini:
+		Game.quest_progress("kills")
 	dead = true
 	remove_from_group("enemies")
 	collision_layer = 0
@@ -350,17 +372,36 @@ func _die() -> void:
 	tw.tween_callback(queue_free)
 
 
+## Взрывной элитный: после смерти — круг и взрыв через 0.8 с.
+func _elite_blast() -> void:
+	var pos := global_position
+	var dmg := scaled(30)
+	var w := spawn_warning(pos, 34.0, Color(1.0, 0.5, 0.2))
+	var tw := w.create_tween()
+	tw.tween_property(w, "progress", 1.0, 0.8)
+	tw.tween_callback(func() -> void:
+		for pl in w.get_tree().get_nodes_in_group("player"):
+			if not pl.dead and pl.global_position.distance_to(pos) < 34.0:
+				pl.take_damage(dmg, pos)
+		Game.ring(pos, 34.0, Color(1.0, 0.5, 0.2))
+		Game.burst(pos + Vector2(0, -6), Color(1.0, 0.55, 0.2), 20)
+		w.queue_free())
+
+
 func _drop_loot() -> void:
+	var mod := Game.floor_mod()
 	# Сокровищница добавляет монет (дробная часть — шанс на ещё одну).
-	var coins := randi_range(gold_min, gold_max) * Meta.gold_mult()
+	var coins := randi_range(gold_min, gold_max) * Meta.gold_mult() * (2.0 if mod == "gold_rush" else 1.0) * (3.0 if elite else 1.0)
 	for i in int(coins) + (1 if randf() < coins - int(coins) else 0):
 		_spawn_pickup("gold", {})
-	if mat_id != "" and randf() < mat_chance:
+	if mat_id != "" and randf() < mat_chance * (2.0 if mod == "bounty" else 1.0):
 		_spawn_pickup("mat", {}, mat_id)
+		if mod == "bounty" and randf() < 0.3:
+			_spawn_pickup("mat", {}, mat_id)
 	# Удача героя повышает шанс выпадения предметов.
 	# Лут общий: предмет — под класс случайного героя команды.
 	var st: Node = Game.random_hero_state()
-	if randf() < item_chance * (1.0 + st.derived()["drop"] / 100.0):
+	if elite or randf() < item_chance * (1.0 + st.derived()["drop"] / 100.0) * (1.5 if mod == "bounty" else 1.0):
 		_spawn_pickup("item", Items.random_item(Run.depth, st.cls, st.job))
 
 
@@ -372,6 +413,31 @@ func _spawn_pickup(kind: String, item: Dictionary, mat := "") -> void:
 	p.item = item
 	p.position = position
 	get_parent().add_child.call_deferred(p)
+
+
+# ---------------- Элитные монстры ----------------
+
+var _regen_acc := 0.0
+const _E_RING_COLORS := {"armored": Color(0.75, 0.8, 0.9), "swift": Color(0.5, 1.0, 0.6), "explosive": Color(1.0, 0.5, 0.2), "regen": Color(1.0, 0.4, 0.5)}
+const _E_NAMES := {"armored": "Бронированный", "swift": "Быстрый", "explosive": "Взрывной", "regen": "Живучий"}
+
+
+func _make_elite() -> void:
+	xp_reward *= 3
+	if size == 1.0:
+		scale = Vector2(1.25, 1.25)
+	# Золотое кольцо под ногами и точка цвета свойства.
+	var ring := Node2D.new()
+	ring.draw.connect(func() -> void:
+		ring.draw_arc(Vector2.ZERO, 9.0, 0.0, TAU, 20, Color(1.0, 0.85, 0.3, 0.9), 1.5)
+		ring.draw_circle(Vector2(0, -26), 2.0, _E_RING_COLORS.get(elite_kind, Color.WHITE)))
+	add_child(ring)
+	move_child(ring, 1)  # после тени, но под спрайтом
+
+
+## Имя для подсказки: «Элита: Бронированный».
+func elite_title() -> String:
+	return "Элита: " + str(_E_NAMES.get(elite_kind, ""))
 
 
 # ---------------- Помощники для монстров ----------------

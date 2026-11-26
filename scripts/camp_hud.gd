@@ -254,6 +254,10 @@ func _refill() -> void:
 			_fill_workshop()
 		"exchange":
 			_fill_exchange()
+		"merchant":
+			_fill_merchant()
+		"mentor":
+			_fill_mentor()
 		_:
 			_fill_upgrade(_open_id)
 	_recenter()
@@ -316,6 +320,89 @@ func _fill_class_change() -> void:
 			Meta.change_class(cls)
 			show_banner("Теперь твой герой — %s" % Skills.CLASSES[cls]["name"]), true, 5))
 	_panel_box.add_child(h)
+
+
+# ---------------- Торговец ----------------
+# Четыре вещи под твой класс силы самого глубокого этажа; товар меняется после каждого забега
+# (или сразу — за золото). Купленное уходит на склад.
+
+func _fill_merchant() -> void:
+	Meta.restock_shop()
+	var t := "[b]Торговец[/b]  [color=#a8a0b8]товар обновляется после каждого забега; покупки — на склад (%d/%d)[/color]" % [Meta.stash.size(), Meta.stash_max()]
+	_panel_box.add_child(_rich(250, t))
+	var list := _scroll(100)
+	for i in Meta.shop.size():
+		var e: Dictionary = Meta.shop[i]
+		var it: Dictionary = e["item"]
+		var price: int = e["price"]
+		var row := _hc()
+		row.add_child(_button("%d зол." % price, func() -> void: _buy(i), Meta.gold >= price and Meta.stash.size() < Meta.stash_max(), 5))
+		row.add_child(_rich(200, "[color=#%s]%s[/color] (%s) — %s" % [Items.color(it).to_html(false), Items.display_name(it), Items.SLOT_NAMES[it["slot"]], _short_stats(it)]))
+		list.add_child(row)
+	if Meta.shop.is_empty():
+		list.add_child(_rich(200, "[color=#a8a0b8]Всё раскупили — новый товар после следующего забега.[/color]"))
+	var h := _hc(4)
+	h.add_child(_button("Новый товар (%d зол.)" % Meta.reroll_cost(), func() -> void:
+		if Meta.gold >= Meta.reroll_cost():
+			Meta.gold -= Meta.reroll_cost()
+			Meta.restock_shop(true)
+			Meta.changed.emit(), Meta.gold >= Meta.reroll_cost(), 5))
+	h.add_child(_button("Закрыть (E)", close))
+	_panel_box.add_child(h)
+
+
+func _buy(i: int) -> void:
+	if i >= Meta.shop.size():
+		return
+	var e: Dictionary = Meta.shop[i]
+	if Meta.gold < int(e["price"]) or not Meta.stash_add(e["item"]):
+		return
+	Meta.gold -= int(e["price"])
+	Meta.shop.remove_at(i)
+	show_banner("Куплено: %s — на складе" % Items.display_name(e["item"]), 2.5)
+	Meta.save_game()
+	Meta.changed.emit()
+
+
+# ---------------- Наставник ----------------
+# Поручение на один забег (убей N монстров, боссов, элиту, пройди этажи, события).
+# Выполнил — награда сразу в лагерь (не пропадёт, даже если потом погибнешь).
+
+func _fill_mentor() -> void:
+	var t := "[b]Наставник[/b]\n"
+	if not Meta.quest.is_empty():
+		var q: Dictionary = Meta.quest
+		t += "Твоё поручение: [color=#%s]%s[/color]\nНаграда: %d золота%s. Прогресс в прошлом/текущем забеге: %d/%d.\n[color=#a8a0b8]Считается за один забег; выполнишь — награда сразу в лагерь.[/color]" % [
+			GOLD.to_html(false), q["text"], int(q["gold"]), _mats_text(q.get("mats", {})), int(q.get("progress", 0)), int(q["need"])]
+		_panel_box.add_child(_rich(250, t))
+		var h := _hc(4)
+		h.add_child(_button("Отказаться", func() -> void:
+			Meta.quest = {}
+			Meta.make_quest_offers()
+			Meta.changed.emit(), true, 5))
+		h.add_child(_button("Закрыть (E)", close))
+		_panel_box.add_child(h)
+		return
+	if Meta.quest_offers.is_empty():
+		Meta.make_quest_offers()
+	t += "Возьми поручение на следующий забег. Выполнишь — награда сразу в лагерь."
+	_panel_box.add_child(_rich(250, t))
+	for i in Meta.quest_offers.size():
+		var q: Dictionary = Meta.quest_offers[i]
+		var row := _hc()
+		row.add_child(_button("Взять", func() -> void:
+			Meta.take_quest(i)
+			show_banner("Поручение взято: %s" % q["text"], 3.0), true, 5))
+		row.add_child(_rich(200, "%s — [color=#%s]%d зол.%s[/color]" % [q["text"], GOLD.to_html(false), int(q["gold"]), _mats_text(q.get("mats", {}))]))
+		_panel_box.add_child(row)
+	_panel_box.add_child(_button("Закрыть (E)", close))
+
+
+func _mats_text(m: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	for id: String in m:
+		parts.append("%s ×%d" % [Crafting.mat_name(id), int(m[id])])
+	return (", " + ", ".join(parts)) if not parts.is_empty() else ""
 
 
 # ---------------- Обменник ----------------

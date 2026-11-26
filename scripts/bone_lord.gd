@@ -375,6 +375,10 @@ func _drop_loot() -> void:
 
 # ---------------- Сеть (кооп): фаза и особая графика для копии у гостя ----------------
 
+func net_props() -> Array:
+	return super.net_props() + ["BOSS_NAME"]  # у гостя — то же имя на полосе здоровья
+
+
 func _net_extra() -> Array:
 	return [state, phase, awake, shielded, _bob]
 

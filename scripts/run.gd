@@ -42,6 +42,7 @@ var library_given := 0
 var best := 0
 var checkpoint := 0
 var sp := -1
+var run_dmg := 0      # +% урона до конца забега (Алтарь крови)
 
 
 func _ready() -> void:
@@ -68,6 +69,7 @@ func reset() -> void:
 	bag = []
 	hp = -1
 	sp = -1
+	run_dmg = 0
 	training_given = 0
 	library_given = 0
 	best = 0
@@ -115,6 +117,7 @@ func to_run(hp_now := -1, sp_now := -1) -> Dictionary:
 	h["bag"] = bag.duplicate(true)
 	h["hp"] = hp_now if hp_now >= 0 else hp
 	h["sp"] = sp_now if sp_now >= 0 else sp
+	h["run_dmg"] = run_dmg
 	return h
 
 
@@ -134,6 +137,7 @@ func load_run(d: Dictionary) -> void:
 				bag.append(Meta._fix_item(it))
 	hp = int(d.get("hp", -1))
 	sp = int(d.get("sp", -1))
+	run_dmg = int(d.get("run_dmg", 0))
 	changed.emit()
 
 
@@ -442,7 +446,7 @@ func derived(equip_set: Dictionary = equipment) -> Dictionary:
 	if faith > 0:
 		max_hp = int(round(max_hp * (1.0 + Skills.value("faith", faith) / 100.0)))
 	max_hp = int(round(max_hp * Meta.hp_mult() * (1.0 + g.call("hp_pct") / 100.0)))  # Лазарет, комплекты
-	var dmg_mult: float = Meta.damage_mult() * (1.0 + g.call("dmg_pct") / 100.0)          # Кузница, комплекты
+	var dmg_mult: float = Meta.damage_mult() * (1.0 + g.call("dmg_pct") / 100.0) * (1.0 + run_dmg / 100.0)  # Кузница, комплекты, Алтарь крови
 	var dr: float = s.call("vit") * 0.5 + g.call("def") + (Skills.value("fortitude", fort, "v2") if fort > 0 else 0.0)
 	return {
 		"atk_min": int(round(((eff["weapon"]["atk_min"] if weapon else 2) + bonus) * dmg_mult)),

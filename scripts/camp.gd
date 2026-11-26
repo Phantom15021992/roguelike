@@ -10,7 +10,7 @@ const FLOWERS := Vector2i(1, 0)
 const PATH := Vector2i(2, 0)
 const TREE := Vector2i(3, 0)
 
-const W := 26
+const W := 30
 const H := 16
 
 # Где стоят постройки (клетка, на которой стоит её основание).
@@ -25,8 +25,10 @@ const PLACES := {
 	"workshop": Vector2i(23, 12),
 	"storage": Vector2i(16, 12),
 	"exchange": Vector2i(10, 12),
+	"merchant": Vector2i(25, 6),
+	"mentor": Vector2i(27, 12),
 }
-const TITLES := {"exchange": "Обменник"}  # постройки без улучшений
+const TITLES := {"exchange": "Обменник", "merchant": "Торговец", "mentor": "Наставник"}  # постройки без улучшений
 
 @onready var map: TileMapLayer = $Map
 @onready var entities: Node2D = $Entities
@@ -50,7 +52,7 @@ func _ready() -> void:
 	for y in range(5, H - 1):
 		_path(13, y)
 		_path(12, y)
-	for x in range(4, 25):
+	for x in range(4, 29):
 		_path(x, 8)
 		_path(x, 13)
 	for id: String in PLACES:

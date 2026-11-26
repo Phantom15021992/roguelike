@@ -569,7 +569,7 @@ func _make_camp() -> void:
 				tiles.set_pixel(48 + x, y, c)
 	_save(tiles, "res://assets/camp_tiles.png")
 
-	var img := Image.create(320, 32, false, Image.FORMAT_RGBA8)
+	var img := Image.create(384, 32, false, Image.FORMAT_RGBA8)
 	var roofs := [Color8(176, 60, 54), Color8(60, 92, 170), Color8(70, 66, 76), Color8(225, 225, 230), Color8(214, 170, 50)]
 	for i in roofs.size():
 		_house(img, i * 32, roofs[i])
@@ -597,7 +597,17 @@ func _make_camp() -> void:
 	_emblem(img, 288, ["#..", "###", "..#"], Color8(250, 230, 120))
 	img.fill_rect(Rect2i(288 + 2, 24, 5, 5), Color8(190, 160, 100))
 	img.fill_rect(Rect2i(288 + 25, 24, 5, 5), Color8(120, 170, 200))
-	_outline(img, Rect2i(0, 0, 320, 32), PAL["k"])
+	# 10: торговец — красно-белая полосатая крыша, эмблема-мешочек, ящики с товаром.
+	_house(img, 320, Color8(200, 60, 60))
+	for x in range(320 + 4, 320 + 28, 6):
+		img.fill_rect(Rect2i(x, 6, 3, 8), Color8(235, 230, 225))
+	_emblem(img, 320, [".#.", "###", "###"], Color8(240, 200, 80))
+	img.fill_rect(Rect2i(320 + 2, 23, 6, 6), Color8(150, 105, 60))
+	img.fill_rect(Rect2i(320 + 24, 24, 6, 5), Color8(150, 105, 60))
+	# 11: наставник — фиолетовая крыша, эмблема-звезда.
+	_house(img, 352, Color8(110, 70, 160))
+	_emblem(img, 352, ["#.#", ".#.", "#.#"], Color8(255, 235, 140))
+	_outline(img, Rect2i(0, 0, 384, 32), PAL["k"])
 	_save(img, "res://assets/buildings.png")
 
 

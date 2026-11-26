@@ -63,6 +63,10 @@ var last_run := {}         # итоги последнего забега — п
 var settings := {"shake": true, "numbers": true}  # настройки (меню по Esc)
 var heroes := {}           # сохранённые герои по классам (см. Run.to_hero)
 var hero_cls := ""        # активный класс ("" — героя ещё нет)
+var quest := {}            # поручение наставника {kind, need, text, gold, mats, progress}; {} — нет
+var quest_offers: Array = []  # три поручения на выбор
+var shop: Array = []       # товар торговца: [{item, price}]
+var shop_runs := -1        # при каком числе забегов завезён (обновляется после каждого забега)
 var persist := true
 var slot := ""             # текущее сохранение (имя файла без .json); "" — не выбрано
 var slot_kind := "solo"    # "solo" или "coop"
@@ -73,7 +77,7 @@ var _last_slot := ""
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args or "--touchtest" in args or "--forgetest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args or "--touchtest" in args or "--forgetest" in args or "--runtest" in args)
 	# Проверочные запуски без окна (--headless) ничего не пишут — сохранения владельца не трогаем.
 	if DisplayServer.get_name() == "headless":
 		persist = false
@@ -414,6 +418,7 @@ func save_game() -> void:
 		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
 		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
 		"run": run_save,
+		"quest": quest, "quest_offers": quest_offers, "shop": shop, "shop_runs": shop_runs,
 	}
 	_write(slot, data)
 
@@ -433,6 +438,10 @@ func _clear() -> void:
 	heroes = {}
 	hero_cls = ""
 	run_save = {}
+	quest = {}
+	quest_offers = []
+	shop = []
+	shop_runs = -1
 
 
 func load_game() -> void:
@@ -470,6 +479,80 @@ func load_game() -> void:
 	var r: Variant = data.get("run", {})
 	if typeof(r) == TYPE_DICTIONARY and r.has("players"):
 		run_save = r
+	var q: Variant = data.get("quest", {})
+	if typeof(q) == TYPE_DICTIONARY and q.has("kind"):
+		quest = q
+	var qo: Variant = data.get("quest_offers", [])
+	if typeof(qo) == TYPE_ARRAY:
+		quest_offers = qo
+	var sh: Variant = data.get("shop", [])
+	if typeof(sh) == TYPE_ARRAY:
+		for e: Variant in sh:
+			if typeof(e) == TYPE_DICTIONARY and typeof(e.get("item")) == TYPE_DICTIONARY and _valid_item(e["item"]):
+				shop.append({"item": _fix_item(e["item"]), "price": int(e.get("price", 50))})
+	shop_runs = int(data.get("shop_runs", -1))
+
+
+# ---------------- Наставник: поручения на забег ----------------
+
+const Roster := preload("res://scripts/boss_roster.gd")
+const QUEST_KINDS := {
+	"kills": {"text": "Убей %d монстров за один забег", "need": [30, 60]},
+	"elites": {"text": "Убей %d элитных монстров за один забег", "need": [2, 4]},
+	"bosses": {"text": "Убей %d боссов за один забег", "need": [2, 3]},
+	"events": {"text": "Воспользуйся %d событиями на этажах за один забег", "need": [2, 3]},
+	"floors": {"text": "Пройди %d этажей за один забег", "need": [4, 8]},
+}
+
+
+## Три поручения на выбор; награда растёт с самым глубоким этажом.
+func make_quest_offers() -> void:
+	quest_offers = []
+	var kinds: Array = QUEST_KINDS.keys()
+	kinds.shuffle()
+	var depth := maxi(1, best_depth)
+	var biome_mats: Array = Roster.BIOME_MATS[Roster.biome_of(depth)]
+	for k: String in kinds.slice(0, 3):
+		var spec: Dictionary = QUEST_KINDS[k]
+		var need := randi_range(spec["need"][0], spec["need"][1])
+		var mat: String = biome_mats[0][0]
+		quest_offers.append({"kind": k, "need": need, "text": spec["text"] % need,
+			"gold": 40 + depth * 6 + need * 3, "mats": {mat: 3 + Roster.biome_of(depth)}, "progress": 0})
+	save_game()
+
+
+func take_quest(i: int) -> void:
+	if i < 0 or i >= quest_offers.size():
+		return
+	quest = quest_offers[i]
+	quest["progress"] = 0
+	quest_offers = []
+	save_game()
+	changed.emit()
+
+
+# ---------------- Торговец ----------------
+
+## Товар обновляется после каждого забега (или за золото — reroll).
+func restock_shop(force := false) -> void:
+	if not force and shop_runs == runs and not shop.is_empty():
+		return
+	shop_runs = runs
+	shop = []
+	var depth := maxi(1, best_depth)
+	var h := current_hero()
+	var cls := str(h.get("cls", "warrior"))
+	var job := str(h.get("job", ""))
+	for i in 4:
+		var rarity := 2 if randf() < 0.35 else 1
+		var it := Items.make(Items.random_base(cls, job), rarity, depth)
+		var price := (90 + depth * 10) if rarity == 2 else (35 + depth * 4)
+		shop.append({"item": it, "price": price})
+	save_game()
+
+
+func reroll_cost() -> int:
+	return 15 + maxi(1, best_depth) * 2
 
 
 # ---------------- Сохранения-файлы ----------------

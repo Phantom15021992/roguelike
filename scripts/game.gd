@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -81,6 +81,8 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--runtest" in args:
+		_runtest()
 	elif "--forgetest" in args:
 		_forgetest()
 	elif "--touchtest" in args:
@@ -570,6 +572,8 @@ func touch_enabled() -> bool:
 ## loadout — предметы со склада, взятые в забег (их уже убрали со склада).
 func start_run(cls: String, loadout: Array = [], depth := 1) -> void:
 	Meta.run_save = {}  # новый забег вместо незаконченного
+	if not Meta.quest.is_empty():
+		Meta.quest["progress"] = 0  # поручение — «за один забег»
 	Run.reset()
 	_load_or_new_hero(Run, cls, Meta.current_hero())
 	Run.depth = depth
@@ -784,6 +788,7 @@ func next_floor() -> void:
 		st.hp = maxi(1, p.max_hp / 2) if p.dead else p.hp
 		st.sp = int(p.sp)
 	Run.depth += 1
+	quest_progress("floors")
 	_reload()
 
 
@@ -918,6 +923,62 @@ func guest_ui(d: Dictionary) -> void:
 		var camp_hud := scene.get_node_or_null("CampHUD")
 		if camp_hud:
 			camp_hud.open_building("portal")
+
+
+# --- Поручение наставника ---
+
+## Продвинуть поручение (kills, elites, bosses, events, floors). Выполнено — награда сразу в лагерь.
+func quest_progress(kind: String, n := 1) -> void:
+	if Net.is_guest() or Meta.quest.is_empty() or Meta.quest.get("kind", "") != kind:
+		return
+	Meta.quest["progress"] = int(Meta.quest.get("progress", 0)) + n
+	if int(Meta.quest["progress"]) < int(Meta.quest["need"]):
+		return
+	var q: Dictionary = Meta.quest
+	Meta.gold += int(q["gold"])
+	Meta.add_materials(q.get("mats", {}))
+	Meta.quest = {}
+	Meta.save_game()
+	banner("Поручение выполнено! +%d золота в лагерь" % int(q["gold"]), 3.0)
+
+
+# --- Модификатор этажа ---
+
+var mod := ""   # модификатор текущего этажа (dungeon.MODIFIERS), "" — нет
+
+
+func floor_mod() -> String:
+	return mod
+
+
+var _dark: TextureRect
+
+
+## «Тьма»: постоянная пелена со светлым кругом вокруг героя, пока идёт этаж.
+func set_darkness(on: bool) -> void:
+	if on and _dark == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 8
+		add_child(layer)
+		var g := Gradient.new()
+		g.set_color(0, Color(0, 0, 0, 0))
+		g.set_color(1, Color(0, 0, 0, 0.97))
+		g.add_point(0.2, Color(0, 0, 0, 0.0))
+		g.add_point(0.42, Color(0, 0, 0, 0.93))
+		var tex := GradientTexture2D.new()
+		tex.gradient = g
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.45)
+		tex.fill_to = Vector2(0.5, 1.3)
+		tex.width = 320
+		tex.height = 180
+		_dark = TextureRect.new()
+		_dark.texture = tex
+		_dark.size = Vector2(320, 180)
+		_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(_dark)
+	if _dark:
+		_dark.visible = on
 
 
 # --- Ослепление (светогриб) ---
@@ -1914,4 +1975,80 @@ func _forgetest() -> void:
 	ch.close()
 	await _wait(0.3)
 	_shot("forge_3_camp")
+	get_tree().quit()
+
+
+# --- Реиграбельность и NPC (`--runtest`) ---
+func _runtest() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(1.0)
+	var p: Node2D = local_hero()
+	p.god = true
+	var dg := get_tree().current_scene
+	print("RUN modifier=%s elites=%d events=%d" % [mod, get_tree().get_nodes_in_group("enemies").filter(func(e: Node) -> bool: return e.elite).size(),
+		get_tree().get_nodes_in_group("interactables").filter(func(n: Node) -> bool: return n.get_script() == preload("res://scripts/floor_event.gd")).size()])
+	_shot("run_1_floor")
+	for e in get_tree().get_nodes_in_group("enemies"):
+		e.queue_free()
+	await _wait(0.2)
+	# Элитные монстры всех видов рядом с героем.
+	var kinds := ["armored", "swift", "explosive", "regen"]
+	for i in kinds.size():
+		var e: Node2D = dg.SPAWNS["x"].instantiate()
+		e.elite = true
+		e.elite_kind = kinds[i]
+		e.position = p.position + Vector2(-60 + 40 * i, -40)
+		dg.get_node("Entities").add_child(e)
+	await _wait(1.5)
+	_shot("run_2_elites")
+	for e in get_tree().get_nodes_in_group("enemies"):
+		print("RUN elite %s hp=%d/%d scale=%.2f" % [e.elite_kind, e.hp, e.max_hp, e.scale.x])
+		e.take_damage(e.hp + 9999, p.position, true, false)
+	await _wait(1.5)
+	# События: каждое рядом с героем, нажать.
+	Run.gold = 500
+	Meta.quest = {"kind": "events", "need": 3, "text": "тест", "gold": 77, "mats": {"gel": 2}, "progress": 0}
+	var gold0 := Meta.gold
+	for k: String in ["altar", "fountain", "traveler", "chest"]:
+		var ev: Node2D = preload("res://scripts/floor_event.gd").new()
+		ev.kind = k
+		ev.position = p.position + Vector2(20, 0)
+		dg.get_node("Entities").add_child(ev)
+		await _wait(0.3)
+		var hp0: int = p.hp
+		var gold_r := Run.gold
+		ev.interact(p)
+		await _wait(0.4)
+		print("RUN event %s used=%s hp %d->%d run_gold %d->%d run_dmg=%d" % [k, ev.used, hp0, p.hp, gold_r, Run.gold, Run.run_dmg])
+		if k == "altar":
+			_shot("run_3_altar")
+		ev.queue_free()
+	print("RUN quest done: camp gold %d -> %d, quest left=%s" % [gold0, Meta.gold, Meta.quest])
+	await _wait(1.0)
+	# Лагерь: торговец и наставник.
+	open_camp()
+	await _wait_for(func() -> bool: return _scene_name() == "Camp", 10.0)
+	await _wait(0.5)
+	var ch := get_tree().current_scene.get_node("CampHUD")
+	Meta.gold = 3000
+	Meta.best_depth = 25
+	ch.open_building("merchant")
+	await _wait(0.4)
+	_shot("run_4_merchant")
+	var st0 := Meta.stash.size()
+	ch._buy(0)
+	print("RUN bought: stash %d -> %d gold=%d shop_left=%d" % [st0, Meta.stash.size(), Meta.gold, Meta.shop.size()])
+	ch.close()
+	ch.open_building("mentor")
+	await _wait(0.4)
+	_shot("run_5_mentor")
+	Meta.take_quest(0)
+	ch.close()
+	ch.open_building("mentor")
+	await _wait(0.4)
+	_shot("run_6_mentor_active")
+	print("RUN quest taken: %s" % Meta.quest.get("text", "-"))
+	ch.close()
+	await _wait(0.3)
+	_shot("run_7_camp")
 	get_tree().quit()

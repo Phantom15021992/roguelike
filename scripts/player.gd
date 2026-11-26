@@ -1494,6 +1494,8 @@ func _drop_item(it: Dictionary) -> void:
 func take_damage(amount: int, from: Vector2) -> void:
 	if dead or _invuln > 0.0:
 		return
+	if Game.floor_mod() == "glass":
+		amount = int(round(amount * 1.4))  # модификатор «Стеклянная пушка»
 	# Уклонение (снаряжение): удар не прошёл.
 	var eva: float = evasion + (_smoke_eva if _smoke_time > 0.0 else 0.0)
 	if eva > 0.0 and randf() * 100.0 < eva:

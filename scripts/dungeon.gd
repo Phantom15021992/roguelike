@@ -11,6 +11,7 @@ const Blocks := preload("res://scripts/blocks.gd")
 const Arenas := preload("res://scripts/arenas.gd")
 const ANVIL := preload("res://scripts/anvil.gd")
 const EXIT_PORTAL := preload("res://scripts/exit_portal.gd")
+const FLOOR_EVENT := preload("res://scripts/floor_event.gd")
 
 # Обычный этаж: сетка блоков.
 const BLOCK := 15         # размер блока в тайлах
@@ -161,6 +162,21 @@ static func _pick_monster(rng: RandomNumberGenerator, monsters: Array) -> String
 			return m[0]
 	return monsters[0][0]
 
+# Модификатор этажа (реиграбельность): на обычных этажах иногда меняет правила.
+const MODIFIERS := {
+	"dark": {"name": "Тьма", "desc": "видно только рядом с собой"},
+	"gold_rush": {"name": "Золотая лихорадка", "desc": "монстры крепче (+50% HP), золота вдвое больше"},
+	"horde": {"name": "Орда", "desc": "монстров в полтора раза больше"},
+	"glass": {"name": "Стеклянная пушка", "desc": "и ты, и монстры получаете +40% урона"},
+	"bounty": {"name": "Щедрые недра", "desc": "материалов вдвое больше, предметов в полтора раза"},
+}
+const ELITE_KINDS := {
+	"armored": {"name": "Бронированный", "color": Color(0.75, 0.8, 0.9)},
+	"swift": {"name": "Быстрый", "color": Color(0.5, 1.0, 0.6)},
+	"explosive": {"name": "Взрывной", "color": Color(1.0, 0.5, 0.2)},
+	"regen": {"name": "Живучий", "color": Color(1.0, 0.4, 0.5)},
+}
+var modifier := ""
 var arena_rect := Rect2i()      # пол арены босса (в тайлах), задаёт _generate_boss
 var arena_name := ""
 var _portal_cell := Vector2i(-1, -1)  # портал домой — в зале перед ареной
@@ -184,6 +200,14 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	is_boss_floor = is_boss_depth(Run.depth)
+	if not is_boss_floor and Run.depth >= 2 and rng.randf() < 0.35:
+		modifier = MODIFIERS.keys()[rng.randi() % MODIFIERS.size()]
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--mod="):
+			modifier = a.get_slice("=", 1)
+	Game.mod = modifier  # монстры читают его при появлении
+	if modifier == "dark":
+		Game.set_darkness(true)
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("floor %d seed %d%s" % [Run.depth, rng.seed, " (BOSS)" if is_boss_floor else ""])
 	rows = _generate_boss(rng) if is_boss_floor else _generate(rng, Run.depth)
@@ -201,6 +225,10 @@ func _ready() -> void:
 func _ready_guest() -> void:
 	var d: Dictionary = Net.scene_data
 	is_boss_floor = d.get("boss", false)
+	modifier = str(d.get("mod", ""))
+	Game.mod = modifier
+	if modifier == "dark":
+		Game.set_darkness(true)
 	_gate_cells.clear()
 	for c: Vector2i in d.get("gate", []):
 		_gate_cells.append(c)
@@ -214,7 +242,12 @@ func _ready_guest() -> void:
 
 ## Кооп, хозяин: что прислать гостям для этой сцены.
 func net_scene() -> Dictionary:
-	return {"kind": "dungeon", "rows": rows, "depth": Run.depth, "boss": is_boss_floor, "gate": _gate_cells}
+	return {"kind": "dungeon", "rows": rows, "depth": Run.depth, "boss": is_boss_floor, "gate": _gate_cells, "mod": modifier}
+
+
+func _exit_tree() -> void:
+	Game.set_darkness(false)
+	Game.mod = ""
 
 
 ## Камера героя (своего — у гостя появляется позже карты): границы этажа.
@@ -392,6 +425,7 @@ func _on_boss_died(boss: Node) -> void:
 		pcell = _open_cell_near(pcell + Vector2i(3, 0))
 	portal.position = Vector2(pcell * TILE) + Vector2(TILE / 2.0, TILE - 2)
 	entities.add_child(portal)
+	Game.quest_progress("bosses")
 	# Сохранение после каждого босса: следующий забег можно начать со следующего этажа.
 	if not last:
 		Game.checkpoint.call_deferred(Run.depth + 1)
@@ -468,6 +502,12 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 	if not middle.is_empty() and rng.randf() < 0.5:
 		forge_cell = middle[rng.randi() % middle.size()]
 
+	# Событие (алтарь, сундук, путник, фонтан) — на 40% обычных этажей, в промежуточной комнате.
+	var event_cell := Vector2i(-1, -1)
+	var mid2 := middle.filter(func(c: Vector2i) -> bool: return c != forge_cell)
+	if depth >= 2 and not mid2.is_empty() and (rng.randf() < 0.4 or "--events" in OS.get_cmdline_user_args()):
+		event_cell = mid2[rng.randi() % mid2.size()]
+
 	# 2. Блоки.
 	var monsters: Array = monsters_for(depth)
 	for c in cells:
@@ -492,10 +532,19 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 				grid[oy + y][ox + x] = out
 				if out == "." and x > 1 and y > 1 and x < BLOCK - 2 and y < BLOCK - 2:
 					floor_cells.append(Vector2i(ox + x, oy + y))
+		if c == event_cell and not floor_cells.is_empty():
+			var center := Vector2i(ox + BLOCK / 2, oy + BLOCK / 2)
+			var best_c: Vector2i = floor_cells[0]
+			for fc in floor_cells:
+				if (fc - center).length_squared() < (best_c - center).length_squared():
+					best_c = fc
+			grid[best_c.y][best_c.x] = "!"
 		# 3. Монстры: сначала на отмеченные места M, потом — на случайный пол.
 		if c == start:
 			continue
 		var count := mini(rng.randi_range(2, 3) + int(depth / 2.0), 6)
+		if modifier == "horde":
+			count = mini(int(count * 1.5), 9)
 		if v["tag"] == "corridor":
 			count = mini(count, 2)
 		spots.shuffle()
@@ -628,6 +677,14 @@ func _build(map_rows: Array, guest := false) -> void:
 					player.position = spot
 				"S":
 					stairs_pos = Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
+				"!":
+					var ev: Node2D = FLOOR_EVENT.new()
+					ev.kind = FLOOR_EVENT.KINDS[rng.randi() % FLOOR_EVENT.KINDS.size()]
+					for a: String in OS.get_cmdline_user_args():
+						if a.begins_with("--event="):
+							ev.kind = a.get_slice("=", 1)
+					ev.position = spot
+					entities.add_child(ev)
 				"A":
 					var anvil: Node2D = ANVIL.new()
 					anvil.position = spot
@@ -636,6 +693,10 @@ func _build(map_rows: Array, guest := false) -> void:
 				_:
 					if SPAWNS.has(ch) or ch == "B":
 						var e: Node2D = Roster.make(boss_for(Run.depth), Run.depth) if ch == "B" else SPAWNS[ch].instantiate()
+						# Элитный монстр: с 3-го этажа, шанс растёт с глубиной.
+						if ch != "B" and Run.depth >= 3 and (rng.randf() < 0.08 + 0.002 * Run.depth or "--elites" in OS.get_cmdline_user_args()):
+							e.elite = true
+							e.elite_kind = ELITE_KINDS.keys()[rng.randi() % ELITE_KINDS.size()]
 						if ch == "B" and "--weakboss" in OS.get_cmdline_user_args():
 							e.hp_mult = 0.08  # тест: быстро пройти логово и проверить лестницу дальше
 						e.position = spot
