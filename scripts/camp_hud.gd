@@ -191,9 +191,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			close()
 			get_viewport().set_input_as_handled()
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
-			if _open_id == "portal" and _portal_cls == "":
+			# Клавиши 1–5 — выбор класса, только когда на экране карточки классов.
+			if _open_id == "portal" and _portal_cls == "" and (_choose_class or not _my_hero().has("cls")):
 				var keys := Skills.CLASSES.keys()
-				_pick_class(keys[[KEY_1, KEY_2, KEY_3, KEY_4, KEY_5].find(event.physical_keycode)])
+				_choose_cls(keys[[KEY_1, KEY_2, KEY_3, KEY_4, KEY_5].find(event.physical_keycode)])
 				get_viewport().set_input_as_handled()
 
 
@@ -220,6 +221,7 @@ func open_building(id: String) -> void:
 		return
 	_open_id = id
 	_portal_cls = ""
+	_choose_class = false
 	_loadout = {}
 	_result = ""
 	_tab = "craft" if Meta.level("workshop") > 0 else "upgrade"
@@ -500,6 +502,7 @@ func _short_stats(item: Dictionary) -> String:
 # ---------------- Портал: класс и снаряжение ----------------
 
 var _start_depth := 1        # с какого этажа начать (1 или этаж-сохранение)
+var _choose_class := false   # герой 1 уровня выбирает другой класс у портала
 
 
 ## Сохранённый герой этого игрока (у гостя — из своего сохранения).
@@ -509,10 +512,10 @@ func _my_hero() -> Dictionary:
 
 func _fill_portal() -> void:
 	var hero := _my_hero()
-	if hero.has("cls"):
+	if hero.has("cls") and not _choose_class:
 		_fill_portal_hero(hero)
 		return
-	_panel_box.add_child(_rich(250, "[b]Вход в подземелье[/b]\nВыбери класс своего героя. Его уровень и навыки сохраняются между забегами; сменить класс потом можно на Тренировочном плацу."))
+	_panel_box.add_child(_rich(250, "[b]Вход в подземелье[/b]\nВыбери класс своего героя. Его уровень и навыки сохраняются между забегами; пока герой 1 уровня, класс можно сменить здесь же, потом — на Тренировочном плацу."))
 	var h := _hc(4)
 	_panel_box.add_child(h)
 	var n := 0
@@ -522,11 +525,24 @@ func _fill_portal() -> void:
 		var card := VBoxContainer.new()
 		var txt := "[b]%s[/b]\n%s\n[color=#a8a0b8]HP %d, SP %d[/color]" % [c["name"], c["desc"], c["hp"], c["sp"]]
 		card.add_child(_rich(56, txt))
-		card.add_child(_button("Выбрать (%d)" % n, func() -> void:
-			_start_depth = 1
-			_pick_class(cls)))
+		card.add_child(_button("Выбрать (%d)" % n, func() -> void: _choose_cls(cls)))
 		h.add_child(card)
-	_panel_box.add_child(_button("Закрыть (E)", close))
+	if _choose_class:
+		_panel_box.add_child(_button("Назад", func() -> void:
+			_choose_class = false
+			_refill()))
+	else:
+		_panel_box.add_child(_button("Закрыть (E)", close))
+
+
+## Выбран класс на карточке: новый герой или (у героя 1 уровня) смена класса.
+func _choose_cls(cls: String) -> void:
+	var hero := _my_hero()
+	_start_depth = 1
+	_choose_class = false
+	if hero.has("cls") and cls != hero["cls"] and not Net.is_guest():
+		Meta.change_class(cls)
+	_pick_class(cls)
 
 
 ## Герой уже есть: показать его и выбрать этаж старта (1 или сохранения 5, 10, ...).
@@ -561,7 +577,14 @@ func _fill_portal_hero(hero: Dictionary) -> void:
 				_pick_class(cls)))
 			d += 5
 	_panel_box.add_child(h)
-	_panel_box.add_child(_button("Закрыть (E)", close))
+	var h2 := _hc(3)
+	if lvl <= 1:
+		# Герой ещё 1 уровня (например, погиб, не дойдя до сохранения) — класс можно поменять.
+		h2.add_child(_button("Другой класс", func() -> void:
+			_choose_class = true
+			_refill()))
+	h2.add_child(_button("Закрыть (E)", close))
+	_panel_box.add_child(h2)
 
 
 ## Профессия сохранённого героя этого класса (её оружие можно взять в забег).

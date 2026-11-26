@@ -20,6 +20,7 @@ var color := Color(0.6, 0.35, 0.95)
 var on_explode := Callable()  # что сделать на месте взрыва (огненная земля Профессора)
 var source: Node              # герой-стрелок (для его вампиризма, точности и т.п.)
 var chill := 0.0              # > 0 — попадание замедляет героя на столько секунд
+var quiet := false            # взрыв без тряски экрана (обычная атака мага)
 var _t := 0.0
 var _hit := []
 
@@ -113,7 +114,8 @@ func _explode() -> void:
 		Game.attacker = source
 	Game.ring(global_position, explode_radius, color)
 	Game.burst(global_position + Vector2(0, -6), color.lightened(0.2), 16)
-	Game.shake(2.0, 0.15)
+	if not quiet:
+		Game.shake(2.0, 0.15)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.global_position.distance_to(global_position) <= explode_radius:
 			e.take_damage(damage, global_position, crit, missable)

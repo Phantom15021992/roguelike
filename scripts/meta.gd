@@ -291,6 +291,8 @@ func own_hero_best(depth: int) -> void:
 
 
 func class_change_reason() -> String:
+	if hero_cls == "" or int(current_hero().get("level", 1)) <= 1:
+		return ""  # герой 1 уровня (например, погиб без сохранения) — класс можно сменить свободно
 	if level("training") < 3:
 		return "нужен Тренировочный плац 3 уровня"
 	if hero_cls != "" and int(current_hero().get("best", 0)) < 6:

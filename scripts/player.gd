@@ -418,6 +418,7 @@ func _attack(dir: Vector2) -> void:
 		"mage":
 			var b := _shoot("bolt", dir, 1.0, 150.0, 0.8, BOLT_COLOR)
 			b.explode_radius = 10.0
+			b.quiet = true  # обычная атака — без тряски экрана
 		"thief":
 			_slash(dir, 0.75)
 			hit_arc(dir, MELEE_RANGE, 1.0, 1.0)
@@ -429,8 +430,7 @@ func _attack(dir: Vector2) -> void:
 				_shoot("bolt", dir, 1.0, 140.0, 0.55, HOLY_COLOR)
 		_:
 			_slash(dir, 1.0)
-			if hit_arc(dir, MELEE_RANGE, MELEE_HALF_ARC, 1.0) > 0:
-				Game.hitstop(0.05)
+			hit_arc(dir, MELEE_RANGE, MELEE_HALF_ARC, 1.0)  # без «замирания» и тряски — это обычная атака
 
 
 func _turn_to(dir: Vector2) -> void:
