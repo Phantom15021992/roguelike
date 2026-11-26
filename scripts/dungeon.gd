@@ -373,6 +373,8 @@ func _decorate() -> void:
 			var ch := row[x]
 			var pos := Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
 			if ch == "#":
+				if not _cols.has(Vector2i(x, y)):
+					_rock_decor(layer, rng, open_rows, x, y, pos)
 				continue
 			if ch == "S":
 				_light(layer, pos, Color(0.45, 0.85, 1.0), 2.0, 0.7)
@@ -398,6 +400,35 @@ func _decorate() -> void:
 				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.4, 1.2)
 				lights += 1
 	set_process(true)
+
+
+## Фон скалы (где ходить нельзя): у края — сталагмиты, в глубине — валуны, кристаллы в породе, искры.
+func _rock_decor(layer: Node2D, rng: RandomNumberGenerator, open_rows: Array, x: int, y: int, pos: Vector2) -> void:
+	var depth := 3
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var yy := y + dy
+			var xx := x + dx
+			if yy < 0 or yy >= open_rows.size() or xx < 0 or xx >= (open_rows[yy] as String).length():
+				continue
+			if (open_rows[yy] as String)[xx] != "#":
+				depth = mini(depth, maxi(absi(dx), absi(dy)))
+	var r := rng.randf()
+	var jitter := Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
+	if depth == 1:
+		if r < 0.07:
+			_decor_sprite(layer, 8, pos + jitter).flip_h = rng.randf() < 0.5
+	elif depth >= 2:
+		if r < 0.1:
+			_decor_sprite(layer, 10, pos + jitter).flip_h = rng.randf() < 0.5
+		elif r < 0.15:
+			_decor_sprite(layer, 9, pos + jitter).flip_h = rng.randf() < 0.5
+			if rng.randf() < 0.5:
+				_light(layer, pos, Color(0.35, 0.7, 1.0), 0.9, 0.4)
+		elif r < 0.25:
+			_decor_sprite(layer, 11, pos + jitter)
+		elif r < 0.3:
+			_decor_sprite(layer, 8, pos + jitter).flip_h = rng.randf() < 0.5
 
 
 func _decor_sprite(layer: Node2D, frame: int, pos: Vector2) -> Sprite2D:
