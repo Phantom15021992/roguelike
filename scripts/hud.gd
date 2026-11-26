@@ -771,9 +771,15 @@ func _build_skills_panel() -> void:
 	v.add_child(_skills_title)
 	_skills_box = VBoxContainer.new()
 	_skills_box.add_theme_constant_override("separation", 3)
-	v.add_child(_skills_box)
+	_skills_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Навыков до пяти — окно с прокруткой, чтобы не вылезало за экран.
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(235, 132)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.add_child(_skills_box)
+	v.add_child(sc)
 	var hint := _label(4)
-	hint.text = "Клавиши 1–4 или «+» — изучить   K — закрыть   В бою навыки на 1, 2, 3"
+	hint.text = "Клавиши 1–5 или «+» — изучить   K — закрыть   В бою навыки на 1–4"
 	hint.add_theme_color_override("font_color", DIM)
 	v.add_child(hint)
 

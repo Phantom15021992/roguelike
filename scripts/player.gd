@@ -387,7 +387,7 @@ func _physics_process(delta: float) -> void:
 		_attack((mouse_pos() - center()).normalized())
 	elif ctrl["attack"]:
 		_attack(aim_dir())
-	for i in 3:
+	for i in 4:
 		if _just("skill_%d" % (i + 1)):
 			use_skill(i)
 	if _just("interact"):
@@ -1317,6 +1317,30 @@ func _cast_chi_wave(_lvl: int, dir: Vector2, mult: float) -> void:
 	var b := _shoot("bolt", dir, mult, 170.0, 0.7, Color(0.75, 0.9, 1.0))
 	b.pierce = 99
 	b.missable = false
+
+
+# ---------------- Броски (дальний навык ближников) ----------------
+
+func _cast_sword_throw(_lvl: int, dir: Vector2, mult: float) -> void:
+	var b := _shoot("blade", dir, mult, 220.0, 0.55, Color(0.85, 0.88, 0.95))
+	b.pierce = 1
+
+
+func _cast_axe_throw(_lvl: int, dir: Vector2, mult: float) -> void:
+	var b := _shoot("axe", dir, mult, 170.0, 0.7, Color(0.75, 0.7, 0.65))
+	b.pierce = 99
+
+
+func _cast_shield_throw(lvl: int, dir: Vector2, mult: float) -> void:
+	var b := _shoot("shield", dir, mult, 200.0, 0.6, Color(0.95, 0.85, 0.45))
+	b.bounce = 2
+	b.stun_sec = Skills.value("shield_throw", lvl, "v2")
+	b.missable = false
+
+
+func _cast_poison_dagger(lvl: int, dir: Vector2, mult: float) -> void:
+	var b := _shoot("dagger", dir, mult, 230.0, 0.55, POISON_COLOR)
+	b.dot_pct = Skills.value("poison_dagger", lvl, "v2") / 100.0
 
 
 func _cast_iron_skin(lvl: int, _dir: Vector2, _mult: float) -> void:

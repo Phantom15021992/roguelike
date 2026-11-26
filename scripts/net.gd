@@ -817,7 +817,7 @@ func _send_input() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_guest() or _scene_busy or Game.ui_blocks_input():
 		return
-	for action: String in ["skill_1", "skill_2", "skill_3", "interact"]:
+	for action: String in ["skill_1", "skill_2", "skill_3", "skill_4", "interact"]:
 		if event.is_action_pressed(action, false):
 			send_to(1, "press", action)
 

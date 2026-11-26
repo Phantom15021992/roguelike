@@ -29,6 +29,7 @@ func _enter_tree() -> void:
 	_bind("skill_1", [KEY_1])
 	_bind("skill_2", [KEY_2])
 	_bind("skill_3", [KEY_3])
+	_bind("skill_4", [KEY_4])
 	if not InputMap.has_action("attack_mouse"):
 		InputMap.add_action("attack_mouse")
 		var click := InputEventMouseButton.new()
@@ -113,6 +114,13 @@ func _skilltest() -> void:
 	for id: String in Run.skill_list():
 		Run.skill_levels[id] = 3
 	Run.changed.emit()
+	var shud := dungeon.get_node_or_null("HUD")
+	if shud:
+		shud.toggle_panel("skills")
+		await get_tree().create_timer(0.4).timeout
+		_shot("skill_%s_0_panel" % (Run.job if Run.job != "" else Run.cls))
+		shud.toggle_panel("skills")
+		await get_tree().create_timer(0.2).timeout
 	var ids := Skills.actives_of(Run.skill_list())
 	var tag := Run.job if Run.job != "" else Run.cls
 	for slot in ids.size():
@@ -122,6 +130,11 @@ func _skilltest() -> void:
 		var offs := [Vector2(30, 0), Vector2(44, 12), Vector2(40, -14)]
 		if Skills.SKILLS[id].has("cast") and id != "power_shot":
 			offs = [Vector2(68, 0), Vector2(74, 8), Vector2(72, -8)]
+		# Броски ближников — проверяем издалека (как по грибу со спорами).
+		if id in ["sword_throw", "axe_throw", "poison_dagger"]:
+			offs = [Vector2(-95, 0), Vector2(-115, 3), Vector2(-105, -4)]
+		elif id == "shield_throw":
+			offs = [Vector2(-95, 0), Vector2(-125, 35), Vector2(-140, -30)]
 		while p.is_casting():  # дождаться конца прошлого каста/канала
 			await get_tree().create_timer(0.2).timeout
 		# Дальние монстры: два духа слева от героя стреляют по нему (герой бессмертен).
@@ -147,7 +160,9 @@ func _skilltest() -> void:
 		p.sp = p.max_sp
 		p.hp = maxi(1, p.max_hp - 60)  # чтобы было видно лечение
 		var hp_before: int = p.hp
-		p.aim = Vector2.RIGHT
+		if id == "shield_throw":
+			p._shield_time = 0.0  # отражающий щит из прошлого шага не даёт бросать
+		p.aim = Vector2.LEFT if id in ["sword_throw", "axe_throw", "poison_dagger", "shield_throw"] else Vector2.RIGHT
 		var used: bool = p.use_skill(slot)
 		var reflected_before: int = p.reflected_count
 		if id == "shield_reflect":  # щиту нужно время, чтобы духи успели по нему выстрелить
@@ -1245,7 +1260,7 @@ func _autotest() -> void:
 					ready.append(i)
 			if not ready.is_empty():
 				skill_slot = ready.pick_random()
-		for i in 3:
+		for i in 4:
 			_send_action("skill_%d" % (i + 1), i == skill_slot)
 		if skill_slot >= 0:
 			skills_tried += 1

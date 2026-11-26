@@ -20,6 +20,9 @@ var color := Color(0.6, 0.35, 0.95)
 var on_explode := Callable()  # что сделать на месте взрыва (огненная земля Профессора)
 var source: Node              # герой-стрелок (для его вампиризма, точности и т.п.)
 var chill := 0.0              # > 0 — попадание замедляет героя на столько секунд
+var bounce := 0               # бросок щита: сколько раз отскочить к следующему врагу
+var stun_sec := 0.0           # оглушить задетого (босса — замедлить)
+var dot_pct := 0.0            # яд: ещё столько урона (доля удара) за 3 с
 var quiet := false            # взрыв без тряски экрана (обычная атака мага)
 var _t := 0.0
 var _hit := []
@@ -94,6 +97,13 @@ func _on_body_entered(body: Node) -> void:
 			return
 		_hit.append(body)
 		body.take_damage(damage, global_position - direction * 6.0, crit, missable)
+		if is_instance_valid(body) and not body.dead:
+			if stun_sec > 0.0:
+				body.apply_stun(stun_sec, "stun")
+			if dot_pct > 0.0:
+				body.apply_burn(damage * dot_pct / 3.0, 3.0)
+		if bounce > 0 and _bounce_from(body):
+			return
 		if pierce > 0:
 			pierce -= 1
 			return
@@ -102,6 +112,25 @@ func _on_body_entered(body: Node) -> void:
 		queue_free()
 		return
 	_pop()
+
+
+## Отскок к ближайшему ещё не задетому врагу (бросок щита).
+func _bounce_from(body: Node2D) -> bool:
+	var best: Node2D = null
+	var best_d := 100.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e == body or e in _hit or e.dead:
+			continue
+		var d: float = e.global_position.distance_to(body.global_position)
+		if d < best_d:
+			best = e
+			best_d = d
+	if best == null:
+		return false
+	bounce -= 1
+	direction = (best.global_position - global_position).normalized()
+	_t = 0.0
+	return true
 
 
 func _pop() -> void:
@@ -138,6 +167,20 @@ func _draw() -> void:
 			var tail := top - direction * 8.0
 			draw_line(tail, top, Color(0.75, 0.72, 0.65), 2.0)
 			draw_line(top - direction * 3.0, top, Color(0.95, 0.93, 0.85), 2.5)
+		"blade", "axe", "dagger":
+			# Вращающийся клинок / топор; кинжал летит остриём вперёд.
+			var a := direction if style == "dagger" else Vector2.from_angle(_t * 25.0)
+			var n := 7.0 if style == "axe" else (6.0 if style == "blade" else 4.0)
+			draw_line(top - a * n, top + a * n, color, 2.0 if style == "axe" else 1.5)
+			draw_line(top + a * (n - 2.0), top + a * n, Color.WHITE, 2.0)
+			if style == "axe":
+				draw_circle(top + a * n, 3.0, color.lightened(0.3))
+			else:
+				draw_line(top - a * (n - 1.0) + a.orthogonal() * 2.0, top - a * (n - 1.0) - a.orthogonal() * 2.0, Color(0.55, 0.4, 0.25), 1.5)
+		"shield":
+			draw_circle(top, 4.5, Color(0.55, 0.42, 0.25))
+			draw_arc(top, 4.5, 0.0, TAU, 16, color, 1.5)
+			draw_circle(top, 1.5, Color.WHITE.lerp(color, 0.5))
 		"bolt":
 			draw_circle(top, 2.5, color)
 			draw_circle(top, 1.3, Color.WHITE.lerp(color, 0.3 * pulse))

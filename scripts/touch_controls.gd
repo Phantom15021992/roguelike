@@ -12,6 +12,7 @@ const BUTTONS := {
 	"skill_1": {"pos": Vector2(254, 162), "r": 11.0, "text": "1"},
 	"skill_2": {"pos": Vector2(257, 130), "r": 11.0, "text": "2"},
 	"skill_3": {"pos": Vector2(286, 110), "r": 11.0, "text": "3"},
+	"skill_4": {"pos": Vector2(226, 134), "r": 11.0, "text": "4"},
 	"interact": {"pos": Vector2(222, 164), "r": 10.0, "text": "E"},
 }
 const BAR_Y := 1.0
@@ -78,7 +79,12 @@ func _bar_rect(i: int, n: int) -> Rect2:
 
 ## Какие круглые кнопки нужны: в лагере драться не с кем — только E.
 func _buttons() -> Array:
-	return ["interact"] if _scene_kind() == "camp" else BUTTONS.keys()
+	if _scene_kind() == "camp":
+		return ["interact"]
+	var out: Array = BUTTONS.keys()
+	if _skill_names().size() < 4:
+		out.erase("skill_4")  # четвёртый навык (бросок) — только у ближников
+	return out
 
 
 ## Окно открыто — джойстик и кнопки боя спрятаны (палец нажимает кнопки окна).

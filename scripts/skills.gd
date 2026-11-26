@@ -30,7 +30,7 @@ const CLASSES := {
 		"name": "Мечник",
 		"desc": "Ближний бой: широкий взмах меча. Больше всех HP. Главная характеристика — Сила.",
 		"primary": "str", "hp": 120, "sp": 30, "attack_cd": 0.35, "weapon": "sword",
-		"skills": ["bash", "whirlwind", "dash", "fortitude"],
+		"skills": ["bash", "whirlwind", "dash", "sword_throw", "fortitude"],
 		"jobs": ["berserker", "paladin"],
 	},
 	"archer": {
@@ -51,7 +51,7 @@ const CLASSES := {
 		"name": "Вор",
 		"desc": "Быстрые удары кинжалом, уклонение, яд. Главная характеристика — Ловкость.",
 		"primary": "agi", "hp": 95, "sp": 35, "attack_cd": 0.25, "weapon": "knife",
-		"skills": ["stab_flurry", "poison_blade", "smoke_bomb", "dodge"],
+		"skills": ["stab_flurry", "poison_blade", "smoke_bomb", "poison_dagger", "dodge"],
 		"jobs": ["bandit", "assassin"],
 	},
 	"acolyte": {
@@ -66,10 +66,10 @@ const CLASSES := {
 const JOBS := {
 	"berserker": {"name": "Берсерк", "base": "warrior",
 		"desc": "Врывается в толпу: прыжок с оглушением, вращение мечом, удар с вампиризмом.",
-		"skills": ["leap_strike", "spin", "blood_slam", "fortitude"]},
+		"skills": ["leap_strike", "spin", "blood_slam", "axe_throw", "fortitude"]},
 	"paladin": {"name": "Паладин", "base": "warrior",
 		"desc": "Защитник: оглушающий рывок, молитва-лечение, щит, отражающий выстрелы (пока щит поднят — не атакует).",
-		"skills": ["holy_charge", "prayer", "shield_reflect", "fortitude"]},
+		"skills": ["holy_charge", "prayer", "shield_reflect", "shield_throw", "fortitude"]},
 	"hunter": {"name": "Охотник", "base": "archer",
 		"desc": "Контроль: двойной выстрел, ловушки, удерживающие монстров, отскок.",
 		"skills": ["double_shot", "trap", "backstep", "hawk_eye"]},
@@ -87,7 +87,7 @@ const JOBS := {
 		"skills": ["knife_fan", "mug", "stun_club", "dodge"]},
 	"assassin": {"name": "Ассасин", "base": "thief",
 		"desc": "Убийца из тени: телепорт за спину с критом, ядовитое облако, добивание.",
-		"skills": ["shadow_step", "venom_cloud", "execute", "dodge"]},
+		"skills": ["shadow_step", "venom_cloud", "execute", "poison_dagger", "dodge"]},
 	"priest": {"name": "Священник", "base": "acolyte",
 		"desc": "Опора отряда: большое лечение, воскрешение павших, святая земля.",
 		"skills": ["great_heal", "resurrect", "sanctuary", "faith"]},
@@ -97,6 +97,25 @@ const JOBS := {
 }
 
 const SKILLS := {
+	# ================= Броски: дальний навык ближников (клавиша 4) =================
+	"sword_throw": {
+		"name": "Бросок меча", "abbr": "Меч", "type": "active", "sp": [10, 1], "cd": 3.0, "req": {},
+		"v": [140, 25], "desc": "Метает вращающийся меч вперёд: {v}% урона, пробивает первого врага насквозь.",
+	},
+	"axe_throw": {
+		"name": "Бросок топора", "abbr": "Топор", "type": "active", "sp": [14, 2], "cd": 4.0, "req": {},
+		"v": [170, 30], "desc": "Тяжёлый топор летит, вращаясь, и пробивает всех на пути: {v}% урона.",
+	},
+	"shield_throw": {
+		"name": "Бросок щита", "abbr": "Бросок", "type": "active", "sp": [14, 2], "cd": 5.0, "req": {},
+		"v": [110, 20], "v2": [1, 0.25],
+		"desc": "Щит отскакивает от врага к врагу (до 3 целей): {v}% урона и оглушение на {v2} с (босса — замедляет).",
+	},
+	"poison_dagger": {
+		"name": "Ядовитый кинжал", "abbr": "Кинж", "type": "active", "sp": [10, 1], "cd": 3.0, "req": {},
+		"v": [100, 20], "v2": [60, 15], "desc": "Метает отравленный кинжал: {v}% урона и яд — ещё {v2}% урона за 3 с.",
+	},
+
 	# ================= Мечник =================
 	"bash": {
 		"name": "Мощный удар", "abbr": "Удар", "type": "active", "sp": [12, 1], "cd": 1.5, "req": {},
