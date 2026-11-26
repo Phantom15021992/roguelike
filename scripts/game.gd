@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -81,6 +81,8 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--traptest" in args:
+		_traptest()
 	elif "--runtest" in args:
 		_runtest()
 	elif "--forgetest" in args:
@@ -1195,6 +1197,13 @@ func _autotest() -> void:
 	var tracked_target: Node = null
 	var tracked_hp := 0
 	var no_dmg_attacks := 0
+	# Цель, которую 10 секунд не удаётся ранить (за стеной, отражает, недостижима), бот бросает
+	# и идёт к другому монстру (просьба владельца). Боссов не бросает.
+	var given_up := {}
+	var stairs_seen_on := 0   # на каком этаже (id сцены) бот уже видел лестницу — тогда сразу к ней
+	var chase_id := 0
+	var chase_hp := 0
+	var chase_since := 0.0
 	var detour_side := 1.0
 	var window_frames := 0
 	var window_start := Vector2.ZERO
@@ -1260,11 +1269,35 @@ func _autotest() -> void:
 				continue  # босс под щитом — сначала кристаллы
 			if ranged and e.has_method("reflect_shot"):
 				continue  # отражатель возвращает стрелы и магию — стрелку его не убить, обходим
+			if given_up.has(e.get_instance_id()):
+				continue
 			var d := e.global_position.distance_to(p.global_position)
 			if d < enemy_dist:
 				enemy_dist = d
 				goal = e.global_position
 				target_e = e
+
+		var now_s := Time.get_ticks_msec() / 1000.0
+		if target_e and not target_e.is_in_group("boss"):
+			var tid := target_e.get_instance_id()
+			if tid != chase_id:
+				chase_id = tid
+				chase_hp = target_e.hp
+				chase_since = now_s
+			elif target_e.hp < chase_hp:
+				chase_hp = target_e.hp
+				chase_since = now_s
+			elif now_s - chase_since > 10.0:
+				given_up[tid] = true
+				chase_id = 0
+				print("  bot gives up on %s: no damage for 10 s" % target_e.name)
+
+		# Увидел лестницу — сразу к ней и вниз, добивать остальных не нужно (просьба владельца).
+		if dungeon.stairs_pos.x > -1000.0 and p.global_position.distance_to(dungeon.stairs_pos) < 140.0:
+			stairs_seen_on = dungeon.get_instance_id()
+		var stairs_known: bool = stairs_seen_on == dungeon.get_instance_id() and dungeon.stairs_pos.x > -1000.0
+		if stairs_known:
+			goal = dungeon.stairs_pos
 
 		# Путь пересчитываем раз в 15 кадров. Первая точка пути — центр клетки, где бот
 		# уже стоит: её пропускаем, иначе он каждый раз дёргается назад.
@@ -1364,6 +1397,8 @@ func _autotest() -> void:
 			for i in act.size():
 				var sid: String = act[i]
 				var lv := Run.skill_level(sid)
+				if sid == "shield_reflect":
+					continue  # щит паладина боту не нужен: под ним нельзя бить (решение владельца)
 				if lv > 0 and p.sp >= Skills.sp_cost(sid, lv) and p.skill_cd.get(sid, 0.0) <= 0.0:
 					ready.append(i)
 			if not ready.is_empty():
@@ -1377,7 +1412,7 @@ func _autotest() -> void:
 		var item_node: Node2D = p.nearest_item()
 		var on_item: bool = item_node != null and \
 			_gear_score(Run.derived_with(item_node.item)) > _gear_score(Run.derived()) + 0.5
-		var on_stairs: bool = enemies.is_empty() and dungeon.is_near_stairs(p.global_position)
+		var on_stairs: bool = (enemies.is_empty() or stairs_known) and dungeon.is_near_stairs(p.global_position)
 		var want_e := (on_item or on_stairs) and frame % 6 == 0
 		if want_e and on_item and not Input.is_action_pressed("interact"):
 			items_picked += 1
@@ -2051,4 +2086,43 @@ func _runtest() -> void:
 	ch.close()
 	await _wait(0.3)
 	_shot("run_7_camp")
+	get_tree().quit()
+
+
+# --- Комната-ловушка (`--traptest --trap --depth=4`) ---
+func _traptest() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(1.0)
+	var dg := get_tree().current_scene
+	var p: Node2D = local_hero()
+	p.god = true
+	if dg.trap.is_empty():
+		print("TRAP none on this floor")
+		get_tree().quit()
+		return
+	var r: Array = dg.trap["rect"]
+	var center := Vector2((r[0] + r[2] / 2.0) * 16.0, (r[1] + r[3] / 2.0) * 16.0)
+	# Сначала у входа — видна приманка.
+	var d0: Array = dg.trap["doors"][0]
+	p.global_position = dg.open_spot(Vector2(d0[0] * 16 + 8, d0[1] * 16 + 14))
+	await _wait(0.8)
+	_shot("trap_1_entrance")
+	p.global_position = dg.open_spot(center + Vector2(0, 20))
+	await _wait(1.0)
+	var solid := 0
+	for d: Array in dg.trap["doors"]:
+		if dg.astar.is_point_solid(Vector2i(d[0], d[1])):
+			solid += 1
+	print("TRAP sprung: state=%s monsters=%d doors closed %d/%d" % [dg._trap_state, dg._trap_monsters.size(), solid, dg.trap["doors"].size()])
+	_shot("trap_2_locked")
+	for e in dg._trap_monsters:
+		if is_instance_valid(e):
+			e.take_damage(e.hp + 9999, p.global_position, true, false)
+	await _wait(1.0)
+	solid = 0
+	for d: Array in dg.trap["doors"]:
+		if dg.astar.is_point_solid(Vector2i(d[0], d[1])):
+			solid += 1
+	print("TRAP after clear: state=%s doors closed %d" % [dg._trap_state, solid])
+	_shot("trap_3_open")
 	get_tree().quit()

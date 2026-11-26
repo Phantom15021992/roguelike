@@ -177,6 +177,9 @@ const ELITE_KINDS := {
 	"regen": {"name": "Живучий", "color": Color(1.0, 0.4, 0.5)},
 }
 var modifier := ""
+var trap := {}                 # комната-ловушка: {rect, doors, cells}; {} — нет
+var _trap_state := ""          # "" — ждёт, "fight" — заперта, "done" — пройдена
+var _trap_monsters: Array = []
 var arena_rect := Rect2i()      # пол арены босса (в тайлах), задаёт _generate_boss
 var arena_name := ""
 var _portal_cell := Vector2i(-1, -1)  # портал домой — в зале перед ареной
@@ -243,6 +246,79 @@ func _ready_guest() -> void:
 ## Кооп, хозяин: что прислать гостям для этой сцены.
 func net_scene() -> Dictionary:
 	return {"kind": "dungeon", "rows": rows, "depth": Run.depth, "boss": is_boss_floor, "gate": _gate_cells, "mod": modifier}
+
+
+# ---------------- Комната-ловушка ----------------
+
+func _physics_process(_delta: float) -> void:
+	if trap.is_empty() or _trap_state == "done" or Net.is_guest():
+		return
+	var r: Array = trap["rect"]
+	# Внутренняя часть комнаты (без краёв с проходами) — в пикселях.
+	var inner := Rect2(Vector2((r[0] + 1) * TILE, (r[1] + 1) * TILE), Vector2((r[2] - 2) * TILE, (r[3] - 2) * TILE))
+	if _trap_state == "":
+		for h in get_tree().get_nodes_in_group("player"):
+			if not h.dead and inner.has_point(h.global_position):
+				_trap_spring(inner)
+				return
+	elif _trap_state == "fight":
+		_trap_monsters = _trap_monsters.filter(func(m: Variant) -> bool: return is_instance_valid(m) and not m.dead)
+		if _trap_monsters.is_empty():
+			_trap_open()
+
+
+func _trap_spring(inner: Rect2) -> void:
+	_trap_state = "fight"
+	var edits: Array = []
+	for d: Array in trap["doors"]:
+		var c := Vector2i(d[0], d[1])
+		map.set_cell(c, 0, WALL_FACE)
+		astar.set_point_solid(c, true)
+		edits.append([c.x, c.y, "#", true])
+	Net.map_cells(edits)
+	# Кто стоит в проходе — внутрь.
+	for h in get_tree().get_nodes_in_group("player"):
+		var hc := Vector2i(h.global_position / TILE)
+		for d: Array in trap["doors"]:
+			if hc == Vector2i(d[0], d[1]):
+				h.global_position = inner.get_center()
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var pool := monsters_for(Run.depth)
+	var cells: Array = trap["cells"].duplicate()
+	cells.shuffle()
+	var heroes := get_tree().get_nodes_in_group("player")
+	var n := rng.randi_range(10, 15)
+	for cell: Array in cells:
+		if n <= 0:
+			break
+		var pos := Vector2(cell[0] * TILE + TILE / 2.0, cell[1] * TILE + TILE - 2)
+		var near := false
+		for h in heroes:
+			if h.global_position.distance_to(pos) < 40.0:
+				near = true
+		if near:
+			continue
+		var e: Node2D = SPAWNS[_pick_monster(rng, pool)].instantiate()
+		e.position = pos
+		entities.add_child(e)
+		_trap_monsters.append(e)
+		Game.burst(pos + Vector2(0, -6), Color(0.9, 0.3, 0.3), 8)
+		n -= 1
+	Game.banner("Ловушка! Выхода нет — бей всех", 2.5)
+	Game.shake(4.0, 0.4)
+
+
+func _trap_open() -> void:
+	_trap_state = "done"
+	var edits: Array = []
+	for d: Array in trap["doors"]:
+		var c := Vector2i(d[0], d[1])
+		map.set_cell(c, 0, FLOOR_VARIANTS[0])
+		astar.set_point_solid(c, false)
+		edits.append([c.x, c.y, ".", false])
+	Net.map_cells(edits)
+	Game.banner("Ловушка пройдена — награда твоя", 2.5)
 
 
 func _exit_tree() -> void:
@@ -507,6 +583,13 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 	var mid2 := middle.filter(func(c: Vector2i) -> bool: return c != forge_cell)
 	if depth >= 2 and not mid2.is_empty() and (rng.randf() < 0.4 or "--events" in OS.get_cmdline_user_args()):
 		event_cell = mid2[rng.randi() % mid2.size()]
+	# Комната-ловушка: приманка (фонтан или сундук) видна, но стоит войти — проходы закрываются
+	# и появляется 10–15 монстров. На 25% обычных этажей со 2-го.
+	var trap_cell := Vector2i(-1, -1)
+	var mid3 := mid2.filter(func(c: Vector2i) -> bool: return c != event_cell)
+	if depth >= 2 and not mid3.is_empty() and (rng.randf() < 0.25 or "--trap" in OS.get_cmdline_user_args()):
+		trap_cell = mid3[rng.randi() % mid3.size()]
+	trap = {}
 
 	# 2. Блоки.
 	var monsters: Array = monsters_for(depth)
@@ -532,6 +615,20 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 				grid[oy + y][ox + x] = out
 				if out == "." and x > 1 and y > 1 and x < BLOCK - 2 and y < BLOCK - 2:
 					floor_cells.append(Vector2i(ox + x, oy + y))
+		if c == trap_cell and not floor_cells.is_empty():
+			var tc := Vector2i(ox + BLOCK / 2, oy + BLOCK / 2)
+			var bait: Vector2i = floor_cells[0]
+			for fc in floor_cells:
+				if (fc - tc).length_squared() < (bait - tc).length_squared():
+					bait = fc
+			grid[bait.y][bait.x] = "?"
+			var doors: Array = []
+			for y in BLOCK:
+				for x in BLOCK:
+					var edge := x == 0 or y == 0 or x == BLOCK - 1 or y == BLOCK - 1
+					if edge and grid[oy + y][ox + x] == ".":
+						doors.append([ox + x, oy + y])
+			trap = {"rect": [ox, oy, BLOCK, BLOCK], "doors": doors, "cells": floor_cells.map(func(v: Vector2i) -> Array: return [v.x, v.y])}
 		if c == event_cell and not floor_cells.is_empty():
 			var center := Vector2i(ox + BLOCK / 2, oy + BLOCK / 2)
 			var best_c: Vector2i = floor_cells[0]
@@ -540,8 +637,8 @@ func _generate(rng: RandomNumberGenerator, depth: int) -> Array:
 					best_c = fc
 			grid[best_c.y][best_c.x] = "!"
 		# 3. Монстры: сначала на отмеченные места M, потом — на случайный пол.
-		if c == start:
-			continue
+		if c == start or c == trap_cell:
+			continue  # в ловушке монстры появятся, когда войдёшь
 		var count := mini(rng.randi_range(2, 3) + int(depth / 2.0), 6)
 		if modifier == "horde":
 			count = mini(int(count * 1.5), 9)
@@ -677,6 +774,13 @@ func _build(map_rows: Array, guest := false) -> void:
 					player.position = spot
 				"S":
 					stairs_pos = Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
+				"?":
+					# Приманка комнаты-ловушки: фонтан или честный сундук.
+					var bait_ev: Node2D = FLOOR_EVENT.new()
+					bait_ev.kind = "fountain" if rng.randf() < 0.5 else "chest"
+					bait_ev.bait = true
+					bait_ev.position = spot
+					entities.add_child(bait_ev)
 				"!":
 					var ev: Node2D = FLOOR_EVENT.new()
 					ev.kind = FLOOR_EVENT.KINDS[rng.randi() % FLOOR_EVENT.KINDS.size()]

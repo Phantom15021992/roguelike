@@ -12,6 +12,7 @@ const NAMES := {"altar": "Алтарь крови", "chest": "Сундук", "tr
 
 var kind := "chest"
 var used := false
+var bait := false   # приманка комнаты-ловушки: сундук без мимика
 var _t := 0.0
 
 
@@ -48,7 +49,17 @@ func _cost() -> int:
 	return 20 + Run.depth * 3
 
 
+## Приманка ловушки: пока в комнате бой, пользоваться нельзя.
+func _locked() -> bool:
+	if not bait:
+		return false
+	var s := get_tree().current_scene
+	return s != null and str(s.get("_trap_state")) != "done"
+
+
 func prompt() -> String:
+	if _locked() and str(get_tree().current_scene.get("_trap_state")) == "fight":
+		return "Сначала перебей всех в комнате"
 	if used:
 		return NAMES[kind] + (" — спасибо, путник ушёл" if kind == "traveler" else " — уже использован")
 	match kind:
@@ -66,6 +77,9 @@ func prompt() -> String:
 func interact(hero: Node) -> void:
 	if used:
 		return
+	if _locked() and str(get_tree().current_scene.get("_trap_state")) == "fight":
+		Game.hint_to(hero, "Сначала перебей всех в комнате")
+		return
 	var st: Node = hero.st
 	match kind:
 		"altar":
@@ -75,7 +89,7 @@ func interact(hero: Node) -> void:
 			Game.float_text(global_position + Vector2(0, -24), "+15% урона до конца забега", Color(1.0, 0.4, 0.4))
 			Game.burst(global_position + Vector2(0, -8), Color(0.9, 0.15, 0.2), 20)
 		"chest":
-			if randf() < 0.3:
+			if not bait and randf() < 0.3:
 				_mimic()
 			else:
 				for i in randi_range(5, 9):
