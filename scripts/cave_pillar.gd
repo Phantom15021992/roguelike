@@ -23,6 +23,18 @@ func _n(i: int) -> float:
 	return float(hash(Vector2i(seed_v, i)) & 1023) / 1023.0
 
 
+## Есть ли на верхушке кристаллы.
+func has_crystals() -> bool:
+	return cells.x >= 2 or _n(60) < 0.4
+
+
+## Где кристаллы (относительно узла) — для света и ореола.
+func crystal_pos() -> Vector2:
+	var face_h := 14 + cells.y * 2
+	var cap_h := int(cells.y * 16 * 0.5) + 2
+	return Vector2(0, -face_h - cap_h * 0.4 - 4)
+
+
 func _draw() -> void:
 	var w := cells.x * 16 - 2
 	var fh := cells.y * 16
@@ -85,7 +97,7 @@ func _draw() -> void:
 		var py := ct + 2 + int(_n(50 + i) * maxf(1.0, cap_h - 4.0))
 		draw_rect(Rect2(px, py, 2, 1), MID)
 	# Кристаллы на верхушке (не у всех колонн).
-	if cells.x >= 2 or _n(60) < 0.4:
+	if false:  # кристаллы верхушки рисует dungeon поверх темноты (dungeon._decorate)
 		var n := 2 + cells.x
 		var bx := x0 + w / 2.0 + (_n(61) - 0.5) * (w * 0.4)
 		var by := ct + cap_h * 0.6

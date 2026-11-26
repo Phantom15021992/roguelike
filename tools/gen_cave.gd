@@ -285,7 +285,7 @@ func _decor() -> void:
 				for k in range(-2, 3):
 					var p := c + dir.orthogonal() * (k * 0.5)
 					if absf(k * 0.5) <= half:
-						var col := CYAN.lerp(CYAN_HI, f).darkened(0.25 if k < 0 else 0.0)
+						var col := CYAN.lerp(CYAN_HI, 0.25 + f * 0.75).darkened(0.22 if k < 0 else 0.0)
 						_px(img, ox + int(p.x), int(p.y), col)
 		_outline_rect(img, Rect2i(ox, 0, 16, 16))
 	# 3: трутовики — полукруглые оранжевые полки в два-три яруса.

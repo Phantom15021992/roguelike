@@ -362,8 +362,14 @@ func _decorate() -> void:
 		pil.seed_v = hash(r.position)
 		pil.position = Vector2(r.position.x * TILE + r.size.x * TILE / 2.0, (r.position.y + r.size.y) * TILE)
 		$Entities.add_child(pil)
-		if r.size.x >= 2 or hash(r.position) % 3 == 0:
-			_light(layer, pil.position - Vector2(0, r.size.y * TILE + 10), Color(0.45, 0.8, 1.0), 1.0 + r.size.x * 0.4, 0.55)
+		if pil.has_crystals():
+			var cp: Vector2 = pil.position + pil.crystal_pos()
+			_light(layer, cp, Color(0.45, 0.8, 1.0), 1.2 + r.size.x * 0.4, 0.8)
+			# Кристаллы верхушки — над пеленой полумрака, чтобы сияли.
+			var cs := _decor_sprite(_glow_layer(), int(hash(r.position) % 3), cp + Vector2(0, -2))
+			cs.modulate = Color(1.3, 1.4, 1.5)
+			cs.scale = Vector2.ONE * (0.8 + r.size.x * 0.2)
+			_glow(layer, cp, 0.6 + r.size.x * 0.2, float(hash(r.position) % 100))
 	var h := rows.size()
 	var w: int = (rows[0] as String).length()
 	var lights := 0
@@ -382,13 +388,16 @@ func _decorate() -> void:
 			var under_wall := (open_rows[y - 1] as String)[x] == "#"
 			var r2 := rng.randf()
 			if under_wall and r2 < 0.07 and lights < 28:
-				var c := _decor_sprite(layer, rng.randi_range(0, 2), pos + Vector2(0, -4))
+				var c := _decor_sprite(_glow_layer(), rng.randi_range(0, 2), pos + Vector2(0, -4))
 				c.flip_h = rng.randf() < 0.5
+				c.modulate = Color(1.3, 1.4, 1.5)
+				_glow(layer, pos + Vector2(0, -7), 1.0, rng.randf() * TAU)
 				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.6, 1.3)
 				lights += 1
 			elif under_wall and r2 < 0.13:
-				_decor_sprite(layer, 4, pos)
+				_decor_sprite(layer, 4, pos).modulate = Color(1.3, 1.5, 1.7)
 				if lights < 28 and rng.randf() < 0.5:
+					_glow(layer, pos, 0.5, rng.randf() * TAU)
 					_light(layer, pos, Color(0.4, 0.8, 1.0), 1.2, 0.9)
 					lights += 1
 			elif r2 < 0.05:
@@ -396,7 +405,8 @@ func _decorate() -> void:
 			elif r2 < 0.09:
 				_decor_sprite(layer, 7, pos)
 			elif r2 < 0.095 and lights < 28:
-				_decor_sprite(layer, rng.randi_range(0, 2), pos)
+				_decor_sprite(_glow_layer(), rng.randi_range(0, 2), pos).modulate = Color(1.3, 1.4, 1.5)
+				_glow(layer, pos + Vector2(0, -3), 0.9, rng.randf() * TAU)
 				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.4, 1.2)
 				lights += 1
 	set_process(true)
@@ -422,13 +432,47 @@ func _rock_decor(layer: Node2D, rng: RandomNumberGenerator, open_rows: Array, x:
 		if r < 0.1:
 			_decor_sprite(layer, 10, pos + jitter).flip_h = rng.randf() < 0.5
 		elif r < 0.15:
-			_decor_sprite(layer, 9, pos + jitter).flip_h = rng.randf() < 0.5
+			_decor_sprite(_glow_layer(), 9, pos + jitter).flip_h = rng.randf() < 0.5
 			if rng.randf() < 0.5:
+				_glow(layer, pos + jitter + Vector2(0, -3), 0.55, rng.randf() * TAU)
 				_light(layer, pos, Color(0.35, 0.7, 1.0), 0.9, 0.4)
 		elif r < 0.25:
 			_decor_sprite(layer, 11, pos + jitter)
 		elif r < 0.3:
 			_decor_sprite(layer, 8, pos + jitter).flip_h = rng.randf() < 0.5
+
+
+var _halos: Array = []   # [спрайт ореола, фаза] — мягко пульсируют
+
+
+## Ореол кристалла: мягкое голубое пятно, складывается с картинкой (светится, а не просто «не темнеет»).
+func _glow(_layer: Node2D, pos: Vector2, size: float, phase: float) -> void:
+	var g := Sprite2D.new()
+	g.texture = LIGHT_TEX
+	var m := CanvasItemMaterial.new()
+	m.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	g.material = m
+	g.position = pos
+	g.scale = Vector2.ONE * size * 0.7
+	g.modulate = Color(0.35, 0.8, 1.0, 0.55)
+	# Над пеленой полумрака — иначе она гасит ореол; под кристаллами.
+	_glow_layer().add_child(g)
+	_glow_layer().move_child(g, 0)
+	_halos.append([g, phase, size])
+
+
+var _glow_root: Node2D
+
+
+func _glow_layer() -> Node2D:
+	if _glow_root == null:
+		var cl := CanvasLayer.new()
+		cl.layer = 2
+		cl.follow_viewport_enabled = true
+		add_child(cl)
+		_glow_root = Node2D.new()
+		cl.add_child(_glow_root)
+	return _glow_root
 
 
 func _decor_sprite(layer: Node2D, frame: int, pos: Vector2) -> Sprite2D:
@@ -453,6 +497,12 @@ func _light(_layer: Node2D, pos: Vector2, color: Color, size: float, energy: flo
 func _process(_delta: float) -> void:
 	if _shade == null:
 		return
+	var tm := Time.get_ticks_msec() / 1000.0
+	for hl: Array in _halos:
+		var g: Sprite2D = hl[0]
+		var f := 0.5 + 0.5 * sin(tm * 1.6 + float(hl[1]))
+		g.modulate.a = 0.35 + 0.3 * f
+		g.scale = Vector2.ONE * float(hl[2]) * (0.62 + 0.12 * f)
 	# Мир → экран 320x180 (канва растянута на окно, поэтому делим на масштаб окна).
 	var k := 320.0 / get_viewport().get_visible_rect().size.x
 	var xf := get_viewport().get_canvas_transform()
