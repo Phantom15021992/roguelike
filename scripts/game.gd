@@ -1570,6 +1570,7 @@ func _savetest() -> void:
 	# Гибель — сохранённый забег пропадает.
 	local_hero().take_damage(99999, local_hero().global_position + Vector2(5, 0))
 	await _wait(0.5)
+	_shot("save_dead")
 	Meta.load_slot(id)
 	print("SAVE after death: run in file=%s" % (not Meta.run_save.is_empty()))
 	var id2 := Meta.new_slot("coop")

@@ -40,8 +40,9 @@ func _ready() -> void:
 	add_child(_prompt)
 	_banner = _label(7)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.position = Vector2(0, 30)
-	_banner.size = Vector2(320, 20)
+	_banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_banner.position = Vector2(10, 30)
+	_banner.size = Vector2(300, 20)
 	add_child(_banner)
 
 	_panel = PanelContainer.new()
@@ -316,7 +317,7 @@ func _fill_workshop() -> void:
 	var tabs := _hc(2)
 	for spec in [["craft", "Создание"], ["stash", "Склад %d/%d" % [Meta.stash.size(), Meta.stash_max()]], ["upgrade", "Улучшение"]]:
 		var id: String = spec[0]
-		var b := _button(("▶ " if _tab == id else "") + spec[1], func() -> void:
+		var b := _button(("» " if _tab == id else "") + spec[1], func() -> void:
 			_tab = id
 			_result = ""
 			_refill(), true, 6)
@@ -365,7 +366,7 @@ func _fill_craft() -> void:
 	for id in Crafting.RARE:
 		if Meta.materials.get(id, 0) > 0:
 			rare = id
-	var hint := "[color=#a8a0b8]Предметы создаются на склад. ★ — с редким материалом босса (%s): гарантированно редкий.[/color]" % (
+	var hint := "[color=#a8a0b8]Предметы создаются на склад. «*» — с редким материалом босса (%s): гарантированно редкий.[/color]" % (
 		Crafting.mat_name(rare) + " есть" if rare != "" else "пока нет ни одного")
 	_panel_box.add_child(_rich(250, hint))
 	var list := _scroll(96)
@@ -374,7 +375,7 @@ func _fill_craft() -> void:
 		var can := Crafting.can_craft(base, Meta.gold, Meta.materials) and Meta.stash.size() < Meta.stash_max()
 		var row := _hc()
 		row.add_child(_button("Создать", func() -> void: _craft(base, ""), can, 5))
-		row.add_child(_button("★", func() -> void: _craft(base, rare), can and rare != "", 5))
+		row.add_child(_button("*", func() -> void: _craft(base, rare), can and rare != "", 5))
 		var who := ""
 		if b.has("job"):
 			who = " (%s)" % Skills.JOBS[b["job"]]["name"]
@@ -460,7 +461,7 @@ func _salvage_commons() -> void:
 	var parts: PackedStringArray = []
 	for id: String in total:
 		parts.append("%s ×%d" % [Crafting.mat_name(id), total[id]])
-	_result = "Разобрано предметов: %d → %s" % [n, ", ".join(parts)]
+	_result = "Разобрано предметов: %d » %s" % [n, ", ".join(parts)]
 	Meta.save_game()
 	Meta.changed.emit()
 
@@ -475,7 +476,7 @@ func _salvage(i: int) -> void:
 	var parts: PackedStringArray = []
 	for id: String in got:
 		parts.append("%s ×%d" % [Crafting.mat_name(id), got[id]])
-	_result = "Разобрано: %s → %s" % [Items.display_name(item), ", ".join(parts)]
+	_result = "Разобрано: %s » %s" % [Items.display_name(item), ", ".join(parts)]
 	Meta.save_game()
 	Meta.changed.emit()
 
@@ -618,7 +619,7 @@ func _fill_loadout() -> void:
 					_loadout.erase("offhand")  # двуручное занимает вторую руку
 			_refill(), not blocked, 5))
 		row.add_child(_rich(200, "%s[color=#%s]%s[/color] (%s) — %s" % [
-			"✔ " if taken else "", Items.color(item).to_html(false), Items.display_name(item),
+			"» " if taken else "", Items.color(item).to_html(false), Items.display_name(item),
 			Items.SLOT_NAMES[slot], _short_stats(item)]))
 		list.add_child(row)
 	var h := _hc(4)
@@ -834,7 +835,7 @@ func _fill_coop() -> void:
 			for pid: int in Net.players:
 				if str(Net.players[pid].get("uid", "")) == k:
 					here = true
-			t += "%s %s%s\n" % ["[color=#%s]✔[/color]" % GOOD.to_html(false) if here else "[color=#a8a0b8]…[/color]", names[k], " (ты)" if k == "host" else ""]
+			t += "%s %s%s\n" % ["[color=#%s]•[/color]" % GOOD.to_html(false) if here else "[color=#a8a0b8]…[/color]", names[k], " (ты)" if k == "host" else ""]
 		t += "[color=#a8a0b8]Кто не подключился — останется в сохранении. Новые игроки придут своим героем.[/color]"
 	_panel_box.add_child(_rich(230, t))
 	if can_continue:

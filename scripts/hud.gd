@@ -78,16 +78,21 @@ func _ready() -> void:
 	_info.add_theme_constant_override("line_spacing", -2)
 	add_child(_info)
 
-	_message = _label(12)
+	_message = _label(9)
 	_message.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Длинный текст переносится по словам и не уезжает за край экрана.
+	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_message.offset_left = 12
+	_message.offset_right = -12
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(_message)
 
 	_banner = _label(10)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.position = Vector2(0, 36)
-	_banner.size = Vector2(320, 20)
+	_banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_banner.position = Vector2(10, 36)
+	_banner.size = Vector2(300, 20)
 	var biome: String = DUNGEON.pool_for(Run.depth)["name"]
 	_banner.text = "Этаж %d%s%s" % [Run.depth, (" — " + biome) if biome != "" else "", " — логово босса" if Run.depth % 3 == 0 else ""]
 	if Run.depth % 3 == 0:
@@ -271,7 +276,7 @@ func _process(delta: float) -> void:
 		_message.text = "Пали все. Добыча забега потеряна\nR — вернуться в лагерь"
 	elif _player.dead:
 		var cp_text := ("Герой вернётся к сохранению на %d этаже" % Run.checkpoint) if Run.checkpoint > 0 else "Герой вернётся к тому, каким был в начале забега"
-		_message.text = "Вы погибли на %d этаже (уровень %d)\nПотеряно: %d золота, материалы и снаряжение. %s\nR — вернуться в лагерь" % [Run.depth, Run.level, Run.gold, cp_text]
+		_message.text = "Вы погибли на %d этаже (уровень %d)\nПотеряно: %d золота, материалы и снаряжение.\n%s\nR — вернуться в лагерь" % [Run.depth, Run.level, Run.gold, cp_text]
 	elif _had_enemies and enemies == 0 and not _cleared_shown and not get_tree().current_scene.get("is_boss_floor"):
 		_cleared_shown = true
 		_message.text = ""
@@ -412,7 +417,7 @@ func _compare_text(item: Dictionary) -> String:
 
 
 func _diff_line(title: String, a: String, b: String, better: bool) -> String:
-	return "%s: %s → [color=#%s]%s[/color]" % [title, a, (GOOD if better else BAD).to_html(false), b]
+	return "%s: %s » [color=#%s]%s[/color]" % [title, a, (GOOD if better else BAD).to_html(false), b]
 
 
 # ---------------- Окна: общее ----------------
@@ -499,7 +504,7 @@ func _refresh_anvil_panel() -> void:
 		if Crafting.refine_level(item) >= Crafting.REFINE_MAX:
 			t.text = "[color=#%s]%s[/color] — максимум" % [Items.color(item).to_html(false), Items.display_name(item)]
 		else:
-			t.text = "[color=#%s]%s[/color] → +%d   шанс [b]%d%%[/b]   цена: %d зол. и %d материалов" % [
+			t.text = "[color=#%s]%s[/color] » +%d   шанс [b]%d%%[/b]   цена: %d зол. и %d материалов" % [
 				Items.color(item).to_html(false), Items.display_name(item), Crafting.refine_level(item) + 1,
 				Crafting.refine_chance(item, bonus), cost["gold"], cost["mats"]]
 		row.add_child(t)
@@ -606,14 +611,14 @@ func _refresh_inv_panel() -> void:
 			var now: Dictionary = Run.derived()
 			var then: Dictionary = Run.derived_with(it)
 			var gain: float = (then["atk_max"] - now["atk_max"]) * 2.0 + (then["max_hp"] - now["max_hp"]) * 0.3 + (then["dr"] - now["dr"]) * 2.0 + (then["crit"] - now["crit"]) + (then["aspd"] - now["aspd"]) * 0.5
-			better = " [color=#%s]▲[/color]" % GOOD.to_html(false) if gain > 0.5 else (" [color=#%s]▼[/color]" % BAD.to_html(false) if gain < -0.5 else "")
+			better = " [color=#%s]+[/color]" % GOOD.to_html(false) if gain > 0.5 else (" [color=#%s]−[/color]" % BAD.to_html(false) if gain < -0.5 else "")
 		else:
 			better = " [color=#%s](%s)[/color]" % [BAD.to_html(false), reason]
 		t.text = "[color=#%s]%s[/color]%s [color=#a8a0b8]%s — %s[/color]" % [Items.color(it).to_html(false), Items.display_name(it), better, Items.SLOT_NAMES[it["slot"]], _short_item(it)]
 		row.add_child(t)
 		bag_list.add_child(row)
 	var hint := _label(4)
-	hint.text = "1–6 — надеть из сумки   ▲ — лучше надетого   I или E — закрыть"
+	hint.text = "1–6 — надеть из сумки   + — лучше надетого   I или E — закрыть"
 	hint.add_theme_color_override("font_color", DIM)
 	_inv_box.add_child(hint)
 	_center(_panels["inv"])
