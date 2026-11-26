@@ -1,0 +1,35 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/jellyfish.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/shadow.png" id="2_shadow"]
+
+[sub_resource type="CircleShape2D" id="body"]
+radius = 4.0
+
+[node name="Jellyfish" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 5
+motion_mode = 1
+script = ExtResource("1_script")
+mat_id = "coral"
+mat_chance = 0.4
+max_hp = 40
+contact_radius = 7.0
+color = Color(0.7, 0.5, 1, 1)
+xp_reward = 16
+gold_min = 2
+gold_max = 4
+item_chance = 0.18
+evasion = 15
+
+[node name="Shadow" type="Sprite2D" parent="."]
+position = Vector2(0, -1)
+scale = Vector2(0.7, 0.7)
+texture = ExtResource("2_shadow")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -12)
+
+[node name="Body" type="CollisionShape2D" parent="."]
+position = Vector2(0, -4)
+shape = SubResource("body")

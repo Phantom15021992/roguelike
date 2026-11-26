@@ -70,6 +70,25 @@ const SPAWNS := {
 	"y": preload("res://scenes/demon_slime.tscn"),
 	"C": preload("res://scenes/hellhound.tscn"),
 	"E": preload("res://scenes/soul_eater.tscn"),
+	# Этажи 71–100. Буквы D M P S L A B заняты картой блоков.
+	"F": preload("res://scenes/drowned.tscn"),
+	"G": preload("res://scenes/tentacle.tscn"),
+	"H": preload("res://scenes/jellyfish.tscn"),
+	"I": preload("res://scenes/whirlpool.tscn"),
+	"J": preload("res://scenes/crab.tscn"),
+	"K": preload("res://scenes/sea_serpent.tscn"),
+	"N": preload("res://scenes/turret.tscn"),
+	"O": preload("res://scenes/saw.tscn"),
+	"Q": preload("res://scenes/mech_golem.tscn"),
+	"R": preload("res://scenes/flamer.tscn"),
+	"T": preload("res://scenes/miner.tscn"),
+	"U": preload("res://scenes/spider_mech.tscn"),
+	"V": preload("res://scenes/reflector.tscn"),
+	"W": preload("res://scenes/mirror.tscn"),
+	"X": preload("res://scenes/glow_shroom.tscn"),
+	"Y": preload("res://scenes/crystal_slime.tscn"),
+	"Z": preload("res://scenes/prism.tscn"),
+	"0": preload("res://scenes/shard_bat.tscn"),
 }
 # Биомы по 10 этажей (всего 70): боссы на 3-м, 6-м, 9-м этаже биома, 10-й — логово финального
 # босса биома. Кто какой босс — boss_roster.gd.
@@ -103,6 +122,12 @@ const POOLS := [
 		"monsters": [["h", 3], ["n", 2], ["x", 3], ["w", 1], ["f", 1]], "extra": [["q", 2], ["r", 2], ["v", 2]]},
 	{"from": 61, "name": "Бездна", "tint": Color(0.95, 0.62, 0.68),
 		"monsters": [["d", 3], ["k", 2], ["i", 2], ["h", 2], ["n", 1]], "extra": [["y", 2], ["C", 2], ["E", 2]]},
+	{"from": 71, "name": "Затонувший храм", "tint": Color(0.7, 0.9, 1.0),
+		"monsters": [["F", 3], ["G", 2], ["H", 3], ["c", 1], ["t", 1]], "extra": [["I", 2], ["J", 2], ["K", 2]]},
+	{"from": 81, "name": "Механическая кузня", "tint": Color(1.0, 0.9, 0.75),
+		"monsters": [["N", 3], ["O", 2], ["Q", 2], ["i", 1], ["o", 1]], "extra": [["R", 2], ["T", 2], ["U", 2]]},
+	{"from": 91, "name": "Хрустальные пещеры", "tint": Color(1.0, 0.85, 1.1),
+		"monsters": [["V", 2], ["W", 3], ["X", 2], ["h", 2], ["r", 1]], "extra": [["Y", 2], ["Z", 2], ["0", 2]]},
 ]
 
 

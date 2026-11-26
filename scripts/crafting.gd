@@ -30,12 +30,19 @@ const MATERIALS := {
 	"swamp_pearl": {"name": "Болотная жемчужина", "icon": 6, "rare": true, "tint": Color(0.7, 1.3, 0.6)},
 	"shadow_gem": {"name": "Теневой камень", "icon": 7, "rare": true, "tint": Color(0.75, 0.5, 1.4)},
 	"abyss_eye": {"name": "Око бездны", "icon": 11, "rare": true, "tint": Color(1.4, 0.4, 0.8)},
+	# Этажи 71–100
+	"coral": {"name": "Коралл", "icon": 4, "tint": Color(1.4, 0.7, 0.7)},
+	"gear": {"name": "Шестерня", "icon": 5, "tint": Color(1.2, 1.0, 0.7)},
+	"crystal": {"name": "Кристалл", "icon": 1, "tint": Color(1.3, 0.8, 1.4)},
+	"kraken_ink": {"name": "Чернила кракена", "icon": 6, "rare": true, "tint": Color(0.4, 0.6, 1.2)},
+	"machine_core": {"name": "Ядро машины", "icon": 11, "rare": true, "tint": Color(1.3, 1.1, 0.5)},
+	"prism": {"name": "Призма", "icon": 7, "rare": true, "tint": Color(1.4, 0.9, 1.5)},
 }
 
 # Обычные материалы (не редкие) — ими платят за заточку.
-const COMMON := ["gel", "dust", "wing", "bone", "spore", "ore", "sulfur", "obsidian", "scale", "ice", "venom", "soul", "horn"]
+const COMMON := ["gel", "dust", "wing", "bone", "spore", "ore", "sulfur", "obsidian", "scale", "ice", "venom", "soul", "horn", "coral", "gear", "crystal"]
 # Редкие (с боссов): при создании гарантируют редкий предмет.
-const RARE := ["crown", "phylactery", "ember_heart", "frost_heart", "swamp_pearl", "shadow_gem", "abyss_eye"]
+const RARE := ["crown", "phylactery", "ember_heart", "frost_heart", "swamp_pearl", "shadow_gem", "abyss_eye", "kraken_ink", "machine_core", "prism"]
 
 # Рецепты: база предмета → материалы и золото.
 const RECIPES := {
@@ -102,6 +109,15 @@ const TIERS := {
 	"horn": {"name": "Демоническая", "mat": "horn", "count": 5, "depth": 61,
 		"adj": ["Демонический", "Демоническая", "Демоническое"], "bonus": {"boss": 12, "crit": 5},
 		"desc": "сила 61-го этажа, +12% урона боссам, +5% крита"},
+	"coral": {"name": "Коралловая", "mat": "coral", "count": 5, "depth": 71,
+		"adj": ["Коралловый", "Коралловая", "Коралловое"], "bonus": {"eva": 5, "hp": 25},
+		"desc": "сила 71-го этажа, +5% уклонения, +25 HP"},
+	"gear": {"name": "Механическая", "mat": "gear", "count": 6, "depth": 81,
+		"adj": ["Механический", "Механическая", "Механическое"], "bonus": {"aspd": 8, "def": 3},
+		"desc": "сила 81-го этажа, +8% скорости атаки, +3% защиты"},
+	"crystal": {"name": "Хрустальная", "mat": "crystal", "count": 6, "depth": 91,
+		"adj": ["Хрустальный", "Хрустальная", "Хрустальное"], "bonus": {"crit": 8, "cast": 10},
+		"desc": "сила 91-го этажа, +8% крита, +10% скорости каста"},
 }
 
 const REFINE_MAX := 10

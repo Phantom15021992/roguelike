@@ -409,7 +409,9 @@ func spawn_shot(dir: Vector2, damage: int, speed := 75.0, col := Color(0.6, 0.35
 	b.style = style
 	b.chill = chill
 	b.position = global_position
-	Game.fx().add_child(b)
+	# Отложенно: монстры стреляют и в момент попадания по ним (зеркальник, осколки при смерти),
+	# а добавлять физические тела во время проверки столкновений нельзя.
+	Game.fx().add_child.call_deferred(b)
 	return b
 
 

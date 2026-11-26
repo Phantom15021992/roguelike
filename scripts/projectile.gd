@@ -91,6 +91,9 @@ func _on_body_entered(body: Node) -> void:
 	if body.is_in_group("enemies"):
 		if body in _hit:
 			return
+		# Кристалл-отражатель разворачивает снаряд героя обратно.
+		if body.has_method("reflect_shot") and body.reflect_shot(self):
+			return
 		if explode_radius > 0.0:
 			_explode()
 			queue_free()

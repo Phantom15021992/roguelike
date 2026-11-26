@@ -465,7 +465,10 @@ func _fill_craft() -> void:
 		if Meta.materials.get(id, 0) > 0:
 			rare = id
 	# Закалка: обычная или материалом глубин (предмет силы той глубины + особое свойство).
-	var th := _hc(2)
+	var th := GridContainer.new()  # кнопок закалки много — в два ряда
+	th.columns = 5
+	th.add_theme_constant_override("h_separation", 2)
+	th.add_theme_constant_override("v_separation", 2)
 	th.add_child(_button(("» " if _tier == "" else "") + "Обычная", func() -> void:
 		_tier = ""
 		_refill(), true, 5))

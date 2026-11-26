@@ -269,7 +269,7 @@ func _raise_shield() -> void:
 		s = open_spot(s)  # не в колонну арены
 		c.position = s
 		c.died.connect(_on_crystal_died)
-		get_parent().add_child(c)
+		get_parent().add_child.call_deferred(c)  # щит поднимается в момент попадания — добавлять только после
 		Game.burst(s + Vector2(0, -8), Color(0.7, 0.5, 1.0), 12)
 	Game.banner("Щит! Разбей кристаллы", 2.5)
 	_log("shield up")

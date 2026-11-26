@@ -1083,6 +1083,16 @@ var _iron_pct := 0.0
 var _chill_time := 0.0           # холод (ледяные монстры): −40% скорости бега
 
 
+## Ослепление (светогриб): экран темнеет, видно только вокруг героя.
+func blind(sec: float) -> void:
+	if dead:
+		return
+	if is_local():
+		Game.show_blind(sec)
+	else:
+		Net.send_to(peer_id, "ui", {"blind": sec})
+
+
 func apply_chill(sec: float) -> void:
 	if dead:
 		return

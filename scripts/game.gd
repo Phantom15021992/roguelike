@@ -902,9 +902,11 @@ func go_camp_offline() -> void:
 	_change_scene(CAMP_SCENE)
 
 
-## Гость: хозяин просит что-то показать (подсказку, окно портала).
+## Гость: хозяин просит что-то показать (подсказку, окно портала, ослепление).
 func guest_ui(d: Dictionary) -> void:
 	var scene := get_tree().current_scene
+	if d.has("blind"):
+		show_blind(float(d["blind"]))
 	if d.has("hint"):
 		var h := local_hero()
 		if h:
@@ -913,6 +915,44 @@ func guest_ui(d: Dictionary) -> void:
 		var camp_hud := scene.get_node_or_null("CampHUD")
 		if camp_hud:
 			camp_hud.open_building("portal")
+
+
+# --- Ослепление (светогриб) ---
+
+var _blind: TextureRect
+
+
+## Тёмная пелена со светлым кругом вокруг героя на sec секунд.
+func show_blind(sec: float) -> void:
+	if _blind == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 9  # под интерфейсом
+		add_child(layer)
+		var g := Gradient.new()
+		g.set_color(0, Color(0, 0, 0, 0))
+		g.set_color(1, Color(0, 0, 0, 0.94))
+		g.add_point(0.11, Color(0, 0, 0, 0.0))
+		g.add_point(0.22, Color(0, 0, 0, 0.9))
+		var tex := GradientTexture2D.new()
+		tex.gradient = g
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.45)
+		tex.fill_to = Vector2(0.5, 1.4)
+		tex.width = 320
+		tex.height = 180
+		_blind = TextureRect.new()
+		_blind.texture = tex
+		_blind.size = Vector2(320, 180)
+		_blind.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(_blind)
+	_blind.visible = true
+	_blind.modulate.a = 1.0
+	var tw := _blind.create_tween()
+	tw.tween_interval(maxf(0.1, sec - 0.6))
+	tw.tween_property(_blind, "modulate:a", 0.0, 0.6)
+	var h := local_hero()
+	if h:
+		float_text(h.global_position + Vector2(0, -24), "Ослеплён", Color(1.0, 0.95, 0.6))
 
 
 # --- Эффекты ---
@@ -1154,6 +1194,8 @@ func _autotest() -> void:
 		for e: Node2D in enemies:
 			if e.get("shielded"):
 				continue  # босс под щитом — сначала кристаллы
+			if ranged and e.has_method("reflect_shot"):
+				continue  # отражатель возвращает стрелы и магию — стрелку его не убить, обходим
 			var d := e.global_position.distance_to(p.global_position)
 			if d < enemy_dist:
 				enemy_dist = d
@@ -1209,9 +1251,11 @@ func _autotest() -> void:
 				window_start = p.global_position
 				window_frames = 0
 
-		# Красный круг под ногами — сначала выбегаем из него.
+		# Красный круг под ногами — сначала выбегаем из него. С --god бот бессмертен и просто
+		# проходит уровень (решение владельца) — не уворачивается и не отступает.
 		var dodging := false
-		for t: Node2D in get_tree().get_nodes_in_group("telegraphs"):
+		var careful := not "--god" in OS.get_cmdline_user_args()
+		for t: Node2D in (get_tree().get_nodes_in_group("telegraphs") if careful else []):
 			if not t.hostile:
 				continue  # свои круги (заклинания мага) не опасны
 			var away: Vector2 = p.global_position - t.global_position
@@ -1219,7 +1263,7 @@ func _autotest() -> void:
 				move_dir = away.normalized() if away.length() > 1.0 else Vector2.RIGHT
 				dodging = true
 		# Стрелок отступает, если враг подошёл вплотную.
-		var retreating := ranged and enemy_dist < 28.0 and not dodging and detour == 0
+		var retreating := careful and ranged and enemy_dist < 28.0 and not dodging and detour == 0
 		if retreating:
 			dodging = true  # пока отступает — не стреляет (иначе стрелял бы себе за спину)
 			move_dir = (p.global_position - goal).normalized()
@@ -1551,10 +1595,21 @@ func _zootest() -> void:
 		for n: String in ["slime_splitter", "vampire_bat", "bomb_shroom", "skeleton_archer", "ghost", "bone_guard",
 				"fire_slime", "fire_wisp", "bomber_imp", "ice_golem", "snow_bat", "frost_shroom",
 				"poison_slime", "gnat", "rot_skeleton", "shadow_slime", "mirror_shade", "phantom_knight",
-				"demon_slime", "hellhound", "soul_eater"]:
+				"demon_slime", "hellhound", "soul_eater",
+				"drowned", "tentacle", "jellyfish", "whirlpool", "crab", "sea_serpent",
+				"turret", "saw", "mech_golem", "flamer", "miner", "spider_mech",
+				"reflector", "mirror", "glow_shroom", "crystal_slime", "prism", "shard_bat"].filter(
+				func(n: String) -> bool: return _arg("--zoo", "") == "" or n in _arg("--zoo", "").split(",")):
 			var e: Node2D = (load("res://scenes/%s.tscn" % n) as PackedScene).instantiate()
 			e.position = p.position + Vector2(45, 0).rotated(randf() * TAU)
 			ents.add_child(e)
+			if n in ["glow_shroom", "whirlpool"]:  # вплотную: вспышка / затягивание
+				e.position = p.position + Vector2(26, 0)
+			if n == "jellyfish":  # молния бьёт между двумя медузами — нужна пара, герой посередине
+				e.position = p.position + Vector2(-40, 0)
+				var e2: Node2D = (load("res://scenes/jellyfish.tscn") as PackedScene).instantiate()
+				e2.position = p.position + Vector2(40, 0)
+				ents.add_child(e2)
 			await _wait(2.0)
 			var alive: bool = is_instance_valid(e) and not e.dead
 			var hp0: int = e.hp if alive else -1
@@ -1570,7 +1625,7 @@ func _zootest() -> void:
 				x.queue_free()
 			await _wait(0.2)
 	var arena := Rect2(p.position - Vector2(200, 110), Vector2(400, 220))
-	for bi in Roster.ROSTER.size():
+	for bi in range(int(_arg("--zoo-biome", "0")), Roster.ROSTER.size()):
 		for k in 4:
 			var cfg: Dictionary = Roster.ROSTER[bi][k]
 			var depth: int = bi * 10 + [3, 6, 9, 10][k]

@@ -8,7 +8,7 @@ extends RefCounted
 ## добыча, кого призывает.
 
 const BIOME_FLOORS := 10
-const MAX_DEPTH := 70
+const MAX_DEPTH := 100
 const BOSS_FLOORS := [3, 6, 9, 10]   # этажи биома с боссом (10-й — финальный)
 
 const SLIME := "res://scenes/boss_slime.tscn"
@@ -25,6 +25,9 @@ const BIOME_MATS := [
 	[["venom", 6], ["spore", 3], ["swamp_pearl", 1]],
 	[["soul", 6], ["bone", 3], ["shadow_gem", 1]],
 	[["horn", 6], ["sulfur", 3], ["abyss_eye", 1]],
+	[["coral", 6], ["ice", 3], ["kraken_ink", 1]],
+	[["gear", 6], ["ore", 4], ["machine_core", 1]],
+	[["crystal", 6], ["soul", 3], ["prism", 1]],
 ]
 
 const ROSTER := [
@@ -76,6 +79,27 @@ const ROSTER := [
 		{"scene": BONE, "name": "Архидемон", "tint": Color(1.3, 0.4, 0.6), "tempo": 1.35},
 		{"scene": EMBER, "name": "Князь бездны", "tint": Color(1.2, 0.4, 0.9), "tempo": 1.35, "minion": "res://scenes/demon.tscn"},
 		{"scene": FINAL, "name": "Повелитель бездны", "tint": Color(0.9, 0.35, 1.1), "size": 1.3, "minion": "res://scenes/horror.tscn"},
+	],
+	# 71–80 Затонувший храм: снаряды замедляют (вода)
+	[
+		{"scene": SLIME, "name": "Королева глубин", "tint": Color(0.45, 0.85, 1.1), "tempo": 1.35, "chill": 0.8},
+		{"scene": BONE, "name": "Жрец утонувших", "tint": Color(0.4, 0.8, 0.9), "tempo": 1.35, "chill": 0.8},
+		{"scene": EMBER, "name": "Левиафан", "tint": Color(0.35, 0.65, 1.2), "tempo": 1.35, "minion": "res://scenes/drowned.tscn"},
+		{"scene": FINAL, "name": "Древний кракен", "tint": Color(0.4, 0.5, 1.2), "size": 1.2, "minion": "res://scenes/tentacle.tscn"},
+	],
+	# 81–90 Механическая кузня
+	[
+		{"scene": SLIME, "name": "Плавильный слизень", "tint": Color(1.3, 0.85, 0.5), "tempo": 1.4},
+		{"scene": BONE, "name": "Инженер-лич", "tint": Color(1.1, 0.95, 0.7), "tempo": 1.4},
+		{"scene": EMBER, "name": "Паровой колосс", "tint": Color(0.85, 0.8, 0.75), "tempo": 1.4, "minion": "res://scenes/turret.tscn"},
+		{"scene": FINAL, "name": "Машина судного дня", "tint": Color(1.2, 1.0, 0.6), "size": 1.25, "minion": "res://scenes/mech_golem.tscn"},
+	],
+	# 91–100 Хрустальные пещеры
+	[
+		{"scene": SLIME, "name": "Хрустальный король слизней", "tint": Color(1.3, 0.8, 1.4), "tempo": 1.45},
+		{"scene": BONE, "name": "Зеркальная королева", "tint": Color(1.2, 0.85, 1.35), "tempo": 1.45},
+		{"scene": EMBER, "name": "Призматический титан", "tint": Color(1.1, 0.7, 1.4), "tempo": 1.45, "minion": "res://scenes/mirror.tscn"},
+		{"scene": FINAL, "name": "Сердце кристалла", "tint": Color(1.4, 0.75, 1.5), "size": 1.35, "minion": "res://scenes/reflector.tscn"},
 	],
 ]
 
