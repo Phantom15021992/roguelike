@@ -2,17 +2,13 @@ extends Node2D
 ## Неровные края скал в пещере: поверх стыков «скала — пол» рисуются рваные каменные кромки,
 ## чтобы контур скал не шёл ровно по клеткам. Чисто картинка (без столкновений); расклад
 ## зависит только от карты — у гостей в коопе такой же.
-##   — бока и верх скальной массы: выступ на 2–6 px в сторону пола + светлая кромка;
-##   — подножие обрыва: неровная тень и камешки;
-##   — верх обрыва: наплывы тёмной породы на светлую кромку;
+##   — со всех сторон скальной массы: выступ на 2–6 px в сторону пола + светлая кромка;
 ##   — внутренние углы пола: скругление.
 
 const TILE := 16
 const ROCK := Color8(15, 14, 29)
 const ROCK_EDGE := Color8(30, 30, 54)
 const RIM := Color8(74, 84, 130)
-const SHADOW := Color8(12, 11, 24, 170)
-const PEBBLE := Color8(70, 76, 112)
 
 var rows: Array = []
 
@@ -42,29 +38,15 @@ func _draw() -> void:
 func _wall_edges(x: int, y: int) -> void:
 	var ox := x * TILE
 	var oy := y * TILE
-	var face := not _is_wall(x, y + 1)   # обрыв: под скалой пол
-	# Бок скалы слева/справа (пол рядом): выступ в сторону пола.
+	# Со всех сторон, где рядом пол, — рваный выступ скалы со светлой кромкой (обрывов нет).
 	if not _is_wall(x - 1, y):
-		_lip(Vector2(ox, oy), Vector2(ox, oy + TILE), Vector2(-1, 0), x, y, 0, not face)
+		_lip(Vector2(ox, oy), Vector2(ox, oy + TILE), Vector2(-1, 0), x, y, 0, true)
 	if not _is_wall(x + 1, y):
-		_lip(Vector2(ox + TILE, oy), Vector2(ox + TILE, oy + TILE), Vector2(1, 0), x, y, 1, not face)
-	# Верх скалы, над которым пол (задняя кромка массива).
+		_lip(Vector2(ox + TILE, oy), Vector2(ox + TILE, oy + TILE), Vector2(1, 0), x, y, 1, true)
 	if not _is_wall(x, y - 1):
 		_lip(Vector2(ox, oy), Vector2(ox + TILE, oy), Vector2(0, -1), x, y, 2, true)
-	if face:
-		# Подножие обрыва: неровная тень на полу и камешки.
-		var pts := PackedVector2Array([Vector2(ox, oy + TILE)])
-		for k in 5:
-			pts.append(Vector2(ox + k * 4, oy + TILE + 1 + int(_n(x, y, 10 + k) * 4.0)))
-		pts.append(Vector2(ox + TILE, oy + TILE))
-		draw_colored_polygon(pts, SHADOW)
-		if _n(x, y, 20) < 0.45:
-			var px := ox + 2 + int(_n(x, y, 21) * 11.0)
-			draw_rect(Rect2(px, oy + TILE + 1, 2, 2), PEBBLE)
-			draw_rect(Rect2(px, oy + TILE + 3, 2, 1), SHADOW)
-		# Верх обрыва: рваная кромка тёмной породы, наползающая на стенку (если сверху скала).
-		if _is_wall(x, y - 1):
-			_lip(Vector2(ox, oy), Vector2(ox + TILE, oy), Vector2(0, 1), x, y, 3, true, 1.0, 3.0)
+	if not _is_wall(x, y + 1):
+		_lip(Vector2(ox, oy + TILE), Vector2(ox + TILE, oy + TILE), Vector2(0, 1), x, y, 3, true)
 
 
 ## Рваный выступ скалы вдоль ребра a→b в сторону out (наружу, на пол).

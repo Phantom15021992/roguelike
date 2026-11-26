@@ -258,6 +258,56 @@ func net_scene() -> Dictionary:
 # ---------------- Новая графика: кристальная пещера ----------------
 
 ## Клетка пола: в пещере — кусок большого бесшовного пола, иначе старая плитка.
+## Стена, поставленная по ходу игры (ворота арены, ловушка): в пещере — тёмная скала.
+func _wall_cell(cell: Vector2i) -> void:
+	if _cave_style():
+		map.set_cell(cell, 1, Vector2i(posmod(cell.x, 4), 4 + posmod(cell.y, 4)))
+	else:
+		map.set_cell(cell, 0, WALL_FACE)
+
+
+var _cols := {}              # клетка колонны -> номер колонны
+var _col_rects: Array = []   # Rect2i каждой колонны (в клетках)
+
+
+## Колонны — маленькие отдельные куски стены (до 9 клеток), не касающиеся края карты.
+func _find_columns(map_rows: Array) -> void:
+	_cols.clear()
+	_col_rects.clear()
+	if not _cave_style():
+		return
+	var h := map_rows.size()
+	var w: int = (map_rows[0] as String).length()
+	var seen := {}
+	for y in h:
+		for x in w:
+			if (map_rows[y] as String)[x] != "#" or seen.has(Vector2i(x, y)):
+				continue
+			var comp: Array = []
+			var stack: Array = [Vector2i(x, y)]
+			seen[Vector2i(x, y)] = true
+			var edge := false
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				comp.append(c)
+				if c.x == 0 or c.y == 0 or c.x == w - 1 or c.y == h - 1:
+					edge = true
+				for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+					var n := c + d
+					if n.x >= 0 and n.y >= 0 and n.x < w and n.y < h and not seen.has(n) and (map_rows[n.y] as String)[n.x] == "#":
+						seen[n] = true
+						stack.append(n)
+			if edge or comp.size() > 9:
+				continue
+			var r := Rect2i(comp[0], Vector2i.ONE)
+			for c: Vector2i in comp:
+				r = r.merge(Rect2i(c, Vector2i.ONE))
+			var id := _col_rects.size()
+			_col_rects.append(r)
+			for c: Vector2i in comp:
+				_cols[c] = id
+
+
 func _floor_cell(cell: Vector2i) -> void:
 	if _cave_style():
 		map.set_cell(cell, 1, Vector2i(posmod(cell.x, 4), posmod(cell.y, 4)))
@@ -295,9 +345,25 @@ func _decorate() -> void:
 	# Неровные края скал — под украшениями, над плитками.
 	var edges: Node2D = preload("res://scripts/cave_edges.gd").new()
 	edges.name = "CaveEdges"
-	edges.rows = rows
+	# Колонны для краёв — пол (вокруг них нет каменных наплывов), сами колонны — отдельные столбы.
+	var open_rows: Array = []
+	for y in rows.size():
+		var orow: String = rows[y]
+		for c: Vector2i in _cols:
+			if c.y == y:
+				orow[c.x] = "."
+		open_rows.append(orow)
+	edges.rows = open_rows
 	$Ground.add_child(edges)
 	$Ground.move_child(edges, 0)
+	for r: Rect2i in _col_rects:
+		var pil: Node2D = preload("res://scripts/cave_pillar.gd").new()
+		pil.cells = r.size
+		pil.seed_v = hash(r.position)
+		pil.position = Vector2(r.position.x * TILE + r.size.x * TILE / 2.0, (r.position.y + r.size.y) * TILE)
+		$Entities.add_child(pil)
+		if r.size.x >= 2 or hash(r.position) % 3 == 0:
+			_light(layer, pil.position - Vector2(0, r.size.y * TILE + 10), Color(0.45, 0.8, 1.0), 1.0 + r.size.x * 0.4, 0.55)
 	var h := rows.size()
 	var w: int = (rows[0] as String).length()
 	var lights := 0
@@ -307,18 +373,11 @@ func _decorate() -> void:
 			var ch := row[x]
 			var pos := Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
 			if ch == "#":
-				# Стена с полом снизу (видимый обрыв): грибы-трутовики, корни.
-				if (rows[y + 1] as String)[x] != "#":
-					var r := rng.randf()
-					if r < 0.08:
-						_decor_sprite(layer, 3, pos)
-					elif r < 0.18:
-						_decor_sprite(layer, 5, pos)
 				continue
 			if ch == "S":
 				_light(layer, pos, Color(0.45, 0.85, 1.0), 2.0, 0.7)
 				continue
-			var under_wall := (rows[y - 1] as String)[x] == "#"
+			var under_wall := (open_rows[y - 1] as String)[x] == "#"
 			var r2 := rng.randf()
 			if under_wall and r2 < 0.07 and lights < 28:
 				var c := _decor_sprite(layer, rng.randi_range(0, 2), pos + Vector2(0, -4))
@@ -417,7 +476,7 @@ func _trap_spring(inner: Rect2) -> void:
 	var edits: Array = []
 	for d: Array in trap["doors"]:
 		var c := Vector2i(d[0], d[1])
-		map.set_cell(c, 0, WALL_FACE)
+		_wall_cell(c)
 		astar.set_point_solid(c, true)
 		edits.append([c.x, c.y, "#", true])
 	Net.map_cells(edits)
@@ -489,7 +548,7 @@ func apply_cells(cells: Array) -> void:
 			stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
 			continue
 		if c[3]:
-			map.set_cell(cell, 0, WALL_FACE)
+			_wall_cell(cell)
 		else:
 			_floor_cell(cell)
 		astar.set_point_solid(cell, c[3])
@@ -613,7 +672,7 @@ func is_open_at(pos: Vector2) -> bool:
 func _on_boss_woke() -> void:
 	var edits: Array = []
 	for c in _gate_cells:
-		map.set_cell(c, 0, WALL_FACE)
+		_wall_cell(c)
 		astar.set_point_solid(c, true)
 		edits.append([c.x, c.y, "#", true])
 	Net.map_cells(edits)
@@ -889,6 +948,7 @@ func _build(map_rows: Array, guest := false) -> void:
 	var h := map_rows.size()
 	var w: int = (map_rows[0] as String).length()
 
+	_find_columns(map_rows)
 	astar.region = Rect2i(0, 0, w, h)
 	astar.cell_size = Vector2(TILE, TILE)
 	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
@@ -900,10 +960,13 @@ func _build(map_rows: Array, guest := false) -> void:
 			var cell := Vector2i(x, y)
 			var ch := row[x]
 			if ch == "#":
-				var below_is_floor := y + 1 < h and (map_rows[y + 1] as String)[x] != "#"
-				if not below_is_floor and _cave_style():
-					map.set_cell(cell, 1, Vector2i(x % 4, 4 + y % 4))
+				if _cave_style() and _cols.has(cell):
+					# Колонна: под ней обычный пол (без дыр вокруг), твёрдость — у плитки-двойника.
+					map.set_cell(cell, 1, Vector2i(posmod(x, 4), posmod(y, 4)), 1)
+				elif _cave_style():
+					map.set_cell(cell, 1, Vector2i(posmod(x, 4), 4 + posmod(y, 4)))
 				else:
+					var below_is_floor := y + 1 < h and (map_rows[y + 1] as String)[x] != "#"
 					map.set_cell(cell, 0, WALL_FACE if below_is_floor else WALL_TOP)
 				astar.set_point_solid(cell, true)
 				continue
@@ -1032,11 +1095,15 @@ func _make_tileset() -> TileSet:
 		for y in 8:
 			for x in 4:
 				big.create_tile(Vector2i(x, y))
+				var td: TileData
 				if y >= 4:  # скала — твёрдая
-					var td := big.get_tile_data(Vector2i(x, y), 0)
-					td.add_collision_polygon(0)
-					td.set_collision_polygon_points(0, 0, PackedVector2Array([
-						Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)]))
+					td = big.get_tile_data(Vector2i(x, y), 0)
+				else:       # двойник пола с твёрдостью — под колоннами
+					var alt := big.create_alternative_tile(Vector2i(x, y))
+					td = big.get_tile_data(Vector2i(x, y), alt)
+				td.add_collision_polygon(0)
+				td.set_collision_polygon_points(0, 0, PackedVector2Array([
+					Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)]))
 	var square := PackedVector2Array([
 		Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
 	for wall in [WALL_TOP, WALL_FACE]:

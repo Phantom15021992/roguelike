@@ -2147,8 +2147,14 @@ func _showcase() -> void:
 			if n is Sprite2D and n.region_rect.position.x < 48:  # кристаллы
 				spots.append(n.global_position)
 	spots.shuffle()
+	var pil: Array = []
+	for n in dg.get_node("Entities").get_children():
+		if n.get_script() == preload("res://scripts/cave_pillar.gd"):
+			pil.append(n.global_position)
+	pil.shuffle()
+	spots = pil.slice(0, 3) + spots.slice(0, 3)
 	var i := 0
-	for s: Vector2 in spots.slice(0, 4):
+	for s: Vector2 in spots:
 		i += 1
 		p.global_position = dg.open_spot(s + Vector2(18, 26))
 		await _wait(0.1)
