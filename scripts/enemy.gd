@@ -302,6 +302,14 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 
 
 ## Кто ударил: герой, отметившийся в Game.attacker, иначе — первый герой.
+## Точка рядом, где можно стоять (не в стене и не в колонне арены).
+func open_spot(pos: Vector2) -> Vector2:
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("open_spot"):
+		return scene.open_spot(pos)
+	return pos
+
+
 func _attacker() -> Node:
 	var a: Node = Game.attacker
 	if is_instance_valid(a) and a.is_in_group("player"):

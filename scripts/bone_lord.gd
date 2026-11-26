@@ -146,10 +146,10 @@ func _choose_action() -> void:
 func _teleport_now() -> void:
 	var p := nearest_player()
 	var inner := arena.grow(-28.0)
-	var spot := inner.get_center()
-	for i in 20:
+	var spot := open_spot(inner.get_center())
+	for i in 30:
 		var cand := Vector2(randf_range(inner.position.x, inner.end.x), randf_range(inner.position.y, inner.end.y))
-		if p == null or cand.distance_to(p.global_position) > 70.0:
+		if (p == null or cand.distance_to(p.global_position) > 70.0) and open_spot(cand) == cand:
 			spot = cand
 			break
 	Game.burst(global_position + Vector2(0, -12), MAGIC, 12)
@@ -265,6 +265,7 @@ func _raise_shield() -> void:
 	]
 	for s in spots:
 		var c: Node2D = CRYSTAL.instantiate()
+		s = open_spot(s)  # не в колонну арены
 		c.position = s
 		c.died.connect(_on_crystal_died)
 		get_parent().add_child(c)

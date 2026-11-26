@@ -8,6 +8,7 @@ extends Node2D
 const TILE := 16
 const TILES_TEX := preload("res://assets/tiles.png")
 const Blocks := preload("res://scripts/blocks.gd")
+const Arenas := preload("res://scripts/arenas.gd")
 const ANVIL := preload("res://scripts/anvil.gd")
 const EXIT_PORTAL := preload("res://scripts/exit_portal.gd")
 
@@ -115,9 +116,9 @@ static func _pick_monster(rng: RandomNumberGenerator, monsters: Array) -> String
 	return monsters[0][0]
 
 const BOSS_EVERY := 3  # каждый 3-й этаж — арена с боссом
-# Арена босса (в тайлах) и комната старта перед ней.
-const BOSS_START := Rect2i(4, 14, 10, 8)
-const BOSS_ARENA := Rect2i(26, 9, 24, 16)
+var arena_rect := Rect2i()      # пол арены босса (в тайлах), задаёт _generate_boss
+var arena_name := ""
+var _portal_cell := Vector2i(-1, -1)  # портал домой — в зале перед ареной
 
 @onready var map: TileMapLayer = $Map
 @onready var entities: Node2D = $Entities
@@ -140,7 +141,7 @@ func _ready() -> void:
 	is_boss_floor = is_boss_depth(Run.depth)
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("floor %d seed %d%s" % [Run.depth, rng.seed, " (BOSS)" if is_boss_floor else ""])
-	rows = _generate_boss() if is_boss_floor else _generate(rng, Run.depth)
+	rows = _generate_boss(rng) if is_boss_floor else _generate(rng, Run.depth)
 	_build(rows)
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_dump_map(rows, "res://shots/map_floor%d_%d.png" % [Run.depth, randi() % 1000])
@@ -199,32 +200,114 @@ func apply_cells(cells: Array) -> void:
 # Когда герой заходит в арену, проход закрывается; после победы — открывается и
 # на месте босса появляется лестница.
 
-func _generate_boss() -> Array:
-	var w := GRID_W * CELL_W
-	var h := GRID_H * CELL_H
+## Этаж с боссом тоже из блоков: старт → 2–5 комнат (без монстров) → зал с порталом домой →
+## арена из data/arenas.txt (два блока в ширину, у правого края), своя у каждого босса.
+func _generate_boss(rng: RandomNumberGenerator) -> Array:
+	var w := BLOCK_GRID_W * BLOCK
+	var h := BLOCK_GRID_H * BLOCK
 	var grid: Array = []
 	for y in h:
 		var line: Array = []
 		line.resize(w)
 		line.fill("#")
 		grid.append(line)
-	_fill(grid, BOSS_START, ".")
-	_fill(grid, BOSS_ARENA, ".")
-	var a := _center(BOSS_START)
-	var b := _center(BOSS_ARENA)
-	_carve_h(grid, a.x, b.x, b.y)
-	for pos in [Vector2i(4, 3), Vector2i(18, 3), Vector2i(4, 11), Vector2i(18, 11)]:
-		_fill(grid, Rect2i(BOSS_ARENA.position + pos, Vector2i(2, 2)), "#")
-	grid[a.y][a.x] = "P"
-	grid[b.y][b.x] = "B"
-	# Ворота — клетки коридора сразу перед ареной.
+
+	# Путь из ячеек: от левого края к ячейке перед ареной (столбец 2), арена — столбцы 3–4.
+	var ay := rng.randi_range(0, BLOCK_GRID_H - 1)
+	var cur := Vector2i(0, rng.randi_range(0, BLOCK_GRID_H - 1))
+	var hall := Vector2i(2, ay)
+	var path: Array[Vector2i] = [cur]
+	while cur != hall:
+		var moves: Array[Vector2i] = []
+		if cur.x < hall.x:
+			moves.append(Vector2i.RIGHT)
+		if cur.y != hall.y:
+			moves.append(Vector2i(0, signi(hall.y - cur.y)))
+		cur += moves[rng.randi() % moves.size()]
+		path.append(cur)
+	var need := {}
+	for c in path:
+		need[c] = {}
+	for i in range(1, path.size()):
+		var d := path[i] - path[i - 1]
+		need[path[i - 1]][_side(d)] = true
+		need[path[i]][_side(-d)] = true
+	need[hall]["E"] = true  # проход в арену
+
+	for i in path.size():
+		var c: Vector2i = path[i]
+		var v := _pick_variant(rng, "start" if i == 0 else "", need[c])
+		var ox := c.x * BLOCK
+		var oy := c.y * BLOCK
+		for y in BLOCK:
+			for x in BLOCK:
+				var ch: String = v["rows"][y][x]
+				var out := ch
+				match ch:
+					"D":
+						out = "." if need[c].has(_door_side(x, y)) else "#"
+					"M", "L", "S", "A":
+						out = "."  # перед логовом тихо: ни монстров, ни лестницы
+				grid[oy + y][ox + x] = out
+	# Портал домой — на полу ближе к середине зала перед ареной.
+	_portal_cell = _open_cell_in(grid, hall * BLOCK + Vector2i(BLOCK / 2, BLOCK / 2), Vector2i(BLOCK / 2, BLOCK / 2))
+
+	# Арена.
+	var boss_id := boss_for(Run.depth).resource_path.get_file().get_basename()
+	var arena := Arenas.pick(rng, boss_id)
+	arena_name = arena["name"]
+	var ax := 3 * BLOCK
+	var oy2 := ay * BLOCK
+	for y in Arenas.H:
+		for x in Arenas.W:
+			var ch: String = arena["rows"][y][x]
+			grid[oy2 + y][ax + x] = "." if ch == "D" else ch
+	arena_rect = Rect2i(ax + 1, oy2 + 1, Arenas.W - 2, Arenas.H - 2)
+	# Ворота — клетки входа (левый край арены): закрываются, когда босс проснулся.
 	_gate_cells.clear()
-	for y in range(b.y - CORRIDOR_HALF, b.y + CORRIDOR_HALF + 1):
-		_gate_cells.append(Vector2i(BOSS_ARENA.position.x - 1, y))
+	for y in range(Arenas.DOOR_LO, Arenas.DOOR_HI + 1):
+		_gate_cells.append(Vector2i(ax, oy2 + y))
 	var result: Array = []
 	for line in grid:
 		result.append("".join(line))
 	return result
+
+
+## Клетка пола поближе к center (в пределах half от него) — по ещё не построенной карте.
+func _open_cell_in(grid: Array, center: Vector2i, half: Vector2i) -> Vector2i:
+	var best := center
+	var best_d := 1 << 30
+	for y in range(center.y - half.y, center.y + half.y + 1):
+		for x in range(center.x - half.x, center.x + half.x + 1):
+			if grid[y][x] == "." and (Vector2i(x, y) - center).length_squared() < best_d:
+				best = Vector2i(x, y)
+				best_d = (Vector2i(x, y) - center).length_squared()
+	return best
+
+
+## Свободная клетка рядом с cell (по готовой карте поиска пути).
+func _open_cell_near(cell: Vector2i) -> Vector2i:
+	for r in 6:
+		for y in range(cell.y - r, cell.y + r + 1):
+			for x in range(cell.x - r, cell.x + r + 1):
+				var c := Vector2i(x, y)
+				if astar.is_in_boundsv(c) and not astar.is_point_solid(c):
+					return c
+	return cell
+
+
+## Точка рядом с pos, где можно стоять (если pos в стене или колонне).
+func open_spot(pos: Vector2) -> Vector2:
+	if is_open_at(pos):
+		return pos
+	var c := _open_cell_near(Vector2i(pos / TILE))
+	return Vector2(c.x * TILE + TILE / 2.0, c.y * TILE + TILE - 2)
+
+
+## Можно ли стоять в точке (для боссов: телепорт, прыжки — не в колонну).
+func is_open_at(pos: Vector2) -> bool:
+	var c := Vector2i(pos / TILE)
+	return astar.is_in_boundsv(c) and not astar.is_point_solid(c)
 
 
 func _on_boss_woke() -> void:
@@ -235,8 +318,8 @@ func _on_boss_woke() -> void:
 		edits.append([c.x, c.y, "#", true])
 	Net.map_cells(edits)
 	# Кооп: кто не успел зайти в арену — переносится внутрь, к воротам.
-	var arena := Rect2(Vector2(BOSS_ARENA.position * TILE), Vector2(BOSS_ARENA.size * TILE))
-	var inside := Vector2((BOSS_ARENA.position.x + 1) * TILE + TILE / 2.0, _center(BOSS_ARENA).y * TILE + TILE - 2)
+	var arena := Rect2(Vector2(arena_rect.position * TILE), Vector2(arena_rect.size * TILE))
+	var inside := Vector2((arena_rect.position.x + 1) * TILE + TILE / 2.0, _center(arena_rect).y * TILE + TILE - 2)
 	for h in get_tree().get_nodes_in_group("player"):
 		if not arena.has_point(h.global_position):
 			h.global_position = inside
@@ -251,16 +334,16 @@ func _on_boss_died(boss: Node) -> void:
 		edits.append([c.x, c.y, ".", false])
 	var cell := Vector2i(boss.global_position / TILE)
 	if astar.is_point_solid(cell):
-		cell = Vector2i(_center(BOSS_ARENA))
+		cell = _open_cell_near(_center(arena_rect))
 	map.set_cell(cell, 0, STAIRS)
 	stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
 	edits.append([cell.x, cell.y, "S", false])
 	Net.map_cells(edits)
 	# Рядом — портал домой: вернуться в лагерь живым и сохранить снаряжение.
 	var portal: Node2D = EXIT_PORTAL.new()
-	var pcell := Vector2i(BOSS_ARENA.position.x + 5, _center(BOSS_ARENA).y)
+	var pcell := _open_cell_near(Vector2i(arena_rect.position.x + 4, _center(arena_rect).y))
 	if pcell == cell:
-		pcell.x += 3
+		pcell = _open_cell_near(pcell + Vector2i(3, 0))
 	portal.position = Vector2(pcell * TILE) + Vector2(TILE / 2.0, TILE - 2)
 	entities.add_child(portal)
 	Game.banner("Лестница вниз — или портал домой", 3.0)
@@ -508,7 +591,7 @@ func _build(map_rows: Array, guest := false) -> void:
 						var e: Node2D = scene.instantiate()
 						e.position = spot
 						if ch == "B":
-							e.arena = Rect2(Vector2(BOSS_ARENA.position * TILE), Vector2(BOSS_ARENA.size * TILE))
+							e.arena = Rect2(Vector2(arena_rect.position * TILE), Vector2(arena_rect.size * TILE))
 							e.woke.connect(_on_boss_woke)
 							e.died.connect(_on_boss_died)
 						entities.add_child(e)
@@ -518,7 +601,7 @@ func _build(map_rows: Array, guest := false) -> void:
 	# Портал у входа в логово: последний шанс вернуться в лагерь с добычей, не рискуя боем.
 	if is_boss_floor:
 		var portal: Node2D = EXIT_PORTAL.new()
-		var pcell := BOSS_START.position + Vector2i(2, 3)
+		var pcell := _portal_cell
 		portal.position = Vector2(pcell * TILE) + Vector2(TILE / 2.0, TILE - 2)
 		entities.add_child(portal)
 		astar.set_point_solid(pcell, true)

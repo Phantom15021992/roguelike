@@ -24,7 +24,9 @@ const PLACES := {
 	"mine": Vector2i(19, 12),
 	"workshop": Vector2i(23, 12),
 	"storage": Vector2i(16, 12),
+	"exchange": Vector2i(10, 12),
 }
+const TITLES := {"exchange": "Обменник"}  # постройки без улучшений
 
 @onready var map: TileMapLayer = $Map
 @onready var entities: Node2D = $Entities
@@ -54,7 +56,7 @@ func _ready() -> void:
 	for id: String in PLACES:
 		var b: StaticBody2D = BUILDING.new()
 		b.id = id
-		b.title = Meta.UPGRADES[id]["name"] if Meta.UPGRADES.has(id) else ""
+		b.title = Meta.UPGRADES[id]["name"] if Meta.UPGRADES.has(id) else TITLES.get(id, "")
 		b.position = Vector2(PLACES[id] * TILE) + Vector2(TILE / 2.0, TILE)
 		entities.add_child(b)
 	if not Net.is_guest():

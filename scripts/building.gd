@@ -3,7 +3,7 @@ extends StaticBody2D
 ## откроется её окно в интерфейсе лагеря.
 
 const SHEET := preload("res://assets/buildings.png")
-const FRAMES := {"training": 0, "library": 1, "forge": 2, "infirmary": 3, "treasury": 4, "mine": 5, "portal": 6, "workshop": 7, "storage": 8}
+const FRAMES := {"training": 0, "library": 1, "forge": 2, "infirmary": 3, "treasury": 4, "mine": 5, "portal": 6, "workshop": 7, "storage": 8, "exchange": 9}
 
 var id := "training"
 var title := ""
@@ -40,6 +40,9 @@ func _ready() -> void:
 func refresh() -> void:
 	if id == "portal":
 		_label.text = "Вход в подземелье"
+		return
+	if id == "exchange":
+		_label.text = title  # строить не нужно — работает сразу
 		return
 	var lvl := Meta.level(id)
 	_label.text = "%s%s" % [title, (" %d" % lvl) if lvl > 0 else ""]

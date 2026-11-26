@@ -251,6 +251,8 @@ func _refill() -> void:
 				_fill_loadout()
 		"workshop":
 			_fill_workshop()
+		"exchange":
+			_fill_exchange()
 		_:
 			_fill_upgrade(_open_id)
 	_recenter()
@@ -315,6 +317,92 @@ func _fill_class_change() -> void:
 	_panel_box.add_child(h)
 
 
+# ---------------- Обменник ----------------
+# 5 любых материалов → 1 материал на выбор. Обычные меняются на обычные, редкие (с боссов) — на редкие.
+
+const EXCHANGE_COST := 5
+var _give := {}               # что отдаём: материал -> сколько
+
+
+func _give_total() -> int:
+	var n := 0
+	for id: String in _give:
+		n += _give[id]
+	return n
+
+
+## Какие материалы сейчас можно класть: того же вида (обычные/редкие), что уже положены.
+func _give_kind() -> String:
+	for id: String in _give:
+		if _give[id] > 0:
+			return "rare" if id in Crafting.RARE else "common"
+	return ""
+
+
+func _fill_exchange() -> void:
+	var total := _give_total()
+	var kind := _give_kind()
+	var t := "[b]Обменник[/b]  %d любых → 1 на выбор (редкие — только на редкие)\n" % EXCHANGE_COST
+	var parts: PackedStringArray = []
+	for id: String in _give:
+		if _give[id] > 0:
+			parts.append("%s ×%d" % [Crafting.mat_name(id), _give[id]])
+	t += "[color=#%s]Отдаёшь: %d/%d[/color] %s" % [GOLD.to_html(false), total, EXCHANGE_COST, ", ".join(parts)]
+	_panel_box.add_child(_rich(250, t))
+	var list := _scroll(52 if total >= EXCHANGE_COST else 96)
+	var any := false
+	for id: String in Crafting.MATERIALS:
+		var have: int = Meta.materials.get(id, 0)
+		if have <= 0:
+			continue
+		any = true
+		var given: int = _give.get(id, 0)
+		var this_kind := "rare" if id in Crafting.RARE else "common"
+		var row := _hc()
+		row.add_child(_button("+", func() -> void:
+			_give[id] = given + 1
+			_refill(), given < have and total < EXCHANGE_COST and (kind == "" or kind == this_kind), 5))
+		row.add_child(_button("−", func() -> void:
+			_give[id] = given - 1
+			_refill(), given > 0, 5))
+		row.add_child(_rich(180, "%s%s ×%d%s" % ["[color=#e0b0ff]" if this_kind == "rare" else "", Crafting.mat_name(id), have - given, "[/color]" if this_kind == "rare" else ""]))
+		list.add_child(row)
+	if not any:
+		list.add_child(_rich(200, "[color=#a8a0b8]Материалов нет — их приносят из подземелья через портал.[/color]"))
+	if total >= EXCHANGE_COST:
+		_panel_box.add_child(_rich(250, "Что получить?"))
+		var g := GridContainer.new()
+		g.columns = 7
+		g.add_theme_constant_override("h_separation", 2)
+		g.add_theme_constant_override("v_separation", 2)
+		for id: String in (Crafting.RARE if kind == "rare" else Crafting.COMMON):
+			g.add_child(_button(Crafting.mat_name(id), func() -> void: _exchange(id), true, 5))
+		_panel_box.add_child(g)
+	var h := _hc(4)
+	h.add_child(_button("Сбросить", func() -> void:
+		_give = {}
+		_refill(), total > 0))
+	h.add_child(_button("Закрыть (E)", close))
+	_panel_box.add_child(h)
+
+
+func _exchange(target: String) -> void:
+	if _give_total() < EXCHANGE_COST:
+		return
+	for id: String in _give:
+		if Meta.materials.get(id, 0) < _give[id]:
+			_give = {}
+			_refill()
+			return
+	for id: String in _give:
+		Meta.materials[id] -= _give[id]
+	Meta.materials[target] = Meta.materials.get(target, 0) + 1
+	_give = {}
+	show_banner("Обмен: получено «%s»" % Crafting.mat_name(target), 2.5)
+	Meta.save_game()
+	Meta.changed.emit()
+
+
 # ---------------- Мастерская ----------------
 
 func _fill_workshop() -> void:
@@ -368,18 +456,37 @@ func _materials_bar(mats: Dictionary, gold: int) -> Control:
 	return h
 
 
+var _tier := ""               # закалка в мастерской: "" — обычная, иначе ключ Crafting.TIERS
+
+
 func _fill_craft() -> void:
 	var rare := ""
 	for id in Crafting.RARE:
 		if Meta.materials.get(id, 0) > 0:
 			rare = id
-	var hint := "[color=#a8a0b8]Предметы создаются на склад. «*» — с редким материалом босса (%s): гарантированно редкий.[/color]" % (
+	# Закалка: обычная или материалом глубин (предмет силы той глубины + особое свойство).
+	var th := _hc(2)
+	th.add_child(_button(("» " if _tier == "" else "") + "Обычная", func() -> void:
+		_tier = ""
+		_refill(), true, 5))
+	for t: String in Crafting.TIERS:
+		var td: Dictionary = Crafting.TIERS[t]
+		var have: int = Meta.materials.get(td["mat"], 0)
+		th.add_child(_button("%s%s %d" % ["» " if _tier == t else "", Crafting.mat_name(td["mat"]), have], func() -> void:
+			_tier = t
+			_refill(), true, 5))
+	_panel_box.add_child(th)
+	var hint := ""
+	if _tier != "":
+		var td2: Dictionary = Crafting.TIERS[_tier]
+		hint = "[color=#%s]%s закалка[/color]: +%s ×%d к рецепту, золото ×2 — %s.\n" % [GOLD.to_html(false), td2["name"], Crafting.mat_name(td2["mat"]), td2["count"], td2["desc"]]
+	hint += "[color=#a8a0b8]Предметы создаются на склад. «*» — с редким материалом босса (%s): гарантированно редкий.[/color]" % (
 		Crafting.mat_name(rare) + " есть" if rare != "" else "пока нет ни одного")
 	_panel_box.add_child(_rich(250, hint))
-	var list := _scroll(96)
+	var list := _scroll(84)
 	for base: String in Crafting.RECIPES:
 		var b: Dictionary = Items.BASES[base]
-		var can := Crafting.can_craft(base, Meta.gold, Meta.materials) and Meta.stash.size() < Meta.stash_max()
+		var can := Crafting.can_craft_cost(Crafting.tier_cost(base, _tier), Meta.gold, Meta.materials) and Meta.stash.size() < Meta.stash_max()
 		var row := _hc()
 		row.add_child(_button("Создать", func() -> void: _craft(base, ""), can, 5))
 		row.add_child(_button("*", func() -> void: _craft(base, rare), can and rare != "", 5))
@@ -391,20 +498,20 @@ func _fill_craft() -> void:
 			for c: String in (b["class"] if b["class"] is Array else [b["class"]]):
 				names.append(Skills.CLASSES[c]["name"])
 			who = " (%s)" % ", ".join(names)
-		row.add_child(_rich(190, "[b]%s[/b]%s — %s" % [b["name"], who, Crafting.recipe_text(base)]))
+		row.add_child(_rich(190, "[b]%s[/b]%s — %s" % [b["name"], who, Crafting.recipe_text(base, _tier)]))
 		list.add_child(row)
 
 
 func _craft(base: String, rare: String) -> void:
-	if not Crafting.can_craft(base, Meta.gold, Meta.materials) or Meta.stash.size() >= Meta.stash_max():
+	var cost := Crafting.tier_cost(base, _tier)
+	if not Crafting.can_craft_cost(cost, Meta.gold, Meta.materials) or Meta.stash.size() >= Meta.stash_max():
 		return
-	var r: Dictionary = Crafting.RECIPES[base]
-	Meta.gold -= r["gold"]
-	for id: String in r["mats"]:
-		Meta.materials[id] -= r["mats"][id]
+	Meta.gold -= cost["gold"]
+	for id: String in cost["mats"]:
+		Meta.materials[id] -= cost["mats"][id]
 	if rare != "":
 		Meta.materials[rare] -= 1
-	var item := Crafting.craft(base, Meta.level("workshop"), rare)
+	var item := Crafting.craft(base, Meta.level("workshop"), rare, _tier)
 	Meta.stash_add(item)
 	_result = "Создано: [color=#%s]%s[/color] (%s)" % [Items.color(item).to_html(false), Items.display_name(item), _short_stats(item)]
 	Meta.save_game()

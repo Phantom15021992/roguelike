@@ -569,7 +569,7 @@ func _make_camp() -> void:
 				tiles.set_pixel(48 + x, y, c)
 	_save(tiles, "res://assets/camp_tiles.png")
 
-	var img := Image.create(288, 32, false, Image.FORMAT_RGBA8)
+	var img := Image.create(320, 32, false, Image.FORMAT_RGBA8)
 	var roofs := [Color8(176, 60, 54), Color8(60, 92, 170), Color8(70, 66, 76), Color8(225, 225, 230), Color8(214, 170, 50)]
 	for i in roofs.size():
 		_house(img, i * 32, roofs[i])
@@ -592,7 +592,12 @@ func _make_camp() -> void:
 	_emblem(img, 256, ["###", "#.#", "###"], Color8(220, 180, 90))
 	img.fill_rect(Rect2i(256 + 2, 24, 5, 5), Color8(150, 105, 60))
 	img.fill_rect(Rect2i(256 + 25, 25, 5, 4), Color8(150, 105, 60))
-	_outline(img, Rect2i(0, 0, 288, 32), PAL["k"])
+	# 9: обменник — бирюзовая крыша, эмблема-стрелки «туда-обратно», мешки у стены.
+	_house(img, 288, Color8(56, 150, 150))
+	_emblem(img, 288, ["#..", "###", "..#"], Color8(250, 230, 120))
+	img.fill_rect(Rect2i(288 + 2, 24, 5, 5), Color8(190, 160, 100))
+	img.fill_rect(Rect2i(288 + 25, 24, 5, 5), Color8(120, 170, 200))
+	_outline(img, Rect2i(0, 0, 320, 32), PAL["k"])
 	_save(img, "res://assets/buildings.png")
 
 

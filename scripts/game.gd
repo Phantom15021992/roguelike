@@ -80,6 +80,8 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--forgetest" in args:
+		_forgetest()
 	elif "--touchtest" in args:
 		_touchtest()
 	elif "--coopsave" in args:
@@ -1744,4 +1746,50 @@ func _touchtest() -> void:
 	ch.close()
 	await _wait(0.3)
 	_shot("touch_6_camp")
+	get_tree().quit()
+
+
+# --- Закалка в мастерской и обменник (`--forgetest`) ---
+func _forgetest() -> void:
+	await _wait(1.0)
+	var ch := get_tree().current_scene.get_node("CampHUD")
+	Meta.gold = 2000
+	Meta.levels["workshop"] = 1
+	Meta.materials = {"ore": 40, "bone": 30, "wing": 20, "dust": 20, "gel": 20, "spore": 20, "sulfur": 10, "ice": 12, "venom": 8, "soul": 10, "horn": 10, "crown": 3, "phylactery": 2}
+	var Crafting2 := preload("res://scripts/crafting.gd")
+	var base_item := Crafting2.craft("sword", 1, "", "")
+	print("FORGE plain sword: %s %s" % [base_item["name"], base_item["stats"]])
+	for t: String in Crafting2.TIERS:
+		var it := Crafting2.craft("sword", 1, "", t)
+		print("FORGE %s: %s %s" % [t, it["name"], it["stats"]])
+	print("FORGE salvage ice helm: %s" % Crafting2.salvage(Crafting2.craft("helm", 1, "", "ice")))
+	ch.open_building("workshop")
+	ch._tab = "craft"
+	ch._tier = "ice"
+	ch._refill()
+	await _wait(0.4)
+	_shot("forge_1_ice_tab")
+	var before: int = Meta.materials["ice"]
+	ch._craft("sword", "")
+	print("FORGE crafted via UI: stash=%d ice %d -> %d gold=%d result=%s" % [Meta.stash.size(), before, Meta.materials["ice"], Meta.gold, ch._result])
+	ch.close()
+	# Обменник: 3 руды + 2 кости -> 1 лёд; 5 редких нельзя смешать с обычными.
+	ch.open_building("exchange")
+	ch._give = {"ore": 3, "bone": 2}
+	ch._refill()
+	await _wait(0.4)
+	_shot("forge_2_exchange")
+	var ice0: int = Meta.materials["ice"]
+	ch._exchange("ice")
+	print("EXCH: ore=%d bone=%d ice %d -> %d" % [Meta.materials["ore"], Meta.materials["bone"], ice0, Meta.materials["ice"]])
+	ch._give = {"crown": 3, "phylactery": 2}
+	ch._exchange("frost_heart")
+	print("EXCH rare: crown=%d phyl=%d frost_heart=%d" % [Meta.materials["crown"], Meta.materials["phylactery"], Meta.materials.get("frost_heart", 0)])
+	ch._give = {"ore": 1}
+	ch._refill()
+	await _wait(0.3)
+	print("EXCH kind after ore: %s (rare + allowed: %s)" % [ch._give_kind(), ch._give_kind() == ""])
+	ch.close()
+	await _wait(0.3)
+	_shot("forge_3_camp")
 	get_tree().quit()

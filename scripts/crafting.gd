@@ -83,6 +83,27 @@ const RECIPES := {
 	"knuckles": {"mats": {"ore": 4, "scale": 2}, "gold": 60},
 }
 
+# Закалка (мастерская): любой рецепт можно сделать с материалом глубины — предмет получается
+# силы той глубины и с особым свойством закалки. Порядок — как биомы подземелья.
+# adj — прилагательное к названию по роду (м/ж/с), bonus — добавка к свойствам.
+const TIERS := {
+	"fire": {"name": "Огненная", "mat": "sulfur", "count": 3, "depth": 7,
+		"adj": ["Огненный", "Огненная", "Огненное"], "bonus": {"burn": 6},
+		"desc": "сила 7-го этажа, +6% поджога"},
+	"ice": {"name": "Ледяная", "mat": "ice", "count": 4, "depth": 10,
+		"adj": ["Ледяной", "Ледяная", "Ледяное"], "bonus": {"def": 4, "hp": 15},
+		"desc": "сила 10-го этажа, +4% защиты, +15 HP"},
+	"venom": {"name": "Ядовитая", "mat": "venom", "count": 4, "depth": 20,
+		"adj": ["Ядовитый", "Ядовитая", "Ядовитое"], "bonus": {"thorns": 15},
+		"desc": "сила 20-го этажа, +15% шипов"},
+	"soul": {"name": "Призрачная", "mat": "soul", "count": 5, "depth": 30,
+		"adj": ["Призрачный", "Призрачная", "Призрачное"], "bonus": {"lifesteal": 3, "sp": 20},
+		"desc": "сила 30-го этажа, +3% вампиризма, +20 SP"},
+	"horn": {"name": "Демоническая", "mat": "horn", "count": 5, "depth": 40,
+		"adj": ["Демонический", "Демоническая", "Демоническое"], "bonus": {"boss": 12, "crit": 5},
+		"desc": "сила 40-го этажа, +12% урона боссам, +5% крита"},
+}
+
 const REFINE_MAX := 10
 const REFINE_STEP := 0.10
 # Шанс успеха при заточке ДО уровня N (индекс = текущий уровень): +1..+4 — 100%.
@@ -173,16 +194,48 @@ static func can_craft(base: String, gold: int, mats: Dictionary) -> bool:
 
 ## Создать предмет. rare_mat — id редкого материала ("" — без него): гарантирует редкий.
 ## workshop_level повышает шанс хорошей редкости и силу предмета.
-static func craft(base: String, workshop_level: int, rare_mat := "") -> Dictionary:
+static func craft(base: String, workshop_level: int, rare_mat := "", tier := "") -> Dictionary:
 	var rarity := 0
 	var r := randf()
 	if rare_mat != "" or r < 0.08 + 0.06 * workshop_level:
 		rarity = 2
 	elif r < 0.45:
 		rarity = 1
-	var item := Items.make(base, rarity, 1 + workshop_level)
+	var depth := 1 + workshop_level
+	if tier != "":
+		depth = int(TIERS[tier]["depth"]) + workshop_level
+	var item := Items.make(base, rarity, depth)
 	item["crafted"] = true
+	if tier != "":
+		var t: Dictionary = TIERS[tier]
+		item["tier"] = tier
+		for k: String in t["bonus"]:
+			item["stats"][k] = int(item["stats"].get(k, 0)) + int(t["bonus"][k])
+		var adj: String = t["adj"][Items.BASES[base]["gender"]]
+		var nm: String = item["name"]
+		item["name"] = adj + " " + nm.left(1).to_lower() + nm.substr(1)
 	return item
+
+
+## Цена рецепта с закалкой: обычный рецепт + материал глубин, золото ×2.
+static func tier_cost(base: String, tier: String) -> Dictionary:
+	var r: Dictionary = RECIPES[base]
+	var mats: Dictionary = r["mats"].duplicate()
+	var gold: int = r["gold"]
+	if tier != "":
+		var t: Dictionary = TIERS[tier]
+		mats[t["mat"]] = mats.get(t["mat"], 0) + int(t["count"])
+		gold *= 2
+	return {"mats": mats, "gold": gold}
+
+
+static func can_craft_cost(cost: Dictionary, gold: int, mats: Dictionary) -> bool:
+	if gold < cost["gold"]:
+		return false
+	for id: String in cost["mats"]:
+		if mats.get(id, 0) < cost["mats"][id]:
+			return false
+	return true
 
 
 ## Разобрать предмет: вернуть примерно половину материалов рецепта (минимум 1).
@@ -191,11 +244,16 @@ static func salvage(item: Dictionary) -> Dictionary:
 	var recipe: Dictionary = RECIPES.get(item["base"], {"mats": {"ore": 2}})
 	for id: String in recipe["mats"]:
 		out[id] = maxi(1, int(recipe["mats"][id] / 2.0 + refine_level(item) * 0.5))
+	# Закалённый предмет возвращает и часть материала глубин.
+	var tier: String = item.get("tier", "")
+	if TIERS.has(tier):
+		var m: String = TIERS[tier]["mat"]
+		out[m] = out.get(m, 0) + maxi(1, int(TIERS[tier]["count"]) / 2)
 	return out
 
 
-static func recipe_text(base: String) -> String:
-	var r: Dictionary = RECIPES[base]
+static func recipe_text(base: String, tier := "") -> String:
+	var r: Dictionary = tier_cost(base, tier)
 	var parts: PackedStringArray = []
 	for id: String in r["mats"]:
 		parts.append("%s ×%d" % [mat_name(id), r["mats"][id]])
