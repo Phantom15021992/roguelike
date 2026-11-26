@@ -329,6 +329,8 @@ func _on_peer_connected(pid: int) -> void:
 		send_to(pid, "scene", _scene_message())
 	elif pid == 1:
 		_status("Подключено к игре %s" % key)
+		# Кто я: по номеру хозяин найдёт моего героя в сохранённом забеге.
+		send_to(1, "hello", {"uid": Meta.uid, "hero": Meta.own_hero()})
 		joined.emit()
 
 
@@ -443,6 +445,16 @@ func _host_msg(from: int, kind: String, data: Variant) -> void:
 		"unready":
 			players[from]["ready"] = false
 			send_lobby()
+		"hello":
+			if typeof(data) == TYPE_DICTIONARY:
+				var u := str(data.get("uid", ""))
+				for other: int in players:
+					if other != from and str(players[other].get("uid", "")) == u:
+						u = ""  # тот же номер уже в игре (два окна на одном компьютере)
+				players[from]["uid"] = u
+				if typeof(data.get("hero")) == TYPE_DICTIONARY:
+					players[from]["hero"] = data["hero"]
+				players_changed.emit()
 		"restart":
 			Game.coop_restart()
 

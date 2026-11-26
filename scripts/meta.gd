@@ -1,11 +1,17 @@
 extends Node
 ## Постоянный прогресс (autoload «Meta»): золото лагеря, улучшения построек, шахта, рекорды.
-## Сохраняется в user://save.json (на Windows: %APPDATA%\Godot\app_userdata\Roguelike\save.json).
+## Сохранения — отдельные файлы user://saves/<id>.json (на Windows: %APPDATA%\Godot\app_userdata\Roguelike\saves\),
+## у каждого вид: «solo» (одиночная игра) или «coop» (кооператив). В файле — лагерь, герои
+## и незаконченный забег (run_save: этаж, герои со снаряжением и сумкой, золото, материалы).
+## Общие для всех сохранений вещи (настройки, последнее сохранение, номер игрока) — user://profile.json.
 ## В тестовых запусках (--autotest, --uitest, --camptest) ничего не сохраняется.
 
 signal changed
 
-const SAVE_PATH := "user://save.json"
+var save_dir := "user://saves/"  # --savetest: своя папка
+const OLD_SAVE := "user://save.json"      # до сохранений-файлов было одно сохранение
+const PROFILE_PATH := "user://profile.json"
+const MAX_SLOTS := 8
 const Items := preload("res://scripts/items.gd")
 const Skills := preload("res://scripts/skills.gd")
 
@@ -58,13 +64,41 @@ var settings := {"shake": true, "numbers": true}  # настройки (меню
 var heroes := {}           # сохранённые герои по классам (см. Run.to_hero)
 var hero_cls := ""        # активный класс ("" — героя ещё нет)
 var persist := true
+var slot := ""             # текущее сохранение (имя файла без .json); "" — не выбрано
+var slot_kind := "solo"    # "solo" или "coop"
+var run_save := {}         # незаконченный забег (см. Game.save_run); {} — забега нет
+var uid := ""              # номер этого игрока (кооп: по нему хозяин узнаёт гостя в сохранённом забеге)
+var _last_slot := ""
 
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args)
+	# Проверочные запуски без окна (--headless) ничего не пишут — сохранения владельца не трогаем.
+	if DisplayServer.get_name() == "headless":
+		persist = false
+	if "--savetest" in args:
+		# Тест сохранений: пишет по-настоящему, но в свою папку; профиль владельца не трогает.
+		save_dir = "user://savetest/"
+		persist = true
+		_no_profile = true
+		var d := DirAccess.open(save_dir)
+		if d and not "--keepsaves" in args:
+			for f: String in d.get_files():
+				d.remove(f)
+	var reading := persist or "--loadsave" in args
+	if reading and not _no_profile:
+		_load_profile()
+		_migrate_old_save()
+	for a: String in args:
+		if a.begins_with("--uid="):
+			uid = a.get_slice("=", 1)
+	if uid == "":
+		uid = "%08x%08x" % [randi(), randi()]
+		_save_profile()
 	# `--loadsave` — тест на настоящем сохранении: прочитать, но ничего не записывать.
-	if persist or "--loadsave" in args:
+	if reading and _last_slot != "" and FileAccess.file_exists(_path(_last_slot)):
+		slot = _last_slot
 		load_game()
 	update_mine()
 
@@ -220,9 +254,7 @@ func setting(key: String) -> bool:
 
 func set_setting(key: String, value: bool) -> void:
 	settings[key] = value
-	if _is_guest_copy:
-		return  # у гостя на экране лагерь хозяина — настройку применим, но не запишем
-	save_game()
+	_save_profile()  # настройки общие для всех сохранений
 
 
 # ---------------- Сохранённый герой ----------------
@@ -291,18 +323,17 @@ func own_hero() -> Dictionary:
 
 ## Гость: записать своих героев в своё сохранение, остальное в нём не трогая.
 func _write_own_heroes() -> void:
-	if not _own_persist:
+	if not _own_persist or slot == "":
 		return
 	var data: Variant = {}
-	if FileAccess.file_exists(SAVE_PATH):
-		data = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	if FileAccess.file_exists(_path(slot)):
+		data = JSON.parse_string(FileAccess.get_file_as_string(_path(slot)))
 	if typeof(data) != TYPE_DICTIONARY:
 		data = {}
 	data["heroes"] = _own_heroes
 	data["hero_cls"] = _own_hero_cls
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(data, "  "))
+	data["saved_at"] = Time.get_unix_time_from_system()
+	_write(slot, data)
 
 
 ## Хозяин: что показать гостям (постройки, склад, золото лагеря).
@@ -351,60 +382,215 @@ func restore_own() -> void:
 
 # ---------------- Сохранение ----------------
 
-func save_game() -> void:
-	if not persist:
-		return
-	update_mine()
-	var data := {
-		"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
-		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
-		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
-		"settings": settings,
-	}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+func _path(id: String) -> String:
+	if id == "__old":
+		return OLD_SAVE  # --loadsave до переноса: читаем старый файл как есть
+	return save_dir + id + ".json"
+
+
+func _write(id: String, data: Dictionary) -> void:
+	DirAccess.make_dir_recursive_absolute(save_dir)
+	var f := FileAccess.open(_path(id), FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(data, "  "))
 
 
+func _read(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return data if typeof(data) == TYPE_DICTIONARY else {}
+
+
+func save_game() -> void:
+	if not persist or slot == "" or _is_guest_copy:
+		return
+	update_mine()
+	var data := {
+		"kind": slot_kind, "saved_at": Time.get_unix_time_from_system(),
+		"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
+		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
+		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
+		"run": run_save,
+	}
+	_write(slot, data)
+
+
+## Сбросить всё к началу новой игры (лагерь пуст, героев нет).
+func _clear() -> void:
+	gold = 0
+	levels = {}
+	best_depth = 0
+	runs = 0
+	mine_stored = 0.0
+	ore_stored = 0.0
+	mine_time = 0.0
+	materials = {}
+	stash = []
+	last_run = {}
+	heroes = {}
+	hero_cls = ""
+	run_save = {}
+
+
 func load_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+	_clear()
+	var data := _read(_path(slot))
+	if data.is_empty():
+		if FileAccess.file_exists(_path(slot)):
+			push_warning("сохранение %s повреждено, начинаем с нуля" % slot)
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if typeof(data) != TYPE_DICTIONARY:
-		push_warning("save.json повреждён, начинаем с нуля")
-		return
+	slot_kind = "coop" if str(data.get("kind", "solo")) == "coop" else "solo"
 	gold = int(data.get("gold", 0))
 	best_depth = int(data.get("best_depth", 0))
 	runs = int(data.get("runs", 0))
 	mine_stored = float(data.get("mine_stored", 0.0))
 	mine_time = float(data.get("mine_time", 0.0))
 	ore_stored = float(data.get("ore_stored", 0.0))
-	materials = {}
 	var m: Variant = data.get("materials", {})
 	if typeof(m) == TYPE_DICTIONARY:
 		for k: String in m:
 			materials[k] = int(m[k])
-	stash = []
 	var s: Variant = data.get("stash", [])
 	if typeof(s) == TYPE_ARRAY:
 		for it: Variant in s:
 			if typeof(it) == TYPE_DICTIONARY and _valid_item(it):
 				stash.append(_fix_item(it))
-	levels = {}
 	_load_levels(data)
-	heroes = {}
 	var hs: Variant = data.get("heroes", {})
 	if typeof(hs) == TYPE_DICTIONARY:
 		for k: String in hs:
 			if Skills.CLASSES.has(k) and typeof(hs[k]) == TYPE_DICTIONARY:
 				heroes[k] = hs[k]
 	hero_cls = str(data.get("hero_cls", ""))
-	var se: Variant = data.get("settings", {})
+	if not heroes.has(hero_cls):
+		hero_cls = ""
+	var r: Variant = data.get("run", {})
+	if typeof(r) == TYPE_DICTIONARY and r.has("players"):
+		run_save = r
+
+
+# ---------------- Сохранения-файлы ----------------
+
+## Все сохранения: [{id, kind, saved_at, gold, runs, best, hero: {...}, run_depth}], новые сверху.
+func list_slots() -> Array:
+	var out: Array = []
+	var dir := DirAccess.open(save_dir)
+	if dir == null:
+		return out
+	for f: String in dir.get_files():
+		if not f.ends_with(".json"):
+			continue
+		var id := f.get_basename()
+		var d := _read(_path(id))
+		if d.is_empty():
+			continue
+		var hs: Dictionary = d.get("heroes", {}) if typeof(d.get("heroes")) == TYPE_DICTIONARY else {}
+		var hero: Variant = hs.get(str(d.get("hero_cls", "")), {})
+		var r: Variant = d.get("run", {})
+		out.append({"id": id, "kind": "coop" if str(d.get("kind", "solo")) == "coop" else "solo",
+			"saved_at": float(d.get("saved_at", 0.0)), "gold": int(d.get("gold", 0)), "runs": int(d.get("runs", 0)),
+			"best": int(d.get("best_depth", 0)), "hero": hero if typeof(hero) == TYPE_DICTIONARY else {},
+			"run_depth": int(r.get("depth", 0)) if typeof(r) == TYPE_DICTIONARY and r.has("players") else 0})
+	out.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return x["saved_at"] > y["saved_at"])
+	return out
+
+
+## Сделать текущим сохранение id (и прочитать его).
+func load_slot(id: String) -> void:
+	slot = id
+	load_game()
+	update_mine()
+	_last_slot = id
+	_save_profile()
+	changed.emit()
+
+
+## Новое пустое сохранение вида kind ("solo"/"coop"). Возвращает его id.
+func new_slot(kind: String) -> String:
+	var n := 1
+	while FileAccess.file_exists(_path("save%d" % n)):
+		n += 1
+	slot = "save%d" % n
+	slot_kind = kind
+	_clear()
+	update_mine()
+	save_game()
+	_last_slot = slot
+	_save_profile()
+	changed.emit()
+	return slot
+
+
+## Удалить файл сохранения (кнопка «Удалить» с подтверждением в меню).
+func delete_slot(id: String) -> void:
+	if persist:
+		DirAccess.remove_absolute(_path(id))
+	if id == slot:
+		slot = ""
+		_clear()
+	if id == _last_slot:
+		_last_slot = ""
+		_save_profile()
+
+
+## Незаконченный забег закончился (смерть, возвращение в лагерь, новый забег).
+func clear_run() -> void:
+	if run_save.is_empty():
+		return
+	run_save = {}
+	save_game()
+
+
+## Папка с сохранениями — открыть в проводнике (только ПК).
+func open_save_folder() -> void:
+	DirAccess.make_dir_recursive_absolute(save_dir)
+	OS.shell_open(ProjectSettings.globalize_path(save_dir))
+
+
+func _load_profile() -> void:
+	var p := _read(PROFILE_PATH)
+	_last_slot = str(p.get("last_slot", ""))
+	uid = str(p.get("uid", ""))
+	var se: Variant = p.get("settings", {})
 	if typeof(se) == TYPE_DICTIONARY:
 		for k: String in se:
 			settings[k] = se[k]
-	if not heroes.has(hero_cls):
-		hero_cls = ""
+
+
+var _no_profile := false
+
+
+func _save_profile() -> void:
+	if not persist or _no_profile:
+		return
+	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"last_slot": _last_slot, "uid": uid, "settings": settings}, "  "))
+
+
+## Раньше было одно сохранение save.json — переносим его в сохранение «save1» (одиночная игра).
+func _migrate_old_save() -> void:
+	if not FileAccess.file_exists(OLD_SAVE) or FileAccess.file_exists(_path("save1")):
+		return
+	var d := _read(OLD_SAVE)
+	if d.is_empty():
+		return
+	var se: Variant = d.get("settings", {})
+	if typeof(se) == TYPE_DICTIONARY:
+		for k: String in se:
+			settings[k] = se[k]
+	if not persist:
+		_last_slot = "__old"  # --loadsave: только читаем, ничего не переносим
+		return
+	d.erase("settings")
+	d["kind"] = "solo"
+	d["saved_at"] = Time.get_unix_time_from_system()
+	_write("save1", d)
+	DirAccess.remove_absolute("user://save_old.json")
+	DirAccess.rename_absolute(OLD_SAVE, "user://save_old.json")  # старый файл — как запасная копия
+	_last_slot = "save1"
+	_save_profile()
 
 
 ## JSON превращает все числа в дробные — возвращаем целые там, где нужно.

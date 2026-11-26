@@ -148,6 +148,7 @@ func _ready() -> void:
 	map.modulate = pool_for(Run.depth)["tint"]
 	Game.spawn_guest_heroes()
 	Net.scene_loaded()
+	Game.save_run.call_deferred()  # начало этажа — продолжить можно отсюда
 	if Run.depth % 5 == 0:
 		Game.checkpoint.call_deferred(Run.depth)
 

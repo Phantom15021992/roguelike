@@ -78,6 +78,10 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--coopsave" in args:
+		_coopsavetest()
+	elif "--savetest" in args:
+		_savetest()
 	elif "--cooptest" in args:
 		get_tree().create_timer(150.0, true, false, true).timeout.connect(func() -> void:
 			print("COOPTEST WATCHDOG: timeout")
@@ -498,6 +502,12 @@ var _ignore_mouse: bool = "--skilltest" in OS.get_cmdline_user_args() or "--auto
 
 
 func _process(delta: float) -> void:
+	# Незаконченный забег сохраняется каждые 20 с (в браузере закрытие вкладки не ловится).
+	_autosave_t += delta
+	if _autosave_t > 20.0:
+		_autosave_t = 0.0
+		if not get_tree().paused:
+			save_run()
 	var cam := get_viewport().get_camera_2d()
 	if cam == null:
 		return
@@ -513,6 +523,7 @@ func _process(delta: float) -> void:
 ## Из лагеря в подземелье: новый забег выбранным классом с бонусами лагеря.
 ## loadout — предметы со склада, взятые в забег (их уже убрали со склада).
 func start_run(cls: String, loadout: Array = [], depth := 1) -> void:
+	Meta.run_save = {}  # новый забег вместо незаконченного
 	Run.reset()
 	_load_or_new_hero(Run, cls, Meta.current_hero())
 	Run.depth = depth
@@ -555,6 +566,117 @@ func checkpoint(depth: int) -> void:
 	banner("Сохранение: теперь можно начинать с %d этажа" % depth, 3.0)
 
 
+## Незаконченный забег — в файл сохранения (начало этажа, раз в 20 с, выход из игры).
+## Кооп: хозяин сохраняет всех героев, гостей — по их номеру (Meta.uid гостя);
+## героев, которых сейчас нет в игре, не трогает — они смогут вернуться.
+func save_run() -> void:
+	if Net.is_guest() or Run.cls == "" or _scene_name() != "Main":
+		return
+	if all_dead():
+		Meta.clear_run()
+		return
+	var saved: Dictionary = Meta.run_save.get("players", {}) if Meta.run_save.get("coop", false) == Net.is_host() else {}
+	var players := saved.duplicate(true)
+	for pid: int in (Net.players.keys() if Net.is_host() else [1]):
+		var st: Node = Net.state_of(pid)
+		var key := "host" if pid == Net.my_id() or not Net.is_host() else str(Net.players[pid].get("uid", ""))
+		if key == "" or st.cls == "":
+			continue
+		var h: Node = Net.hero_of(pid) if Net.is_host() else local_hero()
+		if h and is_instance_valid(h):
+			players[key] = st.to_run(maxi(1, h.max_hp / 2) if h.dead else h.hp, int(h.sp))
+		else:
+			players[key] = st.to_run()
+	Meta.run_save = {"depth": Run.depth, "gold": Run.gold, "materials": Run.materials.duplicate(),
+		"coop": Net.is_host(), "players": players}
+	Meta.save_game()
+
+
+## Продолжить сохранённый забег (выбрано сохранение с забегом / кооп: «Продолжить забег»).
+func continue_run() -> void:
+	var r: Dictionary = Meta.run_save
+	var ps: Dictionary = r.get("players", {})
+	if not ps.has("host"):
+		Meta.clear_run()
+		return
+	Run.reset()
+	Run.load_run(ps["host"])
+	Run.depth = maxi(1, int(r.get("depth", 1)))
+	Run.gold = int(r.get("gold", 0))
+	var m: Dictionary = r.get("materials", {})
+	for k: String in m:
+		Run.materials[k] = int(m[k])
+	if Net.is_host():
+		for pid: int in Net.players:
+			if pid == 1:
+				continue
+			var p: Dictionary = Net.players[pid]
+			var st: Node = p["state"]
+			st.reset()
+			var uid_key := str(p.get("uid", ""))
+			if uid_key != "" and ps.has(uid_key):
+				st.load_run(ps[uid_key])
+			else:
+				# Новый в этом забеге: его сохранённый герой (или новый мечник).
+				var h: Dictionary = p.get("hero", {})
+				_load_or_new_hero(st, str(h.get("cls", "warrior")), h)
+				Meta.apply_to_run(st)
+			st.depth = Run.depth
+			p["ready"] = false
+		Net.players[1]["ready"] = false
+		Net.send_lobby()
+	menu_done = true
+	_change_scene(DUNGEON_SCENE)
+
+
+## Имена героев сохранённого забега (для меню кооператива): {ключ: "Мечник, 7 ур."}.
+func run_save_names() -> Dictionary:
+	var out := {}
+	var ps: Dictionary = Meta.run_save.get("players", {})
+	for k: String in ps:
+		var h: Dictionary = ps[k]
+		var job := str(h.get("job", ""))
+		var t: String = Skills.JOBS[job]["name"] if job != "" else Skills.CLASSES.get(str(h.get("cls", "warrior")), Skills.CLASSES["warrior"])["name"]
+		out[k] = "%s, %d ур." % [t, int(h.get("level", 1))]
+	return out
+
+
+## Герой погиб: если пали все — сохранённый забег пропадает (выйти из игры, чтобы спастись, нельзя).
+func on_hero_died() -> void:
+	if not Net.is_guest() and all_dead():
+		Meta.clear_run()
+
+
+var _autosave_t := 0.0
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		save_run()
+		Meta.save_game()
+
+
+var camp_panel := ""   # какое окно открыть, когда загрузится лагерь ("coop" и т.п.)
+
+
+## В лагерь (перезагрузить его — например, после выбора сохранения) и открыть окно panel.
+func open_camp(panel := "") -> void:
+	Run.reset()
+	camp_panel = panel
+	_change_scene(CAMP_SCENE)
+
+
+## Выйти в главное меню (выбор сохранения): забег сохраняется, кооп закрывается.
+func to_main_menu() -> void:
+	save_run()
+	Meta.save_game()
+	if Net.active():
+		Net.leave()
+	Run.reset()
+	menu_done = false
+	_change_scene(CAMP_SCENE)
+
+
 ## Сохранить героя: свой — в лагерь, гостя — ему (в его сохранение).
 func _save_hero_of(pid: int, st: Node) -> void:
 	var h: Dictionary = st.to_hero()
@@ -570,6 +692,7 @@ func _save_hero_of(pid: int, st: Node) -> void:
 func return_to_camp(alive := false) -> void:
 	if Net.is_guest():
 		return  # в коопе забег заканчивает хозяин
+	Meta.run_save = {}  # забег окончен — продолжать нечего
 	var items: Array = []
 	# В коопе на склад хозяина уходит снаряжение всех героев.
 	for st: Node in Net.all_states():
@@ -678,7 +801,7 @@ func spawn_guest_heroes() -> void:
 
 func _spawn_guest_hero(pid: int) -> void:
 	var scene := get_tree().current_scene
-	if Net.hero_of(pid) != null:
+	if scene == null or Net.hero_of(pid) != null:  # сцена как раз сменяется — гость пришлёт «готов» ещё раз
 		return
 	var mine := scene.get_node_or_null("Entities/Player")
 	var h: Node2D = PLAYER_SCENE.instantiate()
@@ -1395,4 +1518,117 @@ func _zootest() -> void:
 		b.take_damage(b.hp + 99999, p.position, true, false)
 		await _wait(1.5)
 	print("ZOO pickups=%d" % get_tree().get_nodes_in_group("pickups").size())
+	get_tree().quit()
+
+
+# --- Сохранения-файлы (`--savetest`): своя папка user://savetest/ ---
+func _savetest() -> void:
+	await _wait(1.0)
+	var id := Meta.new_slot("solo")
+	Meta.new_slot("solo")
+	Meta.gold = 340
+	Meta.save_game()
+	Meta.load_slot(id)
+	var camp_hud := get_tree().current_scene.get_node_or_null("CampHUD")
+	if camp_hud:
+		camp_hud.open_building("menu")
+		await _wait(0.4)
+		_shot("save_menu")
+		camp_hud._slot_kind = "solo"
+		camp_hud.open_building("slots")
+		await _wait(0.4)
+		_shot("save_slots")
+		camp_hud.close()
+	start_run("warrior")
+	await _wait_for(func() -> bool: return _scene_name() == "Main", 10.0)
+	await _wait(1.0)
+	Run.gold = 77
+	Run.add_material("gel", 3)
+	Run.bag_add(preload("res://scripts/items.gd").make("chain", 1, 2))
+	Run.add_xp(300)
+	next_floor()
+	await _wait(1.5)
+	var lvl := Run.level
+	local_hero().hp = 42
+	save_run()
+	print("SAVE run in file: depth=%d players=%s" % [int(Meta.run_save.get("depth", 0)), Meta.run_save.get("players", {}).keys()])
+	# «Вышли из игры и зашли снова»: всё забыто, читаем файл.
+	Run.reset()
+	Meta.load_slot(id)
+	print("SAVE slots: %s" % [Meta.list_slots().map(func(s: Dictionary) -> String: return "%s %s run=%d" % [s["id"], s["kind"], s["run_depth"]])])
+	continue_run()
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 10.0)
+	await _wait(1.0)
+	var ok: bool = Run.depth == 2 and Run.gold == 77 and Run.bag.size() == 1 and Run.level == lvl and local_hero().hp == 42 and int(Run.materials.get("gel", 0)) == 3
+	print("SAVE continued: depth=%d gold=%d bag=%d level=%d(was %d) hp=%d slime=%d -> %s" % [Run.depth, Run.gold, Run.bag.size(), Run.level, lvl, local_hero().hp, int(Run.materials.get("gel", 0)), "OK" if ok else "FAIL"])
+	_shot("save_continued")
+	pause_menu.open()
+	await _wait(0.4)
+	_shot("save_pause")
+	pause_menu.close()
+	await _wait(0.2)
+	# Гибель — сохранённый забег пропадает.
+	local_hero().take_damage(99999, local_hero().global_position + Vector2(5, 0))
+	await _wait(0.5)
+	Meta.load_slot(id)
+	print("SAVE after death: run in file=%s" % (not Meta.run_save.is_empty()))
+	var id2 := Meta.new_slot("coop")
+	print("SAVE two slots: %d, kinds %s" % [Meta.list_slots().size(), Meta.list_slots().map(func(s: Dictionary) -> String: return s["kind"])])
+	Meta.delete_slot(id2)
+	print("SAVE after delete: %d" % Meta.list_slots().size())
+	get_tree().quit()
+
+
+# --- Кооп: сохранить забег с гостем и продолжить (`--coopsave --phase=1|2`, хозяин ещё с `--savetest`) ---
+func _coopsavetest() -> void:
+	var phase := int(_arg("--phase", "1"))
+	var key := _arg("--key", "SAVE0%d" % phase)
+	if "--nethost" in OS.get_cmdline_user_args():
+		await _wait(0.5)
+		if phase == 1:
+			Meta.new_slot("coop")
+		else:
+			Meta.load_slot("save1")
+			print("CSAVE host: run in file depth=%d players=%s" % [int(Meta.run_save.get("depth", 0)), Meta.run_save.get("players", {}).keys()])
+		Net.host_game(key)
+		var ok: bool = await _wait_for(func() -> bool: return Net.player_count() >= 2 and str(Net.players.get(2, {}).get("uid", "")) != "", 40.0)
+		print("CSAVE host: guest connected=%s uid=%s" % [ok, Net.players.get(2, {}).get("uid", "")])
+		if not ok:
+			get_tree().quit()
+			return
+		if phase == 1:
+			Net.players[1]["cls"] = "warrior"
+			Net.players[1]["ready"] = true
+			coop_try_start()
+			await _wait_for(func() -> bool: return _scene_name() == "Main" and Net.hero_of(2) != null, 20.0)
+			await _wait(1.0)
+			Net.hero_of(2).st.add_xp(600)
+			Run.gold = 55
+			next_floor()
+			await _wait_for(func() -> bool: return _scene_name() == "Main" and Net.hero_of(2) != null, 20.0)
+			await _wait(1.0)
+			save_run()
+			print("CSAVE host: saved depth=%d guest level=%d players=%s" % [Run.depth, Net.hero_of(2).st.level, Meta.run_save["players"].keys()])
+		else:
+			print("CSAVE host: names %s" % run_save_names())
+			continue_run()
+			ok = await _wait_for(func() -> bool: return _scene_name() == "Main" and Net.hero_of(2) != null, 20.0)
+			await _wait(1.0)
+			var g := Net.hero_of(2)
+			print("CSAVE host: continued=%s depth=%d gold=%d guest cls=%s level=%d" % [ok, Run.depth, Run.gold, g.st.cls if g else "-", g.st.level if g else -1])
+			_shot("csave_host")
+		await _wait(2.0)
+		get_tree().quit()
+		return
+	# Гость
+	await _wait(2.0)
+	Net.join_game(key)
+	await _wait_for(func() -> bool: return Net._peer_open(1) and _scene_name() == "Camp", 40.0)
+	if phase == 1:
+		await _wait(1.0)
+		Net.send_to(1, "class", {"cls": "archer", "hero": {}})
+	var ok2: bool = await _wait_for(func() -> bool: return _scene_name() == "Main" and Net.hero_of(Net.my_id()) != null, 40.0)
+	await _wait(0.8)
+	print("CSAVE guest: in dungeon=%s scene=%s depth=%d cls=%s level=%d net=%s" % [ok2, _scene_name(), Run.depth, Run.cls, Run.level, Net.status])
+	await _wait_for(func() -> bool: return not Net.active(), 30.0)
 	get_tree().quit()

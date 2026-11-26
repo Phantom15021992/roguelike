@@ -78,6 +78,9 @@ func _ready() -> void:
 			Game.menu_done = true
 		else:
 			open_building("menu")
+	elif Game.camp_panel != "":
+		open_building(Game.camp_panel)
+	Game.camp_panel = ""
 
 
 func _is_test() -> bool:
@@ -180,8 +183,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _open_id == "" or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	if _open_id == "menu":
-		return  # меню закрывается только кнопкой
+	if _open_id in ["menu", "slots"] and not Game.menu_done:
+		return  # главное меню закрывается только кнопкой (выбрать сохранение)
 	match event.physical_keycode:
 		KEY_ESCAPE, KEY_E:
 			close()
@@ -231,6 +234,8 @@ func _refill() -> void:
 			_fill_menu()
 		"coop":
 			_fill_coop()
+		"slots":
+			_fill_slots()
 		"portal":
 			if _portal_cls == "":
 				_fill_portal()
@@ -537,6 +542,8 @@ func _fill_portal_hero(hero: Dictionary) -> void:
 		t += "\nМожно начать с этажа-сохранения (каждый 5-й этаж). Погибнешь — герой вернётся к последнему сохранению."
 	else:
 		t += "\nНа 5, 10, 15… этаже герой сохраняется — потом можно начать оттуда."
+	if not Meta.run_save.is_empty() and not Net.is_guest():
+		t += "\n[color=#%s]Есть незаконченный забег (этаж %d) — новый забег его заменит.[/color]" % [BAD.to_html(false), int(Meta.run_save.get("depth", 1))]
 	_panel_box.add_child(_rich(250, t))
 	var h := _hc(3)
 	if Net.is_guest():
@@ -665,16 +672,115 @@ func take_loadout() -> Array:
 # ---------------- Меню и кооператив ----------------
 
 func _fill_menu() -> void:
-	_panel_box.add_child(_rich(200, "[b]Roguelike[/b]\nКак играем?"))
+	var cur := ""
+	if Meta.slot != "" and Meta.slot != "__old":
+		cur = "\n[color=#a8a0b8]Сейчас: %s (%s)[/color]" % [_slot_title(Meta.slot), "кооператив" if Meta.slot_kind == "coop" else "одиночная"]
+	_panel_box.add_child(_rich(200, "[b]Roguelike[/b]\nКак играем?" + cur))
 	_panel_box.add_child(_button("Одиночная игра", func() -> void:
-		Game.menu_done = true
-		if Net.active():
-			Net.leave()
-		close()))
-	_panel_box.add_child(_button("Кооператив (2–4 игрока)", func() -> void:
-		Game.menu_done = true
-		_open_id = "coop"
+		_slot_kind = "solo"
+		_confirm_del = ""
+		_open_id = "slots"
 		_refill()))
+	_panel_box.add_child(_button("Кооператив (2–4 игрока)", func() -> void:
+		_slot_kind = "coop"
+		_confirm_del = ""
+		_open_id = "slots"
+		_refill()))
+	if Game.menu_done:
+		_panel_box.add_child(_button("Назад в лагерь", close))
+
+
+var _slot_kind := "solo"      # какие сохранения показывать: solo / coop
+var _confirm_del := ""        # сохранение, которое спрашиваем «точно удалить?»
+
+
+func _slot_title(id: String) -> String:
+	return "Сохранение " + id.trim_prefix("save")
+
+
+## Выбор сохранения: продолжить, новое, удалить.
+func _fill_slots() -> void:
+	var coop := _slot_kind == "coop"
+	var t := "[b]%s — сохранения[/b]\n" % ("Кооператив" if coop else "Одиночная игра")
+	t += "Игра сохраняется сама: каждый этаж, раз в 20 секунд и при выходе. Выбери сохранение — продолжишь с того места, где остановился."
+	if coop:
+		t += "\n[color=#a8a0b8]Хозяин играет в своём лагере из этого сохранения, гость — своим героем из своего.[/color]"
+	_panel_box.add_child(_rich(250, t))
+	var list := _scroll(92)
+	var n := 0
+	for sv: Dictionary in Meta.list_slots():
+		if sv["kind"] != _slot_kind:
+			continue
+		n += 1
+		var id: String = sv["id"]
+		var row := _hc()
+		if _confirm_del == id:
+			row.add_child(_rich(130, "[color=#%s]Удалить «%s» навсегда?[/color]" % [BAD.to_html(false), _slot_title(id)]))
+			row.add_child(_button("Да, удалить", func() -> void:
+				Meta.delete_slot(id)
+				_confirm_del = ""
+				_refill(), true, 5))
+			row.add_child(_button("Нет", func() -> void:
+				_confirm_del = ""
+				_refill(), true, 5))
+		else:
+			row.add_child(_button("Играть", func() -> void: _play_slot(id), true, 5))
+			row.add_child(_rich(175, _slot_desc(sv)))
+			row.add_child(_button("Удалить", func() -> void:
+				_confirm_del = id
+				_refill(), true, 5))
+		list.add_child(row)
+	if n == 0:
+		list.add_child(_rich(200, "[color=#a8a0b8]Сохранений пока нет — начни новую игру.[/color]"))
+	var h := _hc(4)
+	h.add_child(_button("Новая игра", func() -> void:
+		Meta.new_slot(_slot_kind)
+		_after_slot(), n < Meta.MAX_SLOTS))
+	h.add_child(_button("Назад", func() -> void:
+		_open_id = "menu"
+		_refill()))
+	if not OS.has_feature("web"):
+		h.add_child(_button("Папка с файлами", Meta.open_save_folder, true, 5))
+	_panel_box.add_child(h)
+
+
+func _slot_desc(sv: Dictionary) -> String:
+	var hero: Dictionary = sv["hero"]
+	var who := "героя ещё нет"
+	if hero.has("cls") and Skills.CLASSES.has(str(hero["cls"])):
+		var job := str(hero.get("job", ""))
+		who = "%s, %d ур." % [Skills.JOBS[job]["name"] if Skills.JOBS.has(job) else Skills.CLASSES[str(hero["cls"])]["name"], int(hero.get("level", 1))]
+	var when := ""
+	if sv["saved_at"] > 0.0:
+		var bias: int = int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+		var d := Time.get_datetime_dict_from_unix_time(int(sv["saved_at"]) + bias)
+		when = "  [color=#a8a0b8]%02d.%02d %02d:%02d[/color]" % [d["day"], d["month"], d["hour"], d["minute"]]
+	var run := ""
+	if sv["run_depth"] > 0:
+		run = "\n[color=#%s]Забег идёт: этаж %d[/color]" % [GOOD.to_html(false), sv["run_depth"]]
+	return "[b]%s[/b]%s\n%s   золото %d   рекорд %d эт.%s" % [_slot_title(sv["id"]), when, who, sv["gold"], sv["best"], run]
+
+
+func _play_slot(id: String) -> void:
+	Meta.load_slot(id)
+	_after_slot()
+
+
+## Сохранение выбрано: одиночная — сразу в незаконченный забег или в лагерь; кооп — меню кооператива.
+func _after_slot() -> void:
+	Game.menu_done = true
+	if _slot_kind == "coop":
+		Meta.slot_kind = "coop"
+		Game.open_camp("coop")
+		return
+	if Net.active():
+		Net.leave()
+	if not Meta.run_save.is_empty():
+		Game.continue_run()
+		return
+	Game.open_camp("")
+
+
 
 
 var _key_edit: LineEdit
@@ -684,6 +790,8 @@ func _fill_coop() -> void:
 	var t := "[b]Кооператив[/b]\n"
 	if not Net.active():
 		t += "Один игрок создаёт игру и сообщает ключ остальным. Остальные вводят ключ и подключаются. Играете в лагере того, кто создал игру: вся добыча идёт в его лагерь."
+		if not Meta.run_save.is_empty():
+			t += "\n[color=#%s]В этом сохранении есть незаконченный забег (этаж %d): создай игру — продолжить можно, когда подключатся напарники.[/color]" % [GOOD.to_html(false), int(Meta.run_save.get("depth", 1))]
 		_panel_box.add_child(_rich(230, t))
 		_panel_box.add_child(_button("Создать игру", func() -> void:
 			Net.host_game()
@@ -717,7 +825,22 @@ func _fill_coop() -> void:
 		t += "\n[color=#%s]В подземелье можно только вдвоём и больше.[/color]" % BAD.to_html(false)
 	else:
 		t += "\nКаждый идёт к порталу и выбирает класс. Когда готовы все — забег начнётся."
+	var can_continue := Net.is_host() and not Meta.run_save.is_empty()
+	if can_continue:
+		var names := Game.run_save_names()
+		t += "\n\n[b]Незаконченный забег — этаж %d[/b]\n" % int(Meta.run_save.get("depth", 1))
+		for k: String in names:
+			var here := k == "host"
+			for pid: int in Net.players:
+				if str(Net.players[pid].get("uid", "")) == k:
+					here = true
+			t += "%s %s%s\n" % ["[color=#%s]✔[/color]" % GOOD.to_html(false) if here else "[color=#a8a0b8]…[/color]", names[k], " (ты)" if k == "host" else ""]
+		t += "[color=#a8a0b8]Кто не подключился — останется в сохранении. Новые игроки придут своим героем.[/color]"
 	_panel_box.add_child(_rich(230, t))
+	if can_continue:
+		_panel_box.add_child(_button("Продолжить забег", func() -> void:
+			close()
+			Game.continue_run(), Net.player_count() >= 2))
 	var h2 := _hc(4)
 	h2.add_child(_button("В лагерь", close))
 	h2.add_child(_button("Выйти из кооператива", func() -> void:

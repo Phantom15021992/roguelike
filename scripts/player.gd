@@ -1487,6 +1487,7 @@ func _die() -> void:
 	tw.parallel().tween_property(sprite, "modulate", Color(0.5, 0.5, 0.6), 0.3)
 	Game.shake(5.0, 0.35)
 	died.emit()
+	Game.on_hero_died()
 
 
 # ---------------- Анимация ----------------

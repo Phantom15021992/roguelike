@@ -107,6 +107,36 @@ func load_hero(h: Dictionary) -> void:
 	changed.emit()
 
 
+## Незаконченный забег — для сохранения в файл: герой + снаряжение, сумка, HP/SP.
+## hp_now/sp_now — текущие значения с героя на карте (-1 — взять из состояния).
+func to_run(hp_now := -1, sp_now := -1) -> Dictionary:
+	var h := to_hero()
+	h["equipment"] = equipment.duplicate(true)
+	h["bag"] = bag.duplicate(true)
+	h["hp"] = hp_now if hp_now >= 0 else hp
+	h["sp"] = sp_now if sp_now >= 0 else sp
+	return h
+
+
+## Продолжить сохранённый забег этим героем.
+func load_run(d: Dictionary) -> void:
+	load_hero(d)
+	var eq: Variant = d.get("equipment", {})
+	if typeof(eq) == TYPE_DICTIONARY:
+		for slot: String in Items.SLOTS:
+			var it: Variant = eq.get(slot)
+			equipment[slot] = Meta._fix_item(it) if typeof(it) == TYPE_DICTIONARY and Meta._valid_item(it) else null
+	bag = []
+	var b: Variant = d.get("bag", [])
+	if typeof(b) == TYPE_ARRAY:
+		for it: Variant in b:
+			if typeof(it) == TYPE_DICTIONARY and Meta._valid_item(it):
+				bag.append(Meta._fix_item(it))
+	hp = int(d.get("hp", -1))
+	sp = int(d.get("sp", -1))
+	changed.emit()
+
+
 ## Гость: изменения своего героя делает хозяин.
 func _forward(method: String, args: Array) -> bool:
 	if self == Run and Net.is_guest():
