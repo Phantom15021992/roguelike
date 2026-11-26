@@ -37,6 +37,8 @@ var players := {}
 var _sig = MQTT.new()                  # серверы связи (поиск игры по ключу)
 var _ws_open := false
 var _ws_id := ""
+var _dbg := {"join_sent": 0, "join_got": 0, "sdp": 0, "ice": 0}  # счётчики для строки диагностики
+var _rtc_states := {}                  # pid -> последнее состояние WebRTC
 var _join_t := 0.0
 var _join_total := 0.0
 var _signal_urls: Array = MQTT.BROKERS  # для тестов: --signal=ws://127.0.0.1:9000/mqtt
@@ -124,6 +126,7 @@ func all_states() -> Array:
 
 
 func _status(text: String) -> void:
+	print("[net] ", text)
 	status = text
 	status_changed.emit(text)
 
@@ -193,6 +196,9 @@ func _connect_signal(my_sig_id: String) -> void:
 	_ws_open = false
 	_join_t = 0.0
 	_join_total = 0.0
+	for k: String in _dbg:
+		_dbg[k] = 0
+	_rtc_states.clear()
 	_sig.start("%s/%s/%s" % [TOPIC_PREFIX, key, my_sig_id], _signal_urls)
 
 
@@ -213,6 +219,7 @@ func _poll_signal(delta: float) -> void:
 		_join_total += delta
 		if _join_t > 5.0:
 			_join_t = 0.0
+			_dbg["join_sent"] += 1
 			_sig_send(_host_sig, "OFFER", {"t": "join"})
 		if _join_total > 30.0 and _join_total - delta <= 30.0:
 			_status("Хозяин игры %s не отвечает. Проверь ключ — у хозяина игра должна быть создана и открыта" % key)
@@ -223,6 +230,7 @@ func _on_sig_open() -> void:
 	if is_host():
 		_status("Игра создана. Ключ: %s (серверов связи: %d)" % [key, _sig.live_count()])
 	elif is_guest():
+		_dbg["join_sent"] += 1
 		_sig_send(_host_sig, "OFFER", {"t": "join"})
 		_status("Стучимся к хозяину игры %s..." % key)
 
@@ -243,6 +251,8 @@ func _on_signal(m: Dictionary) -> void:
 func _host_signal(src: String, p: Dictionary) -> void:
 	var t: String = p.get("t", "")
 	if t == "join":
+		_dbg["join_got"] += 1
+		print("[net] запрос от гостя ", src)
 		if _pid_by_sig(src) != 0:
 			return  # тот же гость стучится повторно (письмо дошло дважды или он не дождался)
 		if players.size() + _conns.size() - _count_connected() >= MAX_PLAYERS:
@@ -288,6 +298,7 @@ func _guest_signal(p: Dictionary) -> void:
 		_status("В игре уже %d игрока" % MAX_PLAYERS)
 		return
 	if t == "sdp":
+		_dbg["sdp"] += 1
 		if _rtc == null:
 			_rtc = WebRTCMultiplayerPeer.new()
 			_rtc.create_client(int(p["pid"]))
@@ -298,6 +309,7 @@ func _guest_signal(p: Dictionary) -> void:
 		conn.set_remote_description(p["type"], p["sdp"])
 		_status("Соединяемся...")
 	elif t == "ice" and _conns.has(1):
+		_dbg["ice"] += 1
 		_conns[1].add_ice_candidate(p["media"], int(p["index"]), p["name"])
 
 
@@ -734,10 +746,42 @@ func hero_of(pid: int) -> Node:
 	return null
 
 
+# ================= Диагностика подключения =================
+
+const RTC_NAMES := ["новое", "соединяемся", "есть связь", "связь прервалась", "не удалось", "закрыто"]
+
+
+## Строка «что происходит» — видна в лагере у обоих игроков (по ней понятно, где застряло).
+func debug_line() -> String:
+	if mode == "":
+		return ""
+	var t := "серверов связи %d/%d" % [_sig.live_count(), _signal_urls.size()]
+	if is_host():
+		t += ", запросов от гостей %d" % _dbg["join_got"]
+	else:
+		t += ", запросов хозяину %d, ответ хозяина: %s" % [_dbg["join_sent"], "есть" if _dbg["sdp"] > 0 else "нет"]
+	for pid: int in _rtc_states:
+		t += ", прямая связь%s: %s" % [(" с игроком %d" % pid) if is_host() else "", RTC_NAMES[_rtc_states[pid]]]
+	return t
+
+
+## Следим за прямыми соединениями: пишем в журнал и подсказываем, если не получилось.
+func _watch_rtc() -> void:
+	for pid: int in _conns:
+		var c: WebRTCPeerConnection = _conns[pid]
+		var st := c.get_connection_state()
+		if _rtc_states.get(pid, -1) != st:
+			_rtc_states[pid] = st
+			print("[net] прямая связь с %d: %s" % [pid, RTC_NAMES[st]])
+			if st == WebRTCPeerConnection.STATE_FAILED:
+				_status("Прямое соединение не получилось — сеть не пропускает. Попробуйте другую сеть (например, мобильный интернет у одного из игроков)")
+
+
 # ================= Каждый кадр =================
 
 func _process(delta: float) -> void:
 	_poll_signal(delta)
+	_watch_rtc()
 	if is_host():
 		_flush_spawns()
 		_tick_t += delta

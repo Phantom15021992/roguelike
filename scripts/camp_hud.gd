@@ -31,6 +31,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_info = _label(6)
 	_info.position = Vector2(4, 2)
+	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_info.custom_minimum_size = Vector2(250, 0)  # справа сверху — кнопки телефона
 	add_child(_info)
 	_prompt = _label(6)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -169,6 +171,9 @@ func _process(delta: float) -> void:
 		Meta.gold, Crafting.common_count(Meta.materials), Meta.stash.size(), Meta.stash_max(), Meta.best_depth, Meta.runs, mine]
 	if Net.active():
 		_info.text += "\nКооператив: ключ %s, игроков %d   Tab — меню" % [Net.key, Net.player_count()]
+		if Net.player_count() < 2:
+			# Пока никто не подключился — видно, на каком шаге застряло.
+			_info.text += "\n%s\n%s" % [Net.status, Net.debug_line()]
 	_banner_time -= delta
 	_banner.modulate.a = clampf(_banner_time, 0.0, 1.0)
 	var thing: Node2D = null
