@@ -77,7 +77,7 @@ var _last_slot := ""
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args or "--touchtest" in args or "--forgetest" in args or "--runtest" in args or "--traptest" in args)
+	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args or "--touchtest" in args or "--forgetest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args)
 	# Проверочные запуски без окна (--headless) ничего не пишут — сохранения владельца не трогаем.
 	if DisplayServer.get_name() == "headless":
 		persist = false

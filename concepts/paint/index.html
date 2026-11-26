@@ -1,0 +1,452 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Концепт: кристальная пещера</title>
+<style>body{margin:0;background:#111;color:#ccd;font:14px Arial} canvas{display:block;max-width:100%;margin:0 auto 12px}</style>
+</head><body>
+<canvas id="scene" width="1600" height="900"></canvas>
+<canvas id="hero" width="1600" height="900"></canvas>
+<div id="status">рисую…</div>
+<script>
+// Живописный концепт по референсам владельца: слоистые каменные плиты, платформы с толстыми
+// обрывами в светящуюся бездну, тёмная стена с корнями и сталактитами, кристаллы и грибы со
+// свечением, лучи света сверху, голубое озерцо. Всё рисуется процедурно (мазками) — без картинок.
+
+// ---------- случайность и шум ----------
+let S = 12345;
+const rnd = () => (S = (S * 16807) % 2147483647) / 2147483647;
+const rr = (a, b) => a + (b - a) * rnd();
+const pick = (a) => a[Math.floor(rnd() * a.length)];
+function hash(x, y) { const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < 4; i++) { s += a * vnoise(x * f, y * f); f *= 2; a *= 0.5; } return s; }
+
+// ---------- цвет ----------
+function hex(c) { const n = parseInt(c.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+function rgba(c, a = 1) { return `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
+function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function jitterCol(c, k) { const d = rr(-k, k); return [c[0] + d, c[1] + d, c[2] + d * 1.2]; }
+
+// ---------- формы ----------
+// Неровное пятно вокруг центра (каменная плита, глыба).
+function blob(cx, cy, rx, ry, n = 14, rough = 0.25, seed = 0) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const k = 1 + (fbm(Math.cos(a) * 2 + seed, Math.sin(a) * 2 + seed) - 0.5) * rough * 2;
+    pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+  }
+  return pts;
+}
+// Неровная ломаная: подразбиваем рёбра и смещаем шумом.
+function roughen(pts, amp, steps = 3) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+      out.push([x + (fbm(x * 0.02, y * 0.02) - 0.5) * amp, y + (fbm(y * 0.02 + 9, x * 0.02) - 0.5) * amp]);
+    }
+  }
+  return out;
+}
+function path(ctx, pts) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
+function bbox(pts) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; }
+
+// Мазки внутри области: короткие полупрозрачные штрихи — фактура «как кистью».
+function strokes(ctx, pts, n, base, opts = {}) {
+  const [x0, y0, x1, y1] = bbox(pts);
+  ctx.save(); path(ctx, pts); ctx.clip();
+  for (let i = 0; i < n; i++) {
+    const x = rr(x0, x1), y = rr(y0, y1);
+    const ang = (opts.angle ?? -0.4) + rr(-0.5, 0.5) * (opts.spread ?? 1);
+    const len = rr(opts.lmin ?? 4, opts.lmax ?? 16);
+    // свет сверху-слева: мазки у верхнего края светлее
+    const t = opts.vgrad ? (y - y0) / (y1 - y0 + 1) : 0;
+    let c = jitterCol(base, opts.var ?? 18);
+    if (opts.vgrad) c = mix(c, opts.vgrad, t);
+    ctx.strokeStyle = rgba(c, rr(opts.amin ?? 0.08, opts.amax ?? 0.3));
+    ctx.lineWidth = rr(opts.wmin ?? 1, opts.wmax ?? 3.5);
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------- элементы пещеры ----------
+const C = {
+  deep: hex("#090b18"), rock: hex("#262a48"), rockL: hex("#4a5184"), rockH: hex("#8d98d0"),
+  slab: hex("#6a6fa6"), slabL: hex("#a3aedf"), slabP: hex("#7b66a8"), slabT: hex("#4f8aa0"),
+  cyan: hex("#6fe6ff"), cyanH: hex("#e6fbff"), teal: hex("#1d7f8c"), orange: hex("#f08a32"), orangeH: hex("#ffd08a"),
+};
+
+// Обрыв платформы: от переднего края вниз на h — градиент в темноту, вертикальные и слоистые мазки.
+function cliffFace(ctx, edge, h, tint = C.rockL) {
+  const face = edge.concat(edge.slice().reverse().map(([x, y]) => [x + rr(-6, 6), y + h * rr(0.8, 1.15)]));
+  const [x0, y0, x1, y1] = bbox(face);
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, rgba(tint)); g.addColorStop(0.25, rgba(mix(tint, C.rock, 0.6))); g.addColorStop(1, rgba(C.deep));
+  path(ctx, face); ctx.fillStyle = g; ctx.fill();
+  strokes(ctx, face, 900, C.rockL, { angle: Math.PI / 2, spread: 0.25, lmin: 10, lmax: 40, amin: 0.05, amax: 0.22, vgrad: C.deep });
+  // слои породы
+  ctx.save(); path(ctx, face); ctx.clip();
+  for (let k = 1; k <= 4; k++) {
+    ctx.beginPath();
+    edge.forEach(([x, y], i) => { const yy = y + h * k / 5 + (fbm(x * 0.03, k) - 0.5) * 14; i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); });
+    ctx.strokeStyle = rgba(C.deep, 0.5); ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath();
+    edge.forEach(([x, y], i) => { const yy = y + h * k / 5 - 3 + (fbm(x * 0.03, k) - 0.5) * 14; i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); });
+    ctx.strokeStyle = rgba(C.rockH, 0.12); ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.restore();
+  // холодная кромка
+  ctx.beginPath(); edge.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.strokeStyle = rgba(C.rockH, 0.55); ctx.lineWidth = 3; ctx.stroke();
+}
+
+// Поверхность платформы: основа + слоистые каменные плиты с толщиной, трещинами и фактурой.
+function platformTop(ctx, top, seed, tint = C.slab, plates = 40) {
+  path(ctx, top); ctx.fillStyle = rgba(mix(tint, C.rock, 0.45)); ctx.fill();
+  strokes(ctx, top, 1500, mix(tint, C.rock, 0.3), { var: 22, amin: 0.06, amax: 0.22 });
+  const [x0, y0, x1, y1] = bbox(top);
+  ctx.save(); path(ctx, top); ctx.clip();
+  for (let i = 0; i < plates; i++) {
+    const cx = rr(x0, x1), cy = rr(y0, y1);
+    const rx = rr(40, 110), ry = rx * rr(0.45, 0.7);     // плиты приплюснуты — взгляд сверху под углом
+    const pl = blob(cx, cy, rx, ry, 12, 0.35, seed + i * 3.1);
+    const col = pick([tint, tint, tint, C.slabP, C.slabT]);
+    // толщина плиты: тёмная подкладка ниже
+    ctx.save(); ctx.translate(0, rr(4, 9)); path(ctx, pl); ctx.fillStyle = rgba(C.deep, 0.75); ctx.fill(); ctx.restore();
+    const g = ctx.createLinearGradient(cx - rx, cy - ry, cx + rx, cy + ry);
+    g.addColorStop(0, rgba(mix(col, C.slabL, 0.35))); g.addColorStop(1, rgba(mix(col, C.rock, 0.35)));
+    path(ctx, pl); ctx.fillStyle = g; ctx.fill();
+    strokes(ctx, pl, 160, col, { var: 26, amin: 0.08, amax: 0.3 });
+    // светлая кромка сверху-слева
+    ctx.save(); path(ctx, pl); ctx.clip();
+    ctx.translate(-3, -3); path(ctx, pl); ctx.strokeStyle = rgba(C.slabL, 0.5); ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+    path(ctx, pl); ctx.strokeStyle = rgba(C.deep, 0.55); ctx.lineWidth = 2; ctx.stroke();
+    // трещина
+    if (rnd() < 0.5) {
+      ctx.beginPath(); let px = cx - rx * 0.4, py = cy + rr(-ry, ry) * 0.3; ctx.moveTo(px, py);
+      for (let k = 0; k < 4; k++) { px += rx * 0.22; py += rr(-6, 6); ctx.lineTo(px, py); }
+      ctx.strokeStyle = rgba(C.deep, 0.5); ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function crystalCluster(ctx, x, y, s, n, lights) {
+  lights.push([x, y - 40 * s, 230 * s, C.cyan, 0.95]);
+  for (let i = 0; i < n; i++) {
+    const a = (i - (n - 1) / 2) * 0.33 + rr(-0.12, 0.12);
+    const len = (rr(70, 130) - Math.abs(i - (n - 1) / 2) * 22) * s;
+    const w = rr(10, 17) * s;
+    const bx = x + (i - (n - 1) / 2) * 14 * s;
+    const dx = Math.sin(a), dy = -Math.cos(a), px = -dy * w, py = dx * w;
+    const tip = [bx + dx * (len + w * 1.4), y + dy * (len + w * 1.4)];
+    const left = [[bx - px, y - py], [bx + dx * len - px * 0.8, y + dy * len - py * 0.8], tip, [bx + dx * len, y + dy * len], [bx, y]];
+    const right = [[bx, y], [bx + dx * len, y + dy * len], tip, [bx + dx * len + px * 0.8, y + dy * len + py * 0.8], [bx + px, y + py]];
+    let g = ctx.createLinearGradient(bx, y, tip[0], tip[1]);
+    g.addColorStop(0, rgba(hex("#1b6f9c"))); g.addColorStop(0.7, rgba(C.cyan)); g.addColorStop(1, rgba(C.cyanH));
+    path(ctx, left); ctx.fillStyle = g; ctx.fill();
+    g = ctx.createLinearGradient(bx, y, tip[0], tip[1]);
+    g.addColorStop(0, rgba(hex("#0e3e66"))); g.addColorStop(1, rgba(hex("#4cc3ea")));
+    path(ctx, right); ctx.fillStyle = g; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx + dx * len, y + dy * len); ctx.lineTo(tip[0], tip[1]);
+    ctx.strokeStyle = rgba(C.cyanH, 0.85); ctx.lineWidth = 1.6; ctx.stroke();
+    path(ctx, left.concat(right.slice(3))); ctx.strokeStyle = rgba(hex("#0a2238"), 0.7); ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  // осколки у основания
+  for (let i = 0; i < 5; i++) {
+    const sx = x + rr(-50, 50) * s, sy = y + rr(-4, 10) * s;
+    path(ctx, [[sx - 4 * s, sy], [sx, sy - rr(8, 16) * s], [sx + 4 * s, sy]]); ctx.fillStyle = rgba(C.cyan, 0.9); ctx.fill();
+  }
+}
+
+function fungusShelf(ctx, x, y, s, lights) {
+  lights.push([x, y, 90 * s, C.orange, 0.45]);
+  for (const [dx, dy, w] of [[0, 0, 34], [20, 16, 28], [-12, 30, 24], [14, 40, 18]]) {
+    const cx = x + dx * s, cy = y + dy * s, ww = w * s;
+    ctx.beginPath(); ctx.moveTo(cx - ww, cy); ctx.quadraticCurveTo(cx, cy - ww * 0.55, cx + ww, cy); ctx.quadraticCurveTo(cx, cy + ww * 0.22, cx - ww, cy); ctx.closePath();
+    const g = ctx.createLinearGradient(0, cy - ww * 0.5, 0, cy + ww * 0.2);
+    g.addColorStop(0, rgba(C.orangeH)); g.addColorStop(0.55, rgba(C.orange)); g.addColorStop(1, rgba(hex("#7a2e0c")));
+    ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = rgba(hex("#2b0f05"), 0.8); ctx.lineWidth = 1.5; ctx.stroke();
+    for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.moveTo(cx - ww * 0.8 + k * ww * 0.3, cy - 2); ctx.lineTo(cx - ww * 0.7 + k * ww * 0.3, cy - ww * 0.3); ctx.strokeStyle = rgba(hex("#ffe1b0"), 0.25); ctx.lineWidth = 1; ctx.stroke(); }
+  }
+}
+
+function glowShrooms(ctx, x, y, s, lights) {
+  lights.push([x, y - 20 * s, 80 * s, C.cyan, 0.6]);
+  for (const [dx, h, cw] of [[-16, 26, 8], [0, 36, 11], [13, 22, 7], [24, 16, 5]]) {
+    ctx.beginPath(); ctx.moveTo(x + dx * s, y); ctx.quadraticCurveTo(x + (dx + 3) * s, y - h * 0.5 * s, x + dx * s, y - h * s);
+    ctx.strokeStyle = rgba(hex("#b8d2e8"), 0.9); ctx.lineWidth = 2.5 * s; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x + dx * s, y - h * s, cw * s, cw * 0.55 * s, 0, Math.PI, 0); ctx.closePath();
+    ctx.fillStyle = rgba(C.cyan); ctx.fill(); ctx.strokeStyle = rgba(hex("#0d4a66")); ctx.lineWidth = 1.5; ctx.stroke();
+  }
+}
+
+function grassTuft(ctx, x, y, s) {
+  for (let i = 0; i < 12; i++) {
+    const bx = x + rr(-22, 22) * s, h = rr(22, 60) * s, lean = rr(-22, 22) * s;
+    ctx.beginPath(); ctx.moveTo(bx, y); ctx.quadraticCurveTo(bx + lean * 0.2, y - h * 0.6, bx + lean, y - h);
+    ctx.strokeStyle = rgba(i % 4 === 0 ? hex("#d64a62") : mix(hex("#1f5a66"), hex("#5fb0b8"), rnd()), 0.95);
+    ctx.lineWidth = rr(1.5, 3) * s; ctx.lineCap = "round"; ctx.stroke();
+  }
+}
+
+function roots(ctx, x, y, len) {
+  for (let r = 0; r < 3; r++) {
+    ctx.beginPath(); let cx = x + rr(-14, 14), cy = y; ctx.moveTo(cx, cy);
+    for (let i = 0; i < 8; i++) { const nx = cx + rr(-14, 14), ny = cy + len / 8; ctx.quadraticCurveTo(cx + rr(-10, 10), cy + len / 16, nx, ny); cx = nx; cy = ny; }
+    ctx.strokeStyle = rgba(mix(hex("#6c7398"), hex("#a8b2d8"), rnd()), 0.7); ctx.lineWidth = rr(1.5, 4); ctx.stroke();
+  }
+}
+
+// ---------- рыцарь-чиби (кистевая подача) ----------
+// dir: 0 вниз, 1 вниз-вбок, 2 вбок, 3 вверх-вбок, 4 вверх; смотрит вправо, mirror = -1 — влево.
+function knight(ctx, x, y, s, dir, mirror = 1, rim = C.cyan) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * mirror, s);
+  const O = "#16121f";
+  const front = dir <= 1, back = dir >= 3, side = dir === 2;
+  const sh = [0, 7, 12, 7, 0][dir];
+  function shape(draw, fill, light = null) {
+    ctx.beginPath(); draw(); ctx.fillStyle = fill; ctx.fill();
+    ctx.lineWidth = 3.2; ctx.strokeStyle = O; ctx.lineJoin = "round"; ctx.stroke();
+    if (light) { ctx.save(); ctx.clip(); ctx.fillStyle = light; ctx.fillRect(-200, -300, 400, 400); ctx.restore(); }
+  }
+  const lg = (x0, y0, x1, y1, stops) => { const g = ctx.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; };
+  // тень
+  ctx.beginPath(); ctx.ellipse(0, -2, 36, 10, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fill();
+  const steel = lg(-30, -100, 30, -30, [[0, "#f1f5fc"], [0.45, "#b2bdd5"], [1, "#59627f"]]);
+  const rimL = lg(40, 0, -10, 0, [[0, rgba(rim, 0.45)], [0.35, rgba(rim, 0)]]);   // холодный рефлекс от кристаллов справа
+  if (back) {
+    shape(() => { ctx.moveTo(-46, -78); ctx.quadraticCurveTo(-46, -94, -30, -94); ctx.quadraticCurveTo(-14, -94, -14, -78); ctx.lineTo(-16, -50); ctx.quadraticCurveTo(-30, -34, -44, -50); ctx.closePath(); }, lg(-46, -94, -14, -40, [[0, "#9c6c40"], [1, "#4b2f1b"]]));
+    shape(() => { ctx.moveTo(30, -122); ctx.lineTo(37, -126); ctx.lineTo(39, -60); ctx.lineTo(32, -58); ctx.closePath(); }, "#dfe6f2");
+  }
+  // ноги
+  const boot = lg(0, -40, 0, 0, [[0, "#7c4f2c"], [1, "#2f1d10"]]);
+  if (side) { shape(() => ctx.roundRect(-12, -40, 16, 40, 5), boot); shape(() => ctx.roundRect(4, -40, 16, 40, 5), boot); }
+  else { shape(() => ctx.roundRect(-21, -40, 17, 40, 5), boot); shape(() => ctx.roundRect(4, -40, 17, 40, 5), boot); }
+  // корпус
+  const bw = side ? 26 : 34;
+  shape(() => { ctx.moveTo(-bw, -90); ctx.quadraticCurveTo(-bw - 3, -40, -bw + 4, -36); ctx.lineTo(bw - 4, -36); ctx.quadraticCurveTo(bw + 3, -40, bw, -90); ctx.quadraticCurveTo(0, -100, -bw, -90); ctx.closePath(); }, back ? lg(-30, -95, 30, -35, [[0, "#c3cce0"], [1, "#4d5672"]]) : steel, rimL);
+  if (front) shape(() => { ctx.moveTo(-10 + sh * 0.6, -88); ctx.lineTo(10 + sh * 0.6, -88); ctx.lineTo(13 + sh * 0.6, -40); ctx.lineTo(-13 + sh * 0.6, -40); ctx.closePath(); }, lg(0, -88, 0, -40, [[0, "#5a86e6"], [1, "#22356f"]]));
+  if (back) shape(() => { ctx.moveTo(-24, -88); ctx.quadraticCurveTo(0, -80, 24, -88); ctx.lineTo(28, -38); ctx.quadraticCurveTo(0, -32, -28, -38); ctx.closePath(); }, lg(0, -88, 0, -38, [[0, "#3e5aa6"], [1, "#1c2858"]]));
+  shape(() => ctx.roundRect(-bw + 1, -52, bw * 2 - 2, 9, 3), "#5b3a22");
+  shape(() => ctx.roundRect(-5 + sh * 0.5, -53, 10, 11, 2), lg(0, -53, 0, -42, [[0, "#ffe7a0"], [1, "#c08528"]]));
+  if (side) shape(() => ctx.ellipse(-2, -88, 18, 13, 0, 0, Math.PI * 2), steel, rimL);
+  else { shape(() => ctx.ellipse(-33, -88, 16, 12, 0, 0, Math.PI * 2), steel); shape(() => ctx.ellipse(33, -88, 16, 12, 0, 0, Math.PI * 2), steel, rimL); }
+  // голова
+  const hx = sh * 0.5, hy = -132;
+  const hair = lg(hx - 30, hy - 40, hx + 20, hy + 30, [[0, "#c98448"], [0.5, "#8a4c24"], [1, "#4a2510"]]);
+  shape(() => ctx.ellipse(hx, hy, 41, 38, 0, 0, Math.PI * 2), hair);
+  if (dir <= 2) {
+    const fx = hx + [0, 8, 16][dir], fw = [30, 26, 20][dir];
+    shape(() => ctx.ellipse(fx, hy + 10, fw, 25, 0, 0, Math.PI * 2), (() => { const g = ctx.createRadialGradient(fx - 8, hy, 4, fx, hy + 10, 34); g.addColorStop(0, "#ffe9d4"); g.addColorStop(1, "#dca07a"); return g; })());
+    shape(() => { ctx.moveTo(hx - 39, hy - 2); ctx.quadraticCurveTo(hx - 32, hy - 32, hx, hy - 36); ctx.quadraticCurveTo(hx + 34, hy - 34, hx + 40, hy); ctx.quadraticCurveTo(hx + 22, hy - 14, hx + 12, hy - 6); ctx.quadraticCurveTo(hx + 4, hy - 18, hx - 8, hy - 8); ctx.quadraticCurveTo(hx - 20, hy - 18, hx - 39, hy - 2); ctx.closePath(); }, hair);
+    const eyes = dir === 0 ? [fx - 11, fx + 11] : dir === 1 ? [fx - 6, fx + 12] : [fx + 8];
+    for (const ex of eyes) {
+      ctx.beginPath(); ctx.ellipse(ex, hy + 8, 4.6, 6.5, 0, 0, Math.PI * 2); ctx.fillStyle = "#2b1e3c"; ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ex, hy + 10, 3, 3, 0, 0, Math.PI * 2); ctx.fillStyle = "#5a7fd0"; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 1.5, hy + 5.5, 1.9, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill();
+    }
+    ctx.beginPath(); ctx.ellipse(fx - 15 + (dir ? 6 : 0), hy + 18, 6, 3.5, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,130,120,0.45)"; ctx.fill();
+  } else if (dir === 3) {
+    shape(() => ctx.ellipse(hx + 28, hy + 12, 6, 12, 0, 0, Math.PI * 2), "#e8b490");
+  }
+  // блик и рефлекс на волосах
+  ctx.beginPath(); ctx.moveTo(hx - 24, hy - 26); ctx.quadraticCurveTo(hx - 4, hy - 40, hx + 16, hy - 31); ctx.strokeStyle = "rgba(255,200,140,0.7)"; ctx.lineWidth = 5; ctx.lineCap = "round"; ctx.stroke();
+  // холодный рефлекс — тонкой дугой по правому краю головы
+  ctx.beginPath(); ctx.ellipse(hx, hy, 38, 35, 0, -0.9, 0.9); ctx.strokeStyle = rgba(rim, 0.45); ctx.lineWidth = 3; ctx.stroke();
+  // щит и меч
+  const shield = lg(-10, -100, 20, -30, [[0, "#6c98f0"], [1, "#1d2d64"]]);
+  const gold = lg(0, -100, 0, -30, [[0, "#ffe9a6"], [1, "#b97b20"]]);
+  const blade = lg(-6, 0, 6, 0, [[0, "#ffffff"], [0.5, "#cfd9ea"], [1, "#7d89a6"]]);
+  if (dir === 0) {
+    shape(() => { ctx.moveTo(38, -98); ctx.quadraticCurveTo(62, -98, 67, -90); ctx.lineTo(65, -58); ctx.quadraticCurveTo(58, -38, 50, -32); ctx.quadraticCurveTo(42, -38, 36, -58); ctx.lineTo(34, -90); ctx.closePath(); }, shield, rimL);
+    ctx.fillStyle = gold; ctx.fillRect(47, -94, 6, 58); ctx.fillRect(38, -75, 25, 6);
+    shape(() => { ctx.moveTo(-50, -134); ctx.lineTo(-44, -141); ctx.lineTo(-38, -134); ctx.lineTo(-38, -66); ctx.lineTo(-50, -66); ctx.closePath(); }, blade);
+    shape(() => ctx.roundRect(-58, -68, 28, 7, 3), gold); shape(() => ctx.roundRect(-48, -61, 8, 16, 3), "#5b3a22");
+  } else if (dir === 1) {
+    shape(() => { ctx.moveTo(-46, -96); ctx.quadraticCurveTo(-26, -100, -18, -92); ctx.lineTo(-20, -58); ctx.quadraticCurveTo(-28, -38, -36, -34); ctx.quadraticCurveTo(-46, -40, -50, -60); ctx.lineTo(-52, -90); ctx.closePath(); }, shield);
+    ctx.fillStyle = gold; ctx.fillRect(-37, -94, 6, 56);
+    shape(() => { ctx.moveTo(44, -132); ctx.lineTo(50, -139); ctx.lineTo(56, -132); ctx.lineTo(56, -64); ctx.lineTo(44, -64); ctx.closePath(); }, blade);
+    shape(() => ctx.roundRect(36, -66, 28, 7, 3), gold);
+  } else if (side) {
+    shape(() => { ctx.moveTo(-18, -98); ctx.quadraticCurveTo(4, -102, 12, -94); ctx.lineTo(10, -60); ctx.quadraticCurveTo(2, -40, -6, -36); ctx.quadraticCurveTo(-16, -42, -20, -62); ctx.lineTo(-22, -90); ctx.closePath(); }, shield, rimL);
+    ctx.fillStyle = gold; ctx.fillRect(-9, -96, 6, 56); ctx.fillRect(-20, -72, 30, 6);
+    shape(() => { ctx.moveTo(22, -68); ctx.lineTo(88, -88); ctx.lineTo(92, -81); ctx.lineTo(26, -59); ctx.closePath(); }, blade);
+    shape(() => ctx.roundRect(12, -76, 9, 26, 3), gold);
+  } else if (dir === 3) {
+    shape(() => { ctx.moveTo(36, -122); ctx.lineTo(43, -126); ctx.lineTo(45, -62); ctx.lineTo(38, -60); ctx.closePath(); }, blade);
+  }
+  ctx.restore();
+}
+
+// ---------- освещение ----------
+// Тёмный слой с «окнами» света — умножением; затем свечение — сложением.
+function lightPass(ctx, W, H, lights, ambient) {
+  const lc = document.createElement("canvas"); lc.width = W; lc.height = H;
+  const l = lc.getContext("2d");
+  l.fillStyle = rgba(ambient); l.fillRect(0, 0, W, H);
+  l.globalCompositeOperation = "lighter";
+  for (const [x, y, r, col, k] of lights) {
+    const g = l.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, rgba(col, 0.9 * k)); g.addColorStop(0.5, rgba(col, 0.35 * k)); g.addColorStop(1, rgba(col, 0));
+    l.fillStyle = g; l.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.drawImage(lc, 0, 0); ctx.restore();
+  // свечение (bloom)
+  ctx.save(); ctx.globalCompositeOperation = "screen";
+  for (const [x, y, r, col, k] of lights) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 0.55);
+    g.addColorStop(0, rgba(col, 0.35 * k)); g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+function lightShafts(ctx, W, H) {
+  ctx.save(); ctx.globalCompositeOperation = "screen";
+  for (const [x, w, a] of [[520, 140, 0.13], [760, 70, 0.1], [1050, 110, 0.12]]) {
+    const g = ctx.createLinearGradient(0, 0, 0, H * 0.8);
+    g.addColorStop(0, `rgba(150,210,255,${a})`); g.addColorStop(1, "rgba(150,210,255,0)");
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + w, 0); ctx.lineTo(x + w * 1.8 + 120, H * 0.8); ctx.lineTo(x + 120, H * 0.8); ctx.closePath();
+    ctx.fillStyle = g; ctx.filter = "blur(14px)"; ctx.fill(); ctx.filter = "none";
+  }
+  ctx.restore();
+}
+
+function motes(ctx, W, H, n) {
+  ctx.save(); ctx.globalCompositeOperation = "screen";
+  for (let i = 0; i < n; i++) {
+    const x = rr(0, W), y = rr(0, H), r = rr(0.8, 2.6);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = rgba(pick([C.cyan, C.cyanH, hex("#9fb0ff")]), rr(0.2, 0.8)); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- сцена ----------
+function scene() {
+  S = 777;
+  const cv = document.getElementById("scene"), ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+  const lights = [];
+  // фон: бездна с бирюзовым туманом
+  let g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#0b0e20"); g.addColorStop(1, "#071219");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const [x, y, r] of [[200, 880, 420], [1400, 900, 460], [800, 950, 380]]) {
+    g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, "rgba(40,170,180,0.45)"); g.addColorStop(1, "rgba(40,170,180,0)");
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  strokes(ctx, [[0, 600], [W, 600], [W, H], [0, H]], 1500, hex("#1d6a78"), { angle: 0, spread: 0.3, lmin: 20, lmax: 70, amin: 0.03, amax: 0.1, wmin: 2, wmax: 6 });
+
+  // задняя стена: тёмная скала с колоннами и сталактитами
+  const wall = roughen([[0, 0], [W, 0], [W, 250], [1380, 300], [1180, 270], [980, 310], [760, 280], [560, 320], [360, 280], [160, 300], [0, 260]], 50, 4);
+  path(ctx, wall); g = ctx.createLinearGradient(0, 0, 0, 320); g.addColorStop(0, "#0b0c1a"); g.addColorStop(1, "#2a2f55"); ctx.fillStyle = g; ctx.fill();
+  strokes(ctx, wall, 4000, C.rockL, { angle: Math.PI / 2, spread: 0.35, lmin: 15, lmax: 60, amin: 0.04, amax: 0.2, vgrad: C.deep, wmin: 1.5, wmax: 5 });
+  for (let i = 0; i < 14; i++) {          // каменные колонны-грани
+    const x = rr(40, W - 40), w = rr(30, 80), top = rr(20, 120), bot = rr(230, 310);
+    const col = [[x, top], [x + w, top + rr(-10, 10)], [x + w * 0.9, bot], [x + w * 0.1, bot + rr(-10, 10)]];
+    g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, rgba(mix(C.rockL, C.rockH, 0.2), 0.55)); g.addColorStop(1, rgba(C.deep, 0.4));
+    path(ctx, roughen(col, 14, 3)); ctx.fillStyle = g; ctx.fill();
+  }
+  for (let i = 0; i < 18; i++) {          // сталактиты
+    const x = rr(0, W), y = rr(200, 300), w = rr(10, 26), h = rr(30, 90);
+    path(ctx, [[x - w, y], [x + w, y], [x + rr(-4, 4), y + h]]);
+    g = ctx.createLinearGradient(x - w, 0, x + w, 0); g.addColorStop(0, rgba(C.rockL)); g.addColorStop(1, rgba(C.deep)); ctx.fillStyle = g; ctx.fill();
+  }
+  for (const x of [140, 300, 470, 690, 930, 1120, 1330, 1500]) roots(ctx, x, rr(150, 230), rr(140, 260));
+
+  // левая терраса: плиты ярусами вверх (как на референсе 1)
+  for (let k = 0; k < 3; k++) {
+    const oy = -k * 34, ox = -k * 30;
+    const top = roughen([[0 + ox, 300 + oy], [330 + ox - k * 40, 330 + oy], [400 + ox - k * 50, 460 + oy], [330 + ox - k * 40, 560 + oy], [0 + ox, 590 + oy]], 34, 4);
+    const front = top.filter(([x, y]) => y > 420 + oy);
+    cliffFace(ctx, front.sort((a, b) => a[0] - b[0]), 46);
+    platformTop(ctx, top, 10 + k * 7, C.slab, 14);
+  }
+  // главная платформа: обрыв спереди в бездну
+  const main = roughen([[330, 330], [700, 300], [1080, 320], [1300, 380], [1360, 520], [1240, 660], [900, 700], [560, 690], [380, 610], [300, 470]], 60, 4);
+  const mainFront = main.filter(([x, y]) => y > 560).sort((a, b) => a[0] - b[0]);
+  cliffFace(ctx, mainFront, 190);
+  platformTop(ctx, main, 101, C.slab, 70);
+
+  // правая нижняя площадка и ступени к ней
+  const right = roughen([[1290, 600], [1520, 560], [W, 620], [W, 860], [1380, 880], [1250, 760]], 40, 4);
+  cliffFace(ctx, right.filter(([x, y]) => y > 760).sort((a, b) => a[0] - b[0]), 120);
+  platformTop(ctx, right, 202, C.slabT, 18);
+  for (let i = 0; i < 6; i++) {           // каменные ступени вниз
+    const x = 1210 + i * 22, y = 560 + i * 34, w = 120;
+    const step = [[x, y], [x + w, y - 6], [x + w + 6, y + 18], [x + 4, y + 24]];
+    cliffFace(ctx, [[x + 4, y + 24], [x + w + 6, y + 18]], 12);
+    path(ctx, step); g = ctx.createLinearGradient(x, y, x + w, y + 20); g.addColorStop(0, rgba(C.slabL)); g.addColorStop(1, rgba(C.slab)); ctx.fillStyle = g; ctx.fill();
+    strokes(ctx, step, 60, C.slab, { var: 20 });
+    path(ctx, step); ctx.strokeStyle = rgba(C.deep, 0.7); ctx.lineWidth = 2; ctx.stroke();
+  }
+  // голубое озерцо (референс 5)
+  const pool = roughen(blob(1460, 760, 120, 50, 16, 0.3, 5), 14, 2);
+  path(ctx, pool); g = ctx.createRadialGradient(1460, 750, 10, 1460, 760, 140); g.addColorStop(0, "#9ff3ff"); g.addColorStop(0.4, "#2cb7d6"); g.addColorStop(1, "#0b4a66"); ctx.fillStyle = g; ctx.fill();
+  strokes(ctx, pool, 300, hex("#bff6ff"), { angle: 0, spread: 0.2, lmin: 8, lmax: 30, amin: 0.05, amax: 0.25 });
+  path(ctx, pool); ctx.strokeStyle = rgba(C.cyanH, 0.6); ctx.lineWidth = 2.5; ctx.stroke();
+  lights.push([1460, 760, 300, C.cyan, 0.9]);
+
+  // кристаллы, грибы, трава
+  crystalCluster(ctx, 640, 370, 1.15, 5, lights);
+  crystalCluster(ctx, 1150, 380, 0.9, 4, lights);
+  crystalCluster(ctx, 230, 330, 0.8, 3, lights);
+  crystalCluster(ctx, 420, 650, 0.7, 3, lights);
+  crystalCluster(ctx, 1530, 660, 0.85, 4, lights);
+  fungusShelf(ctx, 860, 300, 1.0, lights); fungusShelf(ctx, 330, 300, 0.8, lights); fungusShelf(ctx, 120, 470, 0.9, lights); fungusShelf(ctx, 1270, 420, 0.8, lights);
+  glowShrooms(ctx, 780, 400, 1.0, lights); glowShrooms(ctx, 1000, 640, 0.9, lights); glowShrooms(ctx, 300, 560, 0.8, lights);
+  grassTuft(ctx, 720, 395, 1); grassTuft(ctx, 940, 395, 0.9); grassTuft(ctx, 1210, 520, 1); grassTuft(ctx, 480, 600, 0.9); grassTuft(ctx, 1080, 660, 0.8); grassTuft(ctx, 200, 520, 0.9);
+
+  // герой с тёплым светом
+  lights.push([830, 470, 300, hex("#ffd9a8"), 0.85]);
+  knight(ctx, 830, 520, 0.62, 1, 1);
+
+  lightPass(ctx, W, H, lights, hex("#3a4170"));
+  lightShafts(ctx, W, H);
+  motes(ctx, W, H, 160);
+  // виньетка
+  g = ctx.createRadialGradient(W / 2, H * 0.48, H * 0.35, W / 2, H * 0.5, H * 0.95);
+  g.addColorStop(0, "rgba(4,4,12,0)"); g.addColorStop(1, "rgba(4,4,12,0.8)"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- лист героя ----------
+function heroSheet() {
+  S = 99;
+  const cv = document.getElementById("hero"), ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+  let g = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, 900); g.addColorStop(0, "#2a3058"); g.addColorStop(1, "#0a0b18");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  strokes(ctx, [[0, 0], [W, 0], [W, H], [0, H]], 2500, C.rockL, { amin: 0.03, amax: 0.1, lmin: 10, lmax: 40, wmin: 2, wmax: 6 });
+  const names = ["вниз", "вниз-вправо", "вправо", "вверх-вправо", "вверх", "вверх-влево", "влево", "вниз-влево"];
+  const map = [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [3, -1], [2, -1], [1, -1]];
+  const lights = [];
+  for (let i = 0; i < 8; i++) {
+    const x = 200 + (i % 4) * 400, y = 380 + Math.floor(i / 4) * 400;
+    const ped = roughen(blob(x, y + 4, 120, 34, 14, 0.25, i * 3), 10, 2);
+    cliffFace(ctx, ped.filter(([px, py]) => py > y).sort((a, b) => a[0] - b[0]), 26);
+    platformTop(ctx, ped, 40 + i, C.slab, 6);
+    knight(ctx, x, y + 8, 1.55, map[i][0], map[i][1]);
+    lights.push([x - 60, y - 140, 380, hex("#ffe0b8"), 0.6]);
+    lights.push([x + 120, y - 100, 220, C.cyan, 0.5]);
+    ctx.font = "bold 26px Arial"; ctx.textAlign = "center"; ctx.fillStyle = "#dfe6ff"; ctx.fillText(names[i], x, y + 74);
+  }
+  lightPass(ctx, W, H, lights, hex("#5a6190"));
+  ctx.font = "bold 30px Arial"; ctx.textAlign = "center"; ctx.fillStyle = "#ffffff";
+  ctx.fillText("Рыцарь (Мечник): 8 сторон — 5 нарисованы, 3 зеркально", W / 2, 50);
+}
+
+async function save(id, name) {
+  const data = document.getElementById(id).toDataURL("image/png");
+  const r = await fetch("/save?name=" + name, { method: "POST", body: data });
+  return r.text();
+}
+scene(); heroSheet();
+Promise.all([save("scene", "cave_paint"), save("hero", "hero_paint")]).then((r) => (document.getElementById("status").textContent = "готово: " + r.join(", ")));
+</script>
+</body></html>

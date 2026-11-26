@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -81,6 +81,8 @@ func _ready() -> void:
 		_zootest()
 	elif "--herotest" in args:
 		_herotest()
+	elif "--showcase" in args:
+		_showcase()
 	elif "--traptest" in args:
 		_traptest()
 	elif "--runtest" in args:
@@ -2128,4 +2130,35 @@ func _traptest() -> void:
 		if is_instance_valid(e):
 			print("TRAP left: %s dead=%s hp=%d" % [e.name, e.dead, e.hp])
 	_shot("trap_3_open")
+	get_tree().quit()
+
+
+# --- Показ графики этажа (`--showcase`): герой у кристаллов, снимки ---
+func _showcase() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(1.0)
+	var dg := get_tree().current_scene
+	var p: Node2D = local_hero()
+	p.god = true
+	var decor := dg.get_node_or_null("Ground/Decor")
+	var spots: Array = []
+	if decor:
+		for n in decor.get_children():
+			if n is Sprite2D and n.region_rect.position.x < 48:  # кристаллы
+				spots.append(n.global_position)
+	spots.shuffle()
+	var i := 0
+	for s: Vector2 in spots.slice(0, 4):
+		i += 1
+		p.global_position = dg.open_spot(s + Vector2(18, 26))
+		await _wait(0.1)
+		p.get_node("Camera").reset_smoothing()
+		await _wait(0.6)
+		_shot("show_%d" % i)
+	# Герой с 8 сторон: идёт по кругу.
+	for d in 8:
+		p._face(Vector2.from_angle(d * PI / 4.0))
+		p._play("walk_" + p.facing)
+		await _wait(0.25)
+	print("SHOW spots=%d hero=%s cam=%s" % [spots.size(), p.global_position, get_viewport().get_camera_2d().get_screen_center_position()])
 	get_tree().quit()

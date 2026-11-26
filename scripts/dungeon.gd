@@ -7,6 +7,11 @@ extends Node2D
 
 const TILE := 16
 const TILES_TEX := preload("res://assets/tiles.png")
+# Новая графика (по референсам владельца): пока только первый биом — кристальная пещера.
+const CAVE_TEX := preload("res://assets/cave_tiles.png")
+const CAVE_DECOR := preload("res://assets/cave_decor.png")
+const CAVE_FLOOR := preload("res://assets/cave_floor.png")  # 64x128: пол 4x4 клетки + верх скалы 4x4
+const LIGHT_TEX := preload("res://assets/light.png")
 const Blocks := preload("res://scripts/blocks.gd")
 const Arenas := preload("res://scripts/arenas.gd")
 const ANVIL := preload("res://scripts/anvil.gd")
@@ -219,6 +224,7 @@ func _ready() -> void:
 		_dump_map(rows, "res://shots/map_floor%d_%d.png" % [Run.depth, randi() % 1000])
 		print("anvil on floor: %s" % ("".join(rows).contains("A")))
 	map.modulate = pool_for(Run.depth)["tint"]
+	_decorate()
 	Game.spawn_guest_heroes()
 	Net.scene_loaded()
 	Game.save_run.call_deferred()  # начало этажа — продолжить можно отсюда
@@ -240,12 +246,151 @@ func _ready_guest() -> void:
 	player.queue_free()
 	_build(rows, true)
 	map.modulate = pool_for(Run.depth)["tint"]
+	_decorate()
 	Net.scene_loaded()
 
 
 ## Кооп, хозяин: что прислать гостям для этой сцены.
 func net_scene() -> Dictionary:
 	return {"kind": "dungeon", "rows": rows, "depth": Run.depth, "boss": is_boss_floor, "gate": _gate_cells, "mod": modifier}
+
+
+# ---------------- Новая графика: кристальная пещера ----------------
+
+## Клетка пола: в пещере — кусок большого бесшовного пола, иначе старая плитка.
+func _floor_cell(cell: Vector2i) -> void:
+	if _cave_style():
+		map.set_cell(cell, 1, Vector2i(posmod(cell.x, 4), posmod(cell.y, 4)))
+	else:
+		map.set_cell(cell, 0, FLOOR_VARIANTS[0])
+
+
+## Первый биом (этажи 1–10) — в новом стиле; остальные пока старые.
+func _cave_style() -> bool:
+	return Roster.biome_of(Run.depth) == 0
+
+
+## Украшения и свет. Расклад зависит только от карты — у гостя в коопе получается тот же.
+func _decorate() -> void:
+	if not _cave_style():
+		return
+	# Полумрак пещеры — своя пелена со светлыми пятнами (встроенный свет движка в веб-режиме
+	# ложится квадратами по клеткам).
+	var cl := CanvasLayer.new()
+	cl.layer = 1
+	add_child(cl)
+	_shade = ColorRect.new()
+	_shade.size = Vector2(320, 180)
+	_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/cave_light.gdshader")
+	_shade.material = mat
+	cl.add_child(_shade)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("".join(rows))
+	var layer := Node2D.new()
+	layer.name = "Decor"
+	$Ground.add_child(layer)
+	$Ground.move_child(layer, 0)
+	# Неровные края скал — под украшениями, над плитками.
+	var edges: Node2D = preload("res://scripts/cave_edges.gd").new()
+	edges.name = "CaveEdges"
+	edges.rows = rows
+	$Ground.add_child(edges)
+	$Ground.move_child(edges, 0)
+	var h := rows.size()
+	var w: int = (rows[0] as String).length()
+	var lights := 0
+	for y in range(1, h - 1):
+		var row: String = rows[y]
+		for x in range(1, w - 1):
+			var ch := row[x]
+			var pos := Vector2(x * TILE + TILE / 2.0, y * TILE + TILE / 2.0)
+			if ch == "#":
+				# Стена с полом снизу (видимый обрыв): грибы-трутовики, корни.
+				if (rows[y + 1] as String)[x] != "#":
+					var r := rng.randf()
+					if r < 0.08:
+						_decor_sprite(layer, 3, pos)
+					elif r < 0.18:
+						_decor_sprite(layer, 5, pos)
+				continue
+			if ch == "S":
+				_light(layer, pos, Color(0.45, 0.85, 1.0), 2.0, 0.7)
+				continue
+			var under_wall := (rows[y - 1] as String)[x] == "#"
+			var r2 := rng.randf()
+			if under_wall and r2 < 0.07 and lights < 28:
+				var c := _decor_sprite(layer, rng.randi_range(0, 2), pos + Vector2(0, -4))
+				c.flip_h = rng.randf() < 0.5
+				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.6, 1.3)
+				lights += 1
+			elif under_wall and r2 < 0.13:
+				_decor_sprite(layer, 4, pos)
+				if lights < 28 and rng.randf() < 0.5:
+					_light(layer, pos, Color(0.4, 0.8, 1.0), 1.2, 0.9)
+					lights += 1
+			elif r2 < 0.05:
+				_decor_sprite(layer, 6, pos)
+			elif r2 < 0.09:
+				_decor_sprite(layer, 7, pos)
+			elif r2 < 0.095 and lights < 28:
+				_decor_sprite(layer, rng.randi_range(0, 2), pos)
+				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.4, 1.2)
+				lights += 1
+	set_process(true)
+
+
+func _decor_sprite(layer: Node2D, frame: int, pos: Vector2) -> Sprite2D:
+	var s := Sprite2D.new()
+	s.texture = CAVE_DECOR
+	s.region_enabled = true
+	s.region_rect = Rect2(frame * 16, 0, 16, 16)
+	s.position = pos
+	layer.add_child(s)
+	return s
+
+
+var _shade: ColorRect
+var _lights: Array = []   # [позиция, цвет, радиус] — кристаллы, грибы, лестница
+
+
+func _light(_layer: Node2D, pos: Vector2, color: Color, size: float, energy: float) -> void:
+	_lights.append([pos, Color(color.r * energy, color.g * energy, color.b * energy) * 0.8, size * 30.0])
+
+
+## Каждый кадр: какие источники света на экране — в шейдер (не больше 32).
+func _process(_delta: float) -> void:
+	if _shade == null:
+		return
+	# Мир → экран 320x180 (канва растянута на окно, поэтому делим на масштаб окна).
+	var k := 320.0 / get_viewport().get_visible_rect().size.x
+	var xf := get_viewport().get_canvas_transform()
+	var pos := PackedVector2Array()
+	var col := PackedColorArray()
+	for h in get_tree().get_nodes_in_group("player"):
+		pos.append(xf * (h.global_position + Vector2(0, -8)) * k)
+		col.append(Color(1.0, 0.92, 0.8, 120.0) if not h.dead else Color(0.5, 0.5, 0.6, 60.0))
+	var screen := Rect2(Vector2(-60, -60), Vector2(440, 300))
+	for l: Array in _lights:
+		if pos.size() >= 32:
+			break
+		var sp: Vector2 = xf * (l[0] as Vector2) * k
+		if screen.has_point(sp):
+			pos.append(sp)
+			var c: Color = l[1]
+			col.append(Color(c.r, c.g, c.b, l[2]))
+	var mat := _shade.material as ShaderMaterial
+	mat.set_shader_parameter("count", pos.size())
+	# Шейдер ждёт ровно 32 элемента.
+	while pos.size() < 32:
+		pos.append(Vector2.ZERO)
+		col.append(Color(0, 0, 0, 1))
+	mat.set_shader_parameter("pos", pos)
+	var v4 := PackedVector4Array()
+	for c: Color in col:
+		v4.append(Vector4(c.r, c.g, c.b, c.a))
+	mat.set_shader_parameter("col", v4)
 
 
 # ---------------- Комната-ловушка ----------------
@@ -314,7 +459,7 @@ func _trap_open() -> void:
 	var edits: Array = []
 	for d: Array in trap["doors"]:
 		var c := Vector2i(d[0], d[1])
-		map.set_cell(c, 0, FLOOR_VARIANTS[0])
+		_floor_cell(c)
 		astar.set_point_solid(c, false)
 		edits.append([c.x, c.y, ".", false])
 	Net.map_cells(edits)
@@ -343,7 +488,10 @@ func apply_cells(cells: Array) -> void:
 			map.set_cell(cell, 0, STAIRS)
 			stairs_pos = Vector2(cell * TILE) + Vector2(TILE / 2.0, TILE / 2.0)
 			continue
-		map.set_cell(cell, 0, WALL_FACE if c[3] else FLOOR_VARIANTS[0])
+		if c[3]:
+			map.set_cell(cell, 0, WALL_FACE)
+		else:
+			_floor_cell(cell)
 		astar.set_point_solid(cell, c[3])
 
 
@@ -481,7 +629,7 @@ func _on_boss_woke() -> void:
 func _on_boss_died(boss: Node) -> void:
 	var edits: Array = []
 	for c in _gate_cells:
-		map.set_cell(c, 0, FLOOR_VARIANTS[0])
+		_floor_cell(c)
 		astar.set_point_solid(c, false)
 		edits.append([c.x, c.y, ".", false])
 	var cell := Vector2i(boss.global_position / TILE)
@@ -753,7 +901,10 @@ func _build(map_rows: Array, guest := false) -> void:
 			var ch := row[x]
 			if ch == "#":
 				var below_is_floor := y + 1 < h and (map_rows[y + 1] as String)[x] != "#"
-				map.set_cell(cell, 0, WALL_FACE if below_is_floor else WALL_TOP)
+				if not below_is_floor and _cave_style():
+					map.set_cell(cell, 1, Vector2i(x % 4, 4 + y % 4))
+				else:
+					map.set_cell(cell, 0, WALL_FACE if below_is_floor else WALL_TOP)
 				astar.set_point_solid(cell, true)
 				continue
 			if ch == "S":
@@ -761,7 +912,10 @@ func _build(map_rows: Array, guest := false) -> void:
 			else:
 				var r := rng.randf()
 				var v: Vector2i = FLOOR_VARIANTS[0] if r < 0.7 else (FLOOR_VARIANTS[1] if r < 0.85 else FLOOR_VARIANTS[2])
-				map.set_cell(cell, 0, v)
+				if _cave_style():
+					_floor_cell(cell)
+				else:
+					map.set_cell(cell, 0, v)
 			var spot := Vector2(x * TILE + TILE / 2.0, y * TILE + TILE - 2)
 			if guest:
 				if ch == "S":
@@ -862,13 +1016,27 @@ func _make_tileset() -> TileSet:
 	ts.set_physics_layer_collision_layer(0, 1)
 
 	var src := TileSetAtlasSource.new()
-	src.texture = TILES_TEX
+	src.texture = CAVE_TEX if _cave_style() else TILES_TEX
 	src.texture_region_size = Vector2i(TILE, TILE)
 	ts.add_source(src, 0)
 	for x in 6:
 		src.create_tile(Vector2i(x, 0))
 
 	var half := TILE / 2.0
+	# Пещера: большой бесшовный пол и скала (источник 1) — сетка тайлов не видна.
+	if _cave_style():
+		var big := TileSetAtlasSource.new()
+		big.texture = CAVE_FLOOR
+		big.texture_region_size = Vector2i(TILE, TILE)
+		ts.add_source(big, 1)
+		for y in 8:
+			for x in 4:
+				big.create_tile(Vector2i(x, y))
+				if y >= 4:  # скала — твёрдая
+					var td := big.get_tile_data(Vector2i(x, y), 0)
+					td.add_collision_polygon(0)
+					td.set_collision_polygon_points(0, 0, PackedVector2Array([
+						Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)]))
 	var square := PackedVector2Array([
 		Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
 	for wall in [WALL_TOP, WALL_FACE]:

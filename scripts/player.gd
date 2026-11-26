@@ -133,7 +133,14 @@ func _load_sprite() -> void:
 	if not Net.is_guest():
 		look = st.job if st.job != "" else (st.cls if st.cls != "" else "warrior")
 	var l := look if look != "" else "warrior"
-	sprite.sprite_frames = _build_frames(load("res://assets/hero_%s.png" % l))
+	# Новая графика (8 сторон, кадр 24x24) — если для этого героя она уже нарисована.
+	var p8 := "res://assets/hero8_%s.png" % l
+	if ResourceLoader.exists(p8):
+		sprite.sprite_frames = _build_frames8(load(p8))
+		sprite.position.y = -11.0
+	else:
+		sprite.sprite_frames = _build_frames(load("res://assets/hero_%s.png" % l))
+		sprite.position.y = -8.0
 	sprite.play("idle_" + facing)
 
 
@@ -1550,12 +1557,11 @@ func _die() -> void:
 
 # ---------------- Анимация ----------------
 
+## Направление взгляда — 8 сторон: down, down_side, side, up_side, up (влево — зеркально).
 func _face(dir: Vector2) -> void:
-	if absf(dir.x) > absf(dir.y):
-		facing = "side"
-		sprite.flip_h = dir.x < 0.0
-	else:
-		facing = "down" if dir.y > 0.0 else "up"
+	var oct := posmod(int(round(dir.angle() / (PI / 4.0))), 8)  # 0 — вправо, 2 — вниз, 6 — вверх
+	facing = ["side", "down_side", "down", "down_side", "side", "up_side", "up", "up_side"][oct]
+	sprite.flip_h = dir.x < -0.01 and facing != "down" and facing != "up"
 
 
 func _update_animation(input: Vector2) -> void:
@@ -1572,7 +1578,30 @@ func _play(anim: String) -> void:
 		sprite.play(anim)
 
 
-# Нарезает лист героя на анимации: walk_down/up/side и idle_down/up/side.
+## Лист 8 сторон: кадр 24x24, строки — down, down_side, side, up_side, up; 4 кадра шага.
+func _build_frames8(sheet: Texture2D) -> SpriteFrames:
+	var frames := SpriteFrames.new()
+	frames.remove_animation("default")
+	var rows := ["down", "down_side", "side", "up_side", "up"]
+	for r in rows.size():
+		var dir: String = rows[r]
+		var walk := "walk_" + dir
+		frames.add_animation(walk)
+		frames.set_animation_speed(walk, 8.0)
+		frames.set_animation_loop(walk, true)
+		for col in 4:
+			var t := AtlasTexture.new()
+			t.atlas = sheet
+			t.region = Rect2(col * 24, r * 24, 24, 24)
+			frames.add_frame(walk, t)
+		var idle := "idle_" + dir
+		frames.add_animation(idle)
+		frames.add_frame(idle, frames.get_frame_texture(walk, 0))
+	return frames
+
+
+# Нарезает лист героя на анимации: walk_down/up/side и idle_down/up/side
+# (диагонали старых листов — кадры «вбок»).
 func _build_frames(sheet: Texture2D) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
@@ -1587,6 +1616,12 @@ func _build_frames(sheet: Texture2D) -> SpriteFrames:
 		var idle := "idle_" + dir
 		frames.add_animation(idle)
 		frames.add_frame(idle, _cell(sheet, 0, row))
+	for diag: String in ["down_side", "up_side"]:
+		for kind: String in ["walk_", "idle_"]:
+			frames.add_animation(kind + diag)
+			frames.set_animation_speed(kind + diag, 8.0)
+			for i in frames.get_frame_count(kind + "side"):
+				frames.add_frame(kind + diag, frames.get_frame_texture(kind + "side", i))
 	return frames
 
 
