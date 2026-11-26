@@ -6,6 +6,7 @@ extends CanvasLayer
 const Skills := preload("res://scripts/skills.gd")
 const Items := preload("res://scripts/items.gd")
 const Crafting := preload("res://scripts/crafting.gd")
+const Roster := preload("res://scripts/boss_roster.gd")
 const MATS_TEX := preload("res://assets/mats.png")
 const GOLD := Color(1.0, 0.85, 0.3)
 const GOOD := Color(0.45, 0.95, 0.45)
@@ -660,7 +661,7 @@ func _choose_cls(cls: String) -> void:
 	_pick_class(cls)
 
 
-## Герой уже есть: показать его и выбрать этаж старта (1 или сохранения 5, 10, ...).
+## Герой уже есть: показать его и выбрать этаж старта (1 или после любого убитого босса).
 func _fill_portal_hero(hero: Dictionary) -> void:
 	var cls: String = hero["cls"]
 	var job: String = str(hero.get("job", ""))
@@ -671,27 +672,31 @@ func _fill_portal_hero(hero: Dictionary) -> void:
 	if Net.is_guest():
 		t += "\nЭтаж старта выбирает хозяин игры."
 	elif cp > 0:
-		t += "\nМожно начать с этажа-сохранения (каждый 5-й этаж). Погибнешь — герой вернётся к последнему сохранению."
+		t += "\nМожно начать с любого этажа после убитого босса. Погибнешь — герой вернётся к последнему сохранению."
 	else:
-		t += "\nНа 5, 10, 15… этаже герой сохраняется — потом можно начать оттуда."
+		t += "\nПосле каждого убитого босса герой сохраняется — потом можно начать со следующего этажа."
 	if not Meta.run_save.is_empty() and not Net.is_guest():
 		t += "\n[color=#%s]Есть незаконченный забег (этаж %d) — новый забег его заменит.[/color]" % [BAD.to_html(false), int(Meta.run_save.get("depth", 1))]
 	_panel_box.add_child(_rich(250, t))
-	var h := _hc(3)
 	if Net.is_guest():
-		h.add_child(_button("Готов", func() -> void: _pick_class(cls)))
+		var hg := _hc(3)
+		hg.add_child(_button("Готов", func() -> void: _pick_class(cls)))
+		_panel_box.add_child(hg)
 	else:
-		h.add_child(_button("Этаж 1", func() -> void:
-			_start_depth = 1
-			_pick_class(cls)))
-		var d := 5
-		while d <= cp:
-			var dd := d
-			h.add_child(_button("Этаж %d" % d, func() -> void:
-				_start_depth = dd
-				_pick_class(cls)))
-			d += 5
-	_panel_box.add_child(h)
+		# Этажи старта: 1-й и каждый после босса — сеткой (к концу их почти 40).
+		var starts: Array = Roster.start_floors(cp)
+		var many := starts.size() > 6
+		if many:
+			_panel_box.add_child(_rich(250, "[color=#a8a0b8]С какого этажа начать:[/color]"))
+		var g := GridContainer.new()
+		g.columns = 10 if many else 6
+		g.add_theme_constant_override("h_separation", 2)
+		g.add_theme_constant_override("v_separation", 2)
+		for f: int in starts:
+			g.add_child(_button(str(f) if many else "Этаж %d" % f, func() -> void:
+				_start_depth = f
+				_pick_class(cls), true, 5 if many else 6))
+		_panel_box.add_child(g)
 	var h2 := _hc(3)
 	if lvl <= 1:
 		# Герой ещё 1 уровня (например, погиб, не дойдя до сохранения) — класс можно поменять.

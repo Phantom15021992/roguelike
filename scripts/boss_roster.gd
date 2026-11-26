@@ -135,6 +135,16 @@ static func kind_of(cfg: Dictionary) -> String:
 	return (cfg["scene"] as String).get_file().get_basename()
 
 
+## С каких этажей можно начать забег, если открыто сохранение cp: 1-й и каждый этаж сразу
+## после этажа с боссом (4, 7, 10, 11, 14, …), не дальше cp.
+static func start_floors(cp: int) -> Array:
+	var out: Array = [1]
+	for f in range(2, mini(cp, MAX_DEPTH) + 1):
+		if is_boss_depth(f - 1):
+			out.append(f)
+	return out
+
+
 ## Создать босса по настройкам (ещё не добавлен в сцену). as_mini — мини-копия для финального.
 static func make(cfg: Dictionary, depth: int, as_mini := false) -> Node2D:
 	var e: Node2D = (load(cfg["scene"]) as PackedScene).instantiate()

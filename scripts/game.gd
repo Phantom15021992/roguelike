@@ -602,14 +602,17 @@ func _load_or_new_hero(st: Node, cls: String, h: Dictionary) -> void:
 		st.set_class(cls)
 
 
-## Этаж-сохранение (5, 10, ...): герои запоминаются, отсюда можно начать следующий забег.
+## Сохранение после победы над боссом: герои запоминаются, следующий забег можно начать
+## с этажа depth (следующего за логовом).
 func checkpoint(depth: int) -> void:
+	if "--autotest" in OS.get_cmdline_user_args() or "--herotest" in OS.get_cmdline_user_args():
+		print("CHECKPOINT: start from floor %d" % depth)
 	for h in get_tree().get_nodes_in_group("player"):
 		var st: Node = h.st
 		st.checkpoint = maxi(st.checkpoint, depth)
 		st.best = maxi(st.best, depth)
 		_save_hero_of(h.peer_id, st)
-	banner("Сохранение: теперь можно начинать с %d этажа" % depth, 3.0)
+	banner("Сохранение! Теперь можно начинать с %d этажа\nЛестница вниз — или портал домой" % depth, 3.5)
 
 
 ## Незаконченный забег — в файл сохранения (начало этажа, раз в 20 с, выход из игры).
@@ -1577,6 +1580,18 @@ func _herotest() -> void:
 	_shot("hero_start5")
 	Meta.change_class("acolyte")
 	print("HERO changed to %s, hero exists=%s" % [Meta.hero_cls, Meta.current_hero().has("cls")])
+	# Окно портала, когда открыто много сохранений (боссы до 40-го этажа убиты).
+	return_to_camp(true)
+	await _wait_for(func() -> bool: return _scene_name() == "Camp", 10.0)
+	await _wait(0.5)
+	var h2: Dictionary = Meta.current_hero()
+	h2["checkpoint"] = 41
+	h2["level"] = 30
+	var ch := get_tree().current_scene.get_node("CampHUD")
+	ch.open_building("portal")
+	await _wait(0.4)
+	_shot("hero_portal_starts")
+	print("HERO starts for checkpoint 41: %s" % [preload("res://scripts/boss_roster.gd").start_floors(41)])
 	get_tree().quit()
 
 

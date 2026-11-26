@@ -195,8 +195,6 @@ func _ready() -> void:
 	Game.spawn_guest_heroes()
 	Net.scene_loaded()
 	Game.save_run.call_deferred()  # начало этажа — продолжить можно отсюда
-	if Run.depth % 5 == 0:
-		Game.checkpoint.call_deferred(Run.depth)
 
 
 ## Кооп, гость: карта — из присланной хозяином, монстров и предметы пришлёт он же.
@@ -394,8 +392,9 @@ func _on_boss_died(boss: Node) -> void:
 		pcell = _open_cell_near(pcell + Vector2i(3, 0))
 	portal.position = Vector2(pcell * TILE) + Vector2(TILE / 2.0, TILE - 2)
 	entities.add_child(portal)
-	if not last and not Roster.is_final_depth(Run.depth):
-		Game.banner("Лестница вниз — или портал домой", 3.0)
+	# Сохранение после каждого босса: следующий забег можно начать со следующего этажа.
+	if not last:
+		Game.checkpoint.call_deferred(Run.depth + 1)
 
 
 # ---------------- Генерация из блоков ----------------
