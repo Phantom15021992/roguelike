@@ -4,8 +4,8 @@ extends Node
 ## Схема: всю игру считает компьютер хозяина (монстры, урон, боссы, состояние всех героев).
 ## Гости отправляют хозяину свои нажатия и видят копию мира.
 ##
-## Подключение: хозяин регистрируется на сигнальном сервере PeerJS под именем из ключа,
-## гость находит его по ключу; через сервер они обмениваются описаниями WebRTC-соединения,
+## Подключение: хозяин слушает «ящик» rgl7/<ключ>/h на открытых MQTT-серверах (mqtt_signal.gd,
+## сразу на нескольких), гость пишет туда по ключу; так они обмениваются описаниями WebRTC-соединения,
 ## дальше данные идут напрямую между игроками (WebRTC). На ПК нужен addons/webrtc_native.
 ##
 ## Копия мира: у каждого узла в слоях Ground/Entities/FX, у которого есть метод net_props(),
@@ -18,8 +18,8 @@ signal players_changed
 signal joined          # гость: соединение с хозяином установлено
 signal left            # связь потеряна / вышли из коопа
 
-const SIGNAL_URL := "wss://0.peerjs.com/peerjs"
-const PEER_PREFIX := "rgl7-"
+const MQTT := preload("res://scripts/mqtt_signal.gd")
+const TOPIC_PREFIX := "rgl7"
 const KEY_CHARS := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 const KEY_LEN := 6
 const MAX_PLAYERS := 4
@@ -34,11 +34,12 @@ var status := ""
 ## Игроки: peer_id -> {"name", "cls", "ready", "state" (у хозяина: состояние героя)}.
 var players := {}
 
-var _ws := WebSocketPeer.new()
+var _sig = MQTT.new()                  # серверы связи (поиск игры по ключу)
 var _ws_open := false
 var _ws_id := ""
-var _hb := 0.0
-var _signal_url := SIGNAL_URL
+var _join_t := 0.0
+var _join_total := 0.0
+var _signal_urls: Array = MQTT.BROKERS  # для тестов: --signal=ws://127.0.0.1:9000/mqtt
 var _rtc: WebRTCMultiplayerPeer
 var _conns := {}                       # peer_id -> WebRTCPeerConnection
 var _sig_ids := {}                     # хозяин: peer_id -> id гостя на сигнальном сервере
@@ -63,12 +64,14 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--signal="):
-			_signal_url = arg.get_slice("=", 1)
-	# В браузере для проверок: index.html?signal=ws://127.0.0.1:9000/peerjs
+			_signal_urls = [arg.get_slice("=", 1)]
+	# В браузере для проверок: index.html?signal=ws://127.0.0.1:9000/mqtt
 	if OS.has_feature("web"):
 		var s: Variant = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('signal') || ''")
 		if typeof(s) == TYPE_STRING and s != "":
-			_signal_url = s
+			_signal_urls = [s]
+	_sig.opened.connect(_on_sig_open)
+	_sig.received.connect(_on_signal)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	get_tree().node_added.connect(_on_node_added)
@@ -138,8 +141,8 @@ func host_game(fixed_key := "") -> void:
 	_scene_busy = false
 	_nodes.clear()
 	_track_scene()
-	_connect_signal(PEER_PREFIX + key)
-	_status("Подключаемся к серверу...")
+	_connect_signal("h")
+	_status("Подключаемся к серверам связи...")
 	players_changed.emit()
 
 
@@ -147,15 +150,14 @@ func join_game(join_key: String) -> void:
 	leave()
 	mode = "guest"
 	key = join_key.strip_edges().to_upper()
-	_host_sig = PEER_PREFIX + key
-	_connect_signal(PEER_PREFIX + key + "-" + str(randi() % 1000000))
+	_host_sig = "h"
+	_connect_signal("g%06d" % (randi() % 1000000))
 	_status("Ищем игру %s..." % key)
 
 
 func leave() -> void:
 	var was := mode
-	if _ws.get_ready_state() != WebSocketPeer.STATE_CLOSED:
-		_ws.close()
+	_sig.close()
 	_ws_open = false
 	for c: WebRTCPeerConnection in _conns.values():
 		c.close()
@@ -185,35 +187,44 @@ func _make_key() -> String:
 	return s
 
 
+## Ящик на серверах связи: rgl7/<ключ>/<имя> (хозяин — «h», гость — «g123456»).
 func _connect_signal(my_sig_id: String) -> void:
 	_ws_id = my_sig_id
-	_ws = WebSocketPeer.new()
-	var token := str(randi())
-	var err := _ws.connect_to_url("%s?key=peerjs&id=%s&token=%s&version=1.5.4" % [_signal_url, my_sig_id, token])
-	if err != OK:
-		_status("Не удалось подключиться к серверу (%d)" % err)
+	_ws_open = false
+	_join_t = 0.0
+	_join_total = 0.0
+	_sig.start("%s/%s/%s" % [TOPIC_PREFIX, key, my_sig_id], _signal_urls)
 
 
 func _sig_send(dst: String, type: String, payload: Dictionary) -> void:
-	if _ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		_ws.send_text(JSON.stringify({"type": type, "dst": dst, "payload": payload}))
+	_sig.send("%s/%s/%s" % [TOPIC_PREFIX, key, dst], {"type": type, "src": _ws_id, "payload": payload})
 
 
 func _poll_signal(delta: float) -> void:
-	if _ws.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+	if mode == "":
 		return
-	_ws.poll()
-	if _ws.get_ready_state() == WebSocketPeer.STATE_CLOSED and mode != "" and not _ws_open:
-		_status("Сервер подключения недоступен")
+	_sig.poll(delta)
+	if not _ws_open and _sig.all_failed():
+		_status("Серверы связи недоступны — проверь интернет")
 		return
-	_hb += delta
-	if _ws_open and _hb > 5.0:
-		_hb = 0.0
-		_ws.send_text(JSON.stringify({"type": "HEARTBEAT"}))
-	while _ws.get_available_packet_count() > 0:
-		var parsed: Variant = JSON.parse_string(_ws.get_packet().get_string_from_utf8())
-		if typeof(parsed) == TYPE_DICTIONARY:
-			_on_signal(parsed)
+	# Гость: хозяин ещё не ответил — стучимся снова (письмо могло потеряться).
+	if is_guest() and _ws_open and not _conns.has(1):
+		_join_t += delta
+		_join_total += delta
+		if _join_t > 5.0:
+			_join_t = 0.0
+			_sig_send(_host_sig, "OFFER", {"t": "join"})
+		if _join_total > 30.0 and _join_total - delta <= 30.0:
+			_status("Хозяин игры %s не отвечает. Проверь ключ — у хозяина игра должна быть создана и открыта" % key)
+
+
+func _on_sig_open() -> void:
+	_ws_open = true
+	if is_host():
+		_status("Игра создана. Ключ: %s (серверов связи: %d)" % [key, _sig.live_count()])
+	elif is_guest():
+		_sig_send(_host_sig, "OFFER", {"t": "join"})
+		_status("Стучимся к хозяину игры %s..." % key)
 
 
 func _on_signal(m: Dictionary) -> void:
@@ -221,26 +232,10 @@ func _on_signal(m: Dictionary) -> void:
 	var src: String = str(m.get("src", ""))
 	var payload: Dictionary = m.get("payload", {}) if typeof(m.get("payload")) == TYPE_DICTIONARY else {}
 	match type:
-		"OPEN":
-			_ws_open = true
-			if is_host():
-				_status("Игра создана. Ключ: %s" % key)
-			else:
-				_sig_send(_host_sig, "OFFER", {"t": "join"})
-				_status("Стучимся к хозяину...")
-		"ID-TAKEN":
-			if is_host():
-				key = _make_key()
-				_connect_signal(PEER_PREFIX + key)
-		"ERROR":
-			_status("Ошибка сервера подключения")
-		"EXPIRE":
-			if is_guest():
-				_status("Игра с ключом %s не найдена" % key)
 		"OFFER", "ANSWER", "CANDIDATE":
 			if is_host():
 				_host_signal(src, payload)
-			else:
+			elif is_guest():
 				_guest_signal(payload)
 
 
@@ -248,6 +243,8 @@ func _on_signal(m: Dictionary) -> void:
 func _host_signal(src: String, p: Dictionary) -> void:
 	var t: String = p.get("t", "")
 	if t == "join":
+		if _pid_by_sig(src) != 0:
+			return  # тот же гость стучится повторно (письмо дошло дважды или он не дождался)
 		if players.size() + _conns.size() - _count_connected() >= MAX_PLAYERS:
 			_sig_send(src, "ANSWER", {"t": "full"})
 			return
