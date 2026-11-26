@@ -13,7 +13,7 @@ const BROKERS := [
 	"wss://broker.hivemq.com:8884/mqtt",
 	"wss://test.mosquitto.org:8081/mqtt",
 ]
-const KEEPALIVE := 50
+const KEEPALIVE := 600  # с: сервер не выкинет хозяина, даже если вкладка свёрнута несколько минут
 
 var _conns: Array = []             # [{ws, url, state, buf}]
 var _inbox := ""
@@ -27,12 +27,20 @@ func start(my_topic: String, urls: Array = BROKERS) -> void:
 	close()
 	_inbox = my_topic
 	for url: String in urls:
-		var ws := WebSocketPeer.new()
-		ws.supported_protocols = PackedStringArray(["mqtt"])
-		ws.inbound_buffer_size = 1 << 20
-		ws.outbound_buffer_size = 1 << 20
-		if ws.connect_to_url(url) == OK:
-			_conns.append({"ws": ws, "url": url, "state": "connecting", "buf": PackedByteArray()})
+		var c := {"url": url, "retry": 0.0}
+		_dial(c)
+		_conns.append(c)
+
+
+## (Пере)подключиться к серверу: новый WebSocket, дальше CONNECT и SUBSCRIBE в poll().
+func _dial(c: Dictionary) -> void:
+	var ws := WebSocketPeer.new()
+	ws.supported_protocols = PackedStringArray(["mqtt"])
+	ws.inbound_buffer_size = 1 << 20
+	ws.outbound_buffer_size = 1 << 20
+	c["ws"] = ws
+	c["buf"] = PackedByteArray()
+	c["state"] = "connecting" if ws.connect_to_url(c["url"]) == OK else "dead"
 
 
 func close() -> void:
@@ -91,7 +99,15 @@ func poll(delta: float) -> void:
 		ws.poll()
 		var st := ws.get_ready_state()
 		if st == WebSocketPeer.STATE_CLOSED:
-			c["state"] = "dead"
+			# Сервер отвалился (простой, свёрнутая вкладка, сбой сети) — через 3 с подключаемся снова,
+			# иначе через минуту-другую хозяина уже нельзя найти по ключу.
+			if c["state"] != "dead":
+				c["state"] = "dead"
+				c["retry"] = 3.0
+				print("[net] сервер связи отключился: ", c["url"])
+			c["retry"] -= delta
+			if c["retry"] <= 0.0:
+				_dial(c)
 			continue
 		if st != WebSocketPeer.STATE_OPEN:
 			continue

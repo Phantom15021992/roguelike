@@ -817,18 +817,29 @@ var _key_edit: LineEdit
 
 ## Телефон: кнопки-буквы для ввода ключа (экранная клавиатура браузера появляется не всегда).
 func _key_pad() -> Control:
-	var g := GridContainer.new()
-	g.columns = 11
-	g.add_theme_constant_override("h_separation", 1)
-	g.add_theme_constant_override("v_separation", 1)
-	for ch: String in Net.KEY_CHARS:
-		g.add_child(_button(ch, func() -> void:
-			if _key_edit and _key_edit.text.length() < Net.KEY_LEN:
-				_key_edit.text += ch, true, 6))
-	g.add_child(_button("<", func() -> void:
-		if _key_edit:
-			_key_edit.text = _key_edit.text.left(-1), true, 6))
-	return g
+	# Как обычная клавиатура: цифры сверху, дальше QWERTY. Стереть — «<» в последнем ряду.
+	var rows := ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM<"]
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 1)
+	for row: String in rows:
+		var h := HBoxContainer.new()
+		h.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.add_theme_constant_override("separation", 1)
+		for ch: String in row.split(""):
+			var b := _button(ch, func() -> void: _key_press(ch), true, 6)
+			b.custom_minimum_size = Vector2(19, 13)
+			h.add_child(b)
+		v.add_child(h)
+	return v
+
+
+func _key_press(ch: String) -> void:
+	if _key_edit == null:
+		return
+	if ch == "<":
+		_key_edit.text = _key_edit.text.left(-1)
+	elif _key_edit.text.length() < Net.KEY_LEN:
+		_key_edit.text += ch
 
 
 func _fill_coop() -> void:
