@@ -2124,5 +2124,8 @@ func _traptest() -> void:
 		if dg.astar.is_point_solid(Vector2i(d[0], d[1])):
 			solid += 1
 	print("TRAP after clear: state=%s doors closed %d" % [dg._trap_state, solid])
+	for e in dg._trap_monsters:
+		if is_instance_valid(e):
+			print("TRAP left: %s dead=%s hp=%d" % [e.name, e.dead, e.hp])
 	_shot("trap_3_open")
 	get_tree().quit()
