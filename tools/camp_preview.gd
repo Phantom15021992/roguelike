@@ -672,142 +672,261 @@ func _portal() -> void:
 			put(x, -4 - hgt, OUT)
 
 
-## Шахта (по референсу): гора светлых валунов с мхом, деревянная крепь со входом,
-## рельсы с вагонеткой руды, подъёмник с колесом и ведром.
+## Шахта (по референсу): высокая гора угловатых светлых валунов с мхом, массивная крепь
+## с раскосами и тёмным проходом вглубь, рельсы по диагонали с вагонеткой руды, высокий
+## подъёмник с колесом и корзиной камней на канате.
 func _mine() -> void:
-	ground_shadow(40, 0, 100, 8, 0.3)
-	var rocks: Array = [
-		[-70, -70, 30, 34], [-40, -96, 32, 34], [-8, -112, 28, 30], [24, -96, 26, 30],
-		[-86, -36, 26, 26], [-58, -40, 28, 28], [44, -60, 26, 26], [-30, -58, 22, 22],
-		[-96, -10, 22, 16], [-66, -10, 20, 16], [54, -14, 22, 18], [72, -30, 18, 18],
-	]
-	for rk: Array in rocks:
-		_boulder(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 7 + int(rk[1]))
-	# Вход: тёмный проём, крепь.
-	var ex := -6
-	for py in range(-58, 0):
-		for px in range(ex - 18, ex + 19):
-			var t := float(py + 58) / 58.0
-			put(px, py, Color8(14, 10, 14).lerp(Color8(60, 46, 40), t * 0.6))
-	for side: int in [-1, 1]:
-		bar(ex + side * 22 - 3, -64, 7, 64, WOOD)
-		bar(ex + side * 26 - 3, -40, 5, 40, WOOD)
-	bar(ex - 30, -72, 60, 9, WOOD)
-	bar(ex - 26, -82, 52, 7, WOOD)
-	for k in 3:
-		rect(ex - 18 + k * 14, -68, 2, 2, IRON[2])
-	# Рельсы к зрителю.
-	for i in 8:
-		var y := -4 + i * 5
-		bar(ex - 16 + i, y, 30, 2, WOOD)
-	for side: int in [-1, 1]:
-		for i in 42:
-			var x := ex + side * 9 + int(i * 0.25)
-			put(x, -6 + i, IRON[0])
-			put(x + 1, -6 + i, IRON[2])
-			put(x - 1, -6 + i, OUT)
-			put(x + 2, -6 + i, OUT)
-	# Вагонетка с рудой.
-	_cart(ex + 4, 30)
-	# Подъёмник.
-	_crane(66, -6)
-
-
-## Валун: силуэт с гранями — светлая верхняя грань, средняя передняя, тёмный низ и правый бок,
-## мох на верхушке, трещины; контур.
-func _boulder(cx: int, cy: int, rx: int, ry: int, sd: int) -> void:
-	var pix := {}
-	for py in range(cy - ry, cy + ry + 1):
-		for px in range(cx - rx, cx + rx + 1):
-			var dx := float(px - cx) / rx
-			var dy := float(py - cy) / ry
-			var ang := atan2(dy, dx)
-			var edge := 1.0 - 0.12 * absf(sin(ang * 3.0 + sd)) - 0.06 * absf(sin(ang * 7.0 + sd * 0.3))
-			var d := sqrt(dx * dx + dy * dy)
-			if d > edge:
+	ground_shadow(30, 0, 120, 8, 0.3)
+	# Тёмная скальная масса — сплошная гора под валунами (без просветов земли).
+	var mass := {}
+	for py in range(-170, 1):
+		for px in range(-118, 104):
+			var nx := float(px + 8) / 110.0
+			var top := -160.0 * (1.0 - nx * nx) + 8.0 * sin(px * 0.13)
+			if py < top or py > 0:
 				continue
-			var g := dy + dx * 0.4
-			var ti := 1
-			if dy < -0.35 + 0.15 * sin(dx * 3.0 + sd):
-				ti = 0                                  # верхняя грань
-			elif g > 0.55:
-				ti = 3
-			elif g > 0.2:
-				ti = 2
-			if d > edge - 0.12 and (dx > 0.3 or dy > 0.4):
-				ti = 4
-			var c: Color = ROCK[ti]
-			if ti <= 1 and dy < -0.45 and hh(px / 3, py / 3, sd) < 520:
-				c = MOSS[0] if dy < -0.65 else MOSS[1]
-			if absf(nz.get_noise_2d(px * 1.6 + sd, py * 1.6)) < 0.018 and ti > 0 and d < edge - 0.15:
+			var c: Color = ROCK[3] if hh(px / 4, py / 4, 97) % 3 != 0 else ROCK[4]
+			mass[Vector2i(px, py)] = c
+	_blit_outlined(mass)
+	# Валуны: задние выше, передние ниже (рисуются сзади вперёд), внахлёст.
+	var back := [[-30, -136, 64, 50], [18, -150, 66, 54], [-74, -110, 60, 50], [56, -118, 60, 50],
+		[-16, -104, 56, 46], [26, -96, 54, 44], [-100, -70, 52, 46], [-58, -74, 52, 44], [74, -78, 52, 46],
+		[-38, -62, 40, 34], [44, -58, 44, 38]]
+	for rk: Array in back:
+		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 7 + int(rk[1]))
+	var sides := [[-64, -34, 54, 46], [-102, -22, 44, 36], [64, -34, 50, 44], [92, -20, 38, 32]]
+	for rk: Array in sides:
+		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 5 + int(rk[1]))
+	_mine_entrance(6, 0)
+	# Рельсы и вагонетка.
+	_rails(6, 0)
+	_cart(36, 30)
+	# Мелкие камни и трава у подножия.
+	for rk: Array in [[-104, -4, 20, 14], [-78, 2, 14, 10], [96, 0, 18, 12], [-40, 4, 12, 8]]:
+		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 3)
+	for i in 16:
+		var gx := -110 + i * 15 + hh(i, 0, 96) % 6
+		var gy := -2 + hh(i, 1, 96) % 5
+		put(gx, gy, MOSS[0])
+		put(gx + 1, gy - 1, MOSS[1])
+		put(gx - 1, gy, MOSS[1])
+		put(gx, gy - 2, MOSS[0])
+	_crane(92, 4)
+
+
+## Угловатый валун: многоугольник с гранями — светлая верхняя грань (с мхом), передняя
+## средняя, правый бок в тени; под ребром верхней грани тень, рёбра между гранями, трещины,
+## тёмный низ, контур.
+func _rock(cx: int, cy: int, w: int, h: int, sd: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	var pts := PackedVector2Array()
+	for i in 7:
+		var ang := -PI / 2.0 + i * TAU / 7.0 + rng.randf_range(-0.25, 0.25)
+		var rr := rng.randf_range(0.82, 1.0)
+		var p := Vector2(cx + cos(ang) * w * 0.5 * rr, cy + sin(ang) * h * 0.5 * rr)
+		if p.y > cy + h * 0.3:
+			p.y = cy + h * 0.5
+		pts.append(p)
+	var r := Rect2(pts[0], Vector2.ZERO)
+	for q in pts:
+		r = r.expand(q)
+	var top_y := cy - h * 0.12
+	var split_x := cx + w * 0.16
+	var pix := {}
+	for py in range(int(r.position.y) - 1, int(r.end.y) + 2):
+		for px in range(int(r.position.x) - 1, int(r.end.x) + 2):
+			if not Geometry2D.is_point_in_polygon(Vector2(px + 0.5, py + 0.5), pts):
+				continue
+			var jag := 2.0 * sin(px * 0.45 + sd) + float(hh(px / 3, 0, sd) % 3)
+			var ty := top_y + jag
+			var sxl := split_x + (py - cy) * 0.35
+			var c: Color
+			if py < ty:
+				c = ROCK[0]
+				# Мох — цельные шапки по шуму, светлый верх и тёмный край.
+				var mn := nz.get_noise_2d(px * 2.2 + sd, py * 2.2)
+				if mn > 0.05 and py < ty - 1:
+					c = MOSS[0] if mn > 0.2 else MOSS[1]
+				elif mn > -0.02 and py < ty - 1:
+					c = MOSS[2]
+			elif py < ty + 1.5:
+				c = ROCK[3]                         # тень под ребром верхней грани
+			elif px > sxl:
+				c = ROCK[2] if px < sxl + 1.5 or hh(px / 3, py / 3, sd + 2) > 200 else ROCK[3]
+				if px < sxl + 1.0:
+					c = ROCK[4]                     # ребро между гранями
+			else:
+				c = ROCK[1]
+				if px < r.position.x + 3:
+					c = ROCK[0]                     # освещённая левая кромка
+			if py > r.end.y - 3:
 				c = ROCK[3]
+			# Трещины — редкие короткие линии.
+			if py > ty + 4 and absf(px - (cx - w * 0.2 + (py - ty) * 0.5 + (sd % 7))) < 0.6 and py < ty + 12:
+				c = ROCK[4]
 			pix[Vector2i(px, py)] = c
 	_blit_outlined(pix)
+
+
+## Вход в шахту: тёмный проход с глубиной (внутренняя крепь темнее), массивные стойки,
+## двойная перекладина, раскосы к земле, доски по бокам.
+func _mine_entrance(cx: int, base: int) -> void:
+	var w := 46
+	var h := 76
+	var x0 := cx - w / 2
+	for py in range(base - h, base):
+		for px in range(x0, x0 + w):
+			var t := float(py - (base - h)) / h
+			put(px, py, Color8(12, 9, 12).lerp(Color8(66, 50, 42), t * t * 0.7))
+	# Внутренняя крепь (глубже — темнее).
+	var deep := [Color8(96, 66, 46), Color8(74, 50, 38), Color8(56, 38, 32), Color8(40, 28, 26)]
+	bar(x0 + 8, base - h + 14, 4, h - 14, deep)
+	bar(x0 + w - 12, base - h + 14, 4, h - 14, deep)
+	bar(x0 + 8, base - h + 12, w - 16, 4, deep)
+	# Стойки, перекладины.
+	bar(x0 - 8, base - h - 4, 9, h + 4, WOOD)
+	bar(x0 + w - 1, base - h - 4, 9, h + 4, WOOD)
+	bar(x0 - 14, base - h - 14, w + 28, 10, WOOD)
+	bar(x0 - 10, base - h - 22, w + 20, 7, WOOD)
+	for k in 4:
+		var nx := x0 - 8 + k * (w + 10) / 3
+		put(nx, base - h - 10, IRON[0])
+		put(nx, base - h - 9, OUT)
+	# Доски по бокам входа.
+	for side: int in [-1, 1]:
+		for k in 2:
+			var bx := (x0 - 18 - k * 6) if side < 0 else (x0 + w + 9 + k * 6)
+			bar(bx, base - 40 + k * 6, 5, 40 - k * 6, WOOD)
+	# Фонарь на стойке.
+	rect(x0 + w + 9, base - h + 8, 8, 10, OUT)
+	rect(x0 + w + 10, base - h + 9, 6, 8, Color8(252, 214, 120))
+	rect(x0 + w + 12, base - h + 11, 2, 4, Color8(255, 250, 220))
+
+
+## Рельсы: из прохода по диагонали к зрителю-вправо — шпалы с объёмом, два рельса со светом.
+func _rails(cx: int, base: int) -> void:
+	for i in 9:
+		var y := base - 6 + i * 5
+		var x := cx - 14 + i * 3
+		bar(x, y, 30, 2, WOOD)
+	for side: int in [0, 1]:
+		for i in 46:
+			var x := cx - 8 + side * 16 + int(i * 0.62)
+			var y := base - 6 + i
+			put(x - 1, y, OUT)
+			put(x, y, HOOP[0])
+			put(x + 1, y, HOOP[2])
+			put(x + 2, y, OUT)
+
+
+func _boulder(cx: int, cy: int, rx: int, ry: int, sd: int) -> void:
+	_rock(cx, cy, rx * 2, ry * 2, sd)
 
 
 func _cart(cx: int, base: int) -> void:
-	ground_shadow(cx + 10, base, 20, 3, 0.32)
+	ground_shadow(cx + 12, base, 22, 4, 0.32)
 	var pix := {}
-	for py in range(base - 18, base - 4):
-		var half := 16 - (py - (base - 18)) / 4
+	for py in range(base - 22, base - 5):
+		var k := py - (base - 22)
+		var half := 18 - k / 4
 		for px in range(cx - half, cx + half):
 			var t := float(px - cx + half) / (half * 2.0)
-			var c: Color = HOOP[1] if t < 0.7 else HOOP[2]
-			if py == base - 18:
+			var c: Color = HOOP[1] if t < 0.68 else HOOP[2]
+			if k < 2:
 				c = HOOP[0]
-			if posmod(px - cx, 8) == 0:
+			elif k == 2:
 				c = HOOP[3]
+			if posmod(px - cx, 9) == 0 and k > 2:
+				c = HOOP[3]
+			if (px - cx) % 9 == 1 and k > 2:
+				c = HOOP[0]
 			pix[Vector2i(px, py)] = c
 	_blit_outlined(pix)
-	for k in 7:
-		var bx := cx - 12 + k * 4
-		var by := base - 20 - (k % 2) * 2
-		rect(bx, by, 4, 3, ROCK[1 + k % 2])
-		put(bx, by, ROCK[0])
-		put(bx + 3, by + 2, ROCK[3])
+	# Руда горкой: камни с гранями и золотые жилки.
+	for k in 9:
+		var bx := cx - 15 + (k % 5) * 6 + (k / 5) * 3
+		var by := base - 26 - (k / 5) * 3
+		rect(bx - 1, by - 1, 7, 6, OUT)
+		rect(bx, by, 5, 4, ROCK[1])
+		rect(bx, by, 5, 1, ROCK[0])
+		rect(bx + 4, by, 1, 4, ROCK[3])
 		if k % 3 == 1:
-			put(bx + 1, by + 1, Color8(244, 206, 96))
-	for wx: int in [cx - 10, cx + 8]:
-		for yy in range(-3, 4):
-			for xx in range(-3, 4):
+			put(bx + 2, by + 1, Color8(250, 210, 90))
+			put(bx + 1, by + 2, Color8(214, 160, 60))
+	for wx: int in [cx - 11, cx + 11]:
+		for yy in range(-4, 5):
+			for xx in range(-4, 5):
 				var d := xx * xx + yy * yy
-				if d <= 10:
-					put(wx + xx, base - 3 + yy, OUT if d > 5 else (HOOP[1] if xx + yy < 0 else HOOP[2]))
+				if d <= 17:
+					put(wx + xx, base - 4 + yy, OUT if d > 10 else (HOOP[1] if xx + yy < 0 else HOOP[3]))
+		put(wx, base - 4, HOOP[0])
 
 
-## Подъёмник: две стойки с раскосами, верхняя балка, колесо-блок, канат и ведро с камнями.
+## Подъёмник: четыре стойки (задние темнее), крестовые раскосы, верхняя рама, стрела влево
+## над рельсами, колесо-блок, канат и корзина с камнями.
 func _crane(x: int, base: int) -> void:
-	ground_shadow(x + 18, base, 22, 4, 0.3)
-	bar(x - 12, base - 96, 5, 96, WOOD)
-	bar(x + 8, base - 96, 5, 96, WOOD)
-	for k in 3:
-		var y0 := base - 20 - k * 26
-		for i in 20:
-			put(x - 7 + i, y0 - i, WOOD[1])
-			put(x - 7 + i, y0 - i + 1, WOOD[2])
-			put(x - 7 + i, y0 - i - 1, OUT)
-		bar(x - 8, y0 - 22, 17, 3, WOOD)
-	bar(x - 18, base - 104, 52, 7, WOOD)
+	ground_shadow(x + 16, base, 26, 5, 0.3)
+	var hgt := 150
+	var dark := [WOOD[1], WOOD[2], WOOD[3], Color8(66, 40, 34)]
+	# Задние стойки.
+	bar(x - 8, base - hgt - 6, 5, hgt, dark)
+	bar(x + 22, base - hgt - 6, 5, hgt, dark)
+	# Раскосы (крестом) между передними стойками.
+	for k in 4:
+		var y0 := base - 10 - k * 34
+		for i in 28:
+			for pair: Array in [[x - 10 + i, y0 - i], [x + 18 - i, y0 - i]]:
+				var px: int = pair[0]
+				var py: int = pair[1]
+				put(px, py, WOOD[1])
+				put(px, py + 1, WOOD[2])
+				put(px, py - 1, OUT)
+				put(px, py + 2, OUT)
+		bar(x - 12, y0 - 30, 32, 3, WOOD)
+	# Передние стойки.
+	bar(x - 14, base - hgt, 6, hgt, WOOD)
+	bar(x + 16, base - hgt, 6, hgt, WOOD)
+	# Верхняя рама и стрела влево.
+	bar(x - 20, base - hgt - 8, 46, 8, WOOD)
+	bar(x - 58, base - hgt - 4, 44, 5, WOOD)
+	for i in 30:
+		put(x - 14 - i, base - hgt + 2 + i / 2, WOOD[1])
+		put(x - 14 - i, base - hgt + 3 + i / 2, OUT)
 	# Колесо-блок.
-	for yy in range(-6, 7):
-		for xx in range(-6, 7):
+	var wx := x - 52
+	var wy := base - hgt - 10
+	for yy in range(-7, 8):
+		for xx in range(-7, 8):
 			var d := xx * xx + yy * yy
-			if d <= 36:
+			if d <= 49:
 				var c: Color = OUT
-				if d <= 25:
+				if d <= 36:
 					c = HOOP[1] if xx + yy < 0 else HOOP[2]
+				if d <= 25 and d > 9 and (xx == 0 or yy == 0):
+					c = HOOP[3]
 				if d <= 4:
 					c = HOOP[0]
-				put(x + 28 + xx, base - 108 + yy, c)
-	# Канат и ведро.
-	for yy in range(base - 102, base - 52):
-		put(x + 33, yy, Color8(196, 170, 120))
-		put(x + 34, yy, Color8(140, 112, 76))
-	rect(x + 26, base - 52, 16, 14, OUT)
-	bar(x + 27, base - 51, 14, 12, WOOD, false)
-	for k in 3:
-		rect(x + 28 + k * 4, base - 55, 4, 3, ROCK[k % 2])
-		put(x + 28 + k * 4, base - 55, ROCK[0])
+				put(wx + xx, wy + yy, c)
+	# Канат и корзина.
+	for yy in range(wy + 6, base - 76):
+		put(wx + 6, yy, Color8(204, 178, 126))
+		put(wx + 7, yy, Color8(146, 116, 78))
+	for py in range(base - 76, base - 60):
+		var half := 10 - (py - (base - 76)) / 4
+		for px in range(wx + 6 - half, wx + 7 + half):
+			var c: Color = WOOD[1] if posmod(px + py, 4) != 0 else WOOD[2]
+			if px < wx + 6 - half + 2:
+				c = WOOD[0]
+			put(px, py, c)
+		put(wx + 6 - half - 1, py, OUT)
+		put(wx + 7 + half, py, OUT)
+	rect(wx - 4, base - 60, 21, 1, OUT)
+	for k in 4:
+		var bx := wx - 3 + k * 4
+		rect(bx - 1, base - 81, 6, 6, OUT)
+		rect(bx, base - 80, 4, 4, ROCK[k % 2])
+		put(bx, base - 80, ROCK[0])
 
 
 # ===================================================================================
