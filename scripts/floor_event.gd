@@ -16,8 +16,20 @@ var bait := false   # приманка комнаты-ловушки: сунду
 var _t := 0.0
 
 
+var _sprite: Sprite2D
+
+
 func _ready() -> void:
 	add_to_group("interactables")
+	# Фонтан — картинка в утверждённом стиле (tools/gen_dungeon.gd → assets/dng/fountain0.png).
+	if kind == "fountain":
+		_sprite = Sprite2D.new()
+		_sprite.texture = load("res://assets/dng/fountain0.png")
+		_sprite.hframes = 3
+		_sprite.centered = false
+		_sprite.offset = -Vector2(32, 60)
+		_sprite.scale = Vector2.ONE * 0.5
+		add_child(_sprite)
 
 
 func net_props() -> Array:
@@ -34,6 +46,8 @@ func net_apply(a: Array) -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _sprite:
+		_sprite.frame = 2 if used else int(_t * 4.0) % 2
 	queue_redraw()
 
 
@@ -139,7 +153,8 @@ func _drop(k: String, item: Dictionary) -> void:
 
 
 func _draw() -> void:
-	draw_circle(Vector2(0, 0), 6.0, Color(0, 0, 0, 0.3))
+	if kind != "fountain":
+		draw_circle(Vector2(0, 0), 6.0, Color(0, 0, 0, 0.3))
 	var dim := 0.5 if used else 1.0
 	match kind:
 		"altar":
@@ -157,7 +172,4 @@ func _draw() -> void:
 			if not used:
 				draw_line(Vector2(-4, -6), Vector2(4, -9), Color(0.9, 0.2, 0.2), 1.0)
 		"fountain":
-			draw_circle(Vector2(0, -3), 8.0, Color(0.45, 0.45, 0.5) * dim)
-			draw_circle(Vector2(0, -3), 6.0, Color(0.3, 0.6, 1.0, 0.9) * dim)
-			if not used:
-				draw_circle(Vector2(0, -8 - absf(sin(_t * 4.0)) * 3.0), 1.5, Color(0.7, 0.9, 1.0))
+			pass  # картинка — _sprite

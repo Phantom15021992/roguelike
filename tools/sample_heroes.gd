@@ -15,8 +15,8 @@ func _init() -> void:
 		for d in 5:
 			hero(ORDER[c], d * cell + cell / 2, (3 + c) * cell + cell - 4, d, 0)
 	for f in 4:
-		hero("warrior", f * cell + cell / 2, 8 * cell + cell - 4, 0, f)
-	hero("warrior", 4 * cell + cell / 2, 8 * cell + cell - 4, 2, 1)
+		hero("warrior", f * cell + cell / 2, 8 * cell + cell - 4, 0, f * 2)
+	hero("warrior", 4 * cell + cell / 2, 8 * cell + cell - 4, 2, 2)
 	save("heroes_sample", 3)
 	print("sample_heroes: done")
 	quit()

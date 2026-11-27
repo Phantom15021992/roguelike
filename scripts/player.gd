@@ -1614,7 +1614,8 @@ func _play(anim: String) -> void:
 		sprite.play(anim)
 
 
-## Лист 8 сторон: кадр 24x24, строки — down, down_side, side, up_side, up; 4 кадра шага.
+## Лист 8 сторон: кадр fsz, строки — down, down_side, side, up_side, up; кадров шага —
+## сколько влезает по ширине (новые листы — 8, шаг всё так же полсекунды).
 func _build_frames8(sheet: Texture2D, fsz := 24) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
@@ -1623,9 +1624,10 @@ func _build_frames8(sheet: Texture2D, fsz := 24) -> SpriteFrames:
 		var dir: String = rows[r]
 		var walk := "walk_" + dir
 		frames.add_animation(walk)
-		frames.set_animation_speed(walk, 8.0)
+		var cols := sheet.get_width() / fsz
+		frames.set_animation_speed(walk, 2.0 * cols)
 		frames.set_animation_loop(walk, true)
-		for col in 4:
+		for col in cols:
 			var t := AtlasTexture.new()
 			t.atlas = sheet
 			t.region = Rect2(col * fsz, r * fsz, fsz, fsz)

@@ -2423,6 +2423,14 @@ func _fxtest() -> void:
 				tw.kill()
 			sp.frame = mini(fr, sp.hframes - 1)
 			made.append(sp)
+		# Фонтан этажа: полный и иссякший.
+		for fv in [[false, Vector2(-30, 30)], [true, Vector2(25, 30)]]:
+			var ev: Node2D = preload("res://scripts/floor_event.gd").new()
+			ev.kind = "fountain"
+			ev.used = fv[0]
+			ev.position = dg.open_spot(c0 + (fv[1] as Vector2))
+			dg.get_node("Entities").add_child(ev)
+			made.append(ev)
 		for st in [["bolt", Vector2(-60, 10)], ["fireball", Vector2(40, 10)]]:
 			var b: Area2D = preload("res://scripts/projectile.gd").new()
 			b.team = "player"

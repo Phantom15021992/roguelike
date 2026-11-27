@@ -51,13 +51,21 @@ const ORDER := ["warrior", "archer", "mage", "thief", "acolyte", "berserker", "p
 	"wizard", "professor", "bandit", "assassin", "priest", "monk"]
 
 
-## Герой: dir 0 вниз, 1 вниз-вбок, 2 вбок (вправо), 3 вверх-вбок, 4 вверх; fr 0–3 — шаг.
+## Фаза шага: кадр fr из STEPS → -1..1 (вперёд левая / правая нога).
+const STEPS := 8
+
+
+func _ph(fr: int) -> float:
+	return sin(fr * TAU / STEPS)
+
+
+## Герой: dir 0 вниз, 1 вниз-вбок, 2 вбок (вправо), 3 вверх-вбок, 4 вверх; fr 0–7 — шаг.
 func hero(name: String, cx: int, base: int, dir: int, fr: int) -> void:
 	var h: Dictionary = HEROES[name]
 	var back := dir >= 3
 	var side := dir == 2
 	var fx: int = [0, 3, 5, 3, 0][dir]
-	var bob: int = [0, -1, 0, -1][fr]
+	var bob: int = -1 if absf(_ph(fr)) > 0.6 else 0
 	ground_shadow(cx + 3, base - 1, 9, 3, 0.3)
 	var hand_main: Vector2i
 	var hand_off: Vector2i
@@ -69,7 +77,7 @@ func hero(name: String, cx: int, base: int, dir: int, fr: int) -> void:
 			hand_main = Vector2i(cx - 7, base - 11 + bob)
 			hand_off = Vector2i(cx + 10, base - 11 + bob)
 		2:
-			hand_main = Vector2i(cx + 5 + (1 if fr == 1 else (-1 if fr == 3 else 0)), base - 11 + bob)
+			hand_main = Vector2i(cx + 5 + int(round(_ph(fr))), base - 11 + bob)
 			hand_off = Vector2i(cx - 3, base - 12 + bob)
 		_:
 			hand_main = Vector2i(cx + 9, base - 11 + bob)
@@ -107,11 +115,11 @@ func _legs(h: Dictionary, cx: int, base: int, dir: int, fr: int, _bob: int) -> v
 	var bp := p5(h["boots"])
 	var xs: Array
 	if dir == 2:
-		var sw: int = [0, 2, 0, -2][fr]
+		var sw: int = int(round(_ph(fr) * 2.0))
 		xs = [[cx - 2 - sw, true], [cx - 1 + sw, false]]
 	else:
-		var lift_l: int = 1 if fr == 1 else 0
-		var lift_r: int = 1 if fr == 3 else 0
+		var lift_l: int = 1 if _ph(fr) > 0.5 else 0
+		var lift_r: int = 1 if _ph(fr) < -0.5 else 0
 		xs = [[cx - 5, lift_l == 1], [cx + 2, lift_r == 1]]
 	for e: Array in xs:
 		var x: int = e[0]
@@ -193,7 +201,7 @@ func _torso(h: Dictionary, cx: int, base: int, dir: int, fr: int, bob: int) -> v
 	blit(t)
 	# Руки (у бойцов без рукавов — кожа).
 	var arm_c := SKIN if h.get("skinarm", false) else bp
-	var sw: int = [0, 1, 0, -1][fr]
+	var sw: int = int(round(_ph(fr)))
 	var arms: Array = []
 	if side:
 		arms = [[cx + 2 + sw, false]]

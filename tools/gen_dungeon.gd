@@ -24,6 +24,7 @@ func _init() -> void:
 	_rock()
 	_decor()
 	_stairs()
+	_fountain()
 	_pillars()
 	_monsters()
 	print("gen_dungeon: done")
@@ -88,6 +89,16 @@ func _stairs() -> void:
 	setup(64, 64)
 	stairs(10, 14, 44, 36)
 	save_to(OUTDIR + "stairs0.png")
+
+
+## Фонтан-чаша (событие этажа): 3 кадра 64x64 — вода (2 кадра) и иссякший; низ — (32, 60).
+func _fountain() -> void:
+	var sheet := Image.create(192, 64, false, Image.FORMAT_RGBA8)
+	for f in 3:
+		setup(64, 64)
+		birdbath(32, 60, f % 2, f == 2)
+		sheet.blit_rect(img, Rect2i(0, 0, 64, 64), Vector2i(f * 64, 0))
+	sheet.save_png(ProjectSettings.globalize_path(OUTDIR + "fountain0.png"))
 
 
 ## Колонны: ширина 1–3 клетки, глубина 1–3. Низ картинки — нижний край колонны.

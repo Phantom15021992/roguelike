@@ -1143,3 +1143,123 @@ func _cracks(x0: int, y0: int, n: int, sd: int, glowp: Array) -> void:
 				b += Vector2(1.0, 0.6)
 				put(int(b.x), int(b.y), glowp[1])
 				put(int(b.x), int(b.y) + 1, glowp[2])
+
+
+# ===================================================================================
+#                          ФОНТАН-ЧАША (событие этажа «Фонтан»)
+# ===================================================================================
+
+const WATERP := [Color8(214, 242, 246), Color8(136, 200, 220), Color8(90, 160, 198), Color8(62, 118, 160), Color8(44, 82, 122)]
+const FLOWER_P := Color8(232, 140, 150)
+const FLOWER_B := Color8(150, 150, 226)
+
+
+## Каменная чаша на колонне: ступенчатое основание, колонна с мхом, чаша — светлый обод
+## (свет слева-сверху), вода внутри с рябью и бликом, низ чаши в тени; носик со струйками.
+## f: 0/1 — кадры воды, dry — фонтан иссяк (после использования).
+func birdbath(cx: int, base: int, f: int, dry := false) -> void:
+	ground_shadow(cx + 6, base - 2, 18, 4, 0.3)
+	# Основание: две ступени.
+	bar(cx - 12, base - 7, 24, 6, STONE)
+	bar(cx - 9, base - 12, 18, 5, STONE)
+	# Колонна — чуть сужается кверху, кольцо посередине.
+	var col := {}
+	for y in range(base - 32, base - 12):
+		var t := float(y - (base - 32)) / 20.0
+		var hw := 4 + int(t * 1.5)
+		for x in range(cx - hw, cx + hw + 1):
+			var u := float(x - cx + hw) / (hw * 2 + 1)
+			col[Vector2i(x, y)] = STONE[0] if u < 0.25 else (STONE[1] if u < 0.65 else STONE[2])
+		if y == base - 22:
+			for x in range(cx - hw - 1, cx + hw + 2):
+				col[Vector2i(x, y)] = STONE[0] if x < cx else STONE[1]
+				col[Vector2i(x, y + 1)] = STONE[3]
+	blit(col)
+	# Мох по колонне.
+	for i in 7:
+		put(cx - 3 + (i % 2), base - 28 + i * 2, MOSS[1] if i % 3 else MOSS[0])
+		put(cx - 4 + (i % 2), base - 27 + i * 2, MOSS[2])
+	# Низ чаши (полуэллипс под ободом) — в тени.
+	var ccy := base - 38
+	var under := {}
+	for y in range(ccy, ccy + 10):
+		for x in range(cx - 21, cx + 22):
+			var dx := (x + 0.5 - cx) / 20.0
+			var dy := (y + 0.5 - ccy) / 9.0
+			if dx * dx + dy * dy <= 1.0:
+				var u := (dx + 1.0) * 0.5
+				under[Vector2i(x, y)] = STONE[1] if u < 0.3 else (STONE[2] if u < 0.75 else STONE[3])
+	blit(under)
+	# Обод и вода.
+	var rim := {}
+	for y in range(ccy - 9, ccy + 9):
+		for x in range(cx - 22, cx + 23):
+			var dx := (x + 0.5 - cx) / 21.0
+			var dy := (y + 0.5 - ccy) / 8.0
+			var d := dx * dx + dy * dy
+			if d > 1.0:
+				continue
+			var wx := (x + 0.5 - cx) / 17.0
+			var wy := (y + 0.5 - ccy + 0.5) / 5.8
+			var inner := wx * wx + wy * wy
+			var c: Color
+			if inner <= 1.0:
+				if dry:
+					c = STONE[2] if wy < 0.0 else STONE[1]
+					if hh(x, y, 91) < 120:
+						c = MOSS[2]
+				else:
+					c = WATERP[2]
+					if wy < -0.55:
+						c = WATERP[3]           # тень обода на воде
+					elif inner > 0.75:
+						c = WATERP[1]
+					# Рябь — кольца от струек, сдвигаются по кадрам.
+					var rr := sqrt(wx * wx * 1.0 + wy * wy * 0.6)
+					if absf(fmod(rr * 6.0 + f * 0.5, 2.0) - 1.0) < 0.12 and rr < 0.85:
+						c = WATERP[1]
+					if wx < -0.35 and wx > -0.6 and wy > -0.2 and wy < 0.1:
+						c = WATERP[0]           # блик
+			else:
+				# Обод: верх-лево светлый, низ-право темнее; внутренняя кромка темнее.
+				var lit := -dx * 0.5 - dy
+				c = STONE[0] if lit > 0.35 else (STONE[1] if lit > -0.3 else STONE[2])
+				if inner < 1.25:
+					c = c.darkened(0.12)
+			rim[Vector2i(x, y)] = c
+	blit(rim)
+	# Плющ по краю чаши.
+	for i in 9:
+		var x := cx - 20 + i
+		put(x, ccy + 3 + (i * 7) % 3, MOSS[1])
+		put(x, ccy + 4 + (i * 5) % 3, MOSS[2])
+	for i in 4:
+		put(cx + 14 + i, ccy + 5 + i % 2, MOSS[1])
+	# Носик и струйки.
+	var sp := {}
+	ball(sp, cx, ccy - 2, 3, 2.5, [STONE[0], STONE[0], STONE[1], STONE[2], STONE[3]])
+	blit(sp)
+	if not dry:
+		# Струйка вверх и две дуги в чашу; капли по кадрам меняются местами.
+		var h := 7 + f
+		for i in h:
+			put(cx, ccy - 4 - i, WATERP[0] if (i + f) % 3 != 0 else WATERP[1])
+		for sgn: int in [-1, 1]:
+			for i in 9:
+				var t := float(i) / 8.0
+				var x := cx + int(round(sgn * t * 9.0))
+				var y := int(round(ccy - 4 - h + t * t * (h + 3)))
+				if (i + f) % 4 != 3:
+					put(x, y, WATERP[0] if i < 5 else WATERP[1])
+		for d: Vector2i in [Vector2i(-9, 0), Vector2i(9, -1), Vector2i(-6, 2), Vector2i(6, 2)]:
+			if (d.x + f) % 2 == 0:
+				put(cx + d.x, ccy + d.y, WATERP[0])
+	# Цветы у подножия.
+	for fl: Vector3i in [Vector3i(-14, -2, 0), Vector3i(-11, -4, 1), Vector3i(13, -2, 1), Vector3i(16, -3, 0)]:
+		var fc: Color = FLOWER_P if fl.z == 0 else FLOWER_B
+		put(cx + fl.x, base + fl.y + 1, MOSS[1])
+		put(cx + fl.x - 1, base + fl.y + 1, MOSS[2])
+		put(cx + fl.x + 1, base + fl.y + 2, MOSS[1])
+		for d: Vector2i in [Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]:
+			put(cx + fl.x + d.x, base + fl.y - 1 + d.y, fc)
+		put(cx + fl.x, base + fl.y - 1, Color8(250, 230, 140))

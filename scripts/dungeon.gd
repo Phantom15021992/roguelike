@@ -503,7 +503,7 @@ func _decorate() -> void:
 			var under_wall := (open_rows[y - 1] as String)[x] == "#"
 			var r2 := rng.randf()
 			if under_wall and r2 < 0.07 and lights < 28:
-				var c := _decor_sprite(_glow_layer(), rng.randi_range(0, 2), pos + Vector2(0, -4))
+				var c := _decor_sprite(layer if _art() else _glow_layer(), rng.randi_range(0, 2), pos + Vector2(0, -4))
 				c.flip_h = rng.randf() < 0.5
 				c.modulate = Color(1.3, 1.4, 1.5)
 				_glow(layer, pos + Vector2(0, -7), 1.0, rng.randf() * TAU)
@@ -520,7 +520,7 @@ func _decorate() -> void:
 			elif r2 < 0.09:
 				_decor_sprite(layer, 7, pos)
 			elif r2 < 0.095 and lights < 28:
-				_decor_sprite(_glow_layer(), rng.randi_range(0, 2), pos).modulate = Color(1.3, 1.4, 1.5)
+				_decor_sprite(layer if _art() else _glow_layer(), rng.randi_range(0, 2), pos).modulate = Color(1.3, 1.4, 1.5)
 				_glow(layer, pos + Vector2(0, -3), 0.9, rng.randf() * TAU)
 				_light(layer, pos + Vector2(0, -6), _lc, 2.4, 1.2)
 				lights += 1
@@ -547,7 +547,7 @@ func _rock_decor(layer: Node2D, rng: RandomNumberGenerator, open_rows: Array, x:
 		if r < 0.1:
 			_decor_sprite(layer, 10, pos + jitter).flip_h = rng.randf() < 0.5
 		elif r < 0.15:
-			_decor_sprite(_glow_layer(), 9, pos + jitter).flip_h = rng.randf() < 0.5
+			_decor_sprite(layer if _art() else _glow_layer(), 9, pos + jitter).flip_h = rng.randf() < 0.5
 			if rng.randf() < 0.5:
 				_glow(layer, pos + jitter + Vector2(0, -3), 0.55, rng.randf() * TAU)
 				_light(layer, pos, _lc, 0.9, 0.4)
@@ -570,9 +570,11 @@ func _glow(_layer: Node2D, pos: Vector2, size: float, phase: float) -> void:
 	g.position = pos
 	g.scale = Vector2.ONE * size * 0.7
 	g.modulate = Color(_lc.r * 0.9, _lc.g * 0.9, _lc.b * 0.9, 0.55)
-	# Над пеленой полумрака — иначе она гасит ореол; под кристаллами.
-	_glow_layer().add_child(g)
-	_glow_layer().move_child(g, 0)
+	# Старый стиль — над пеленой полумрака (иначе она гасит ореол); новый (светлый сумрак) —
+	# на полу под персонажами, чтобы свет кристалла не ложился поверх героя.
+	var gl: Node2D = _layer if _art() and _layer != null else _glow_layer()
+	gl.add_child(g)
+	gl.move_child(g, 0)
 	_halos.append([g, phase, size])
 
 
