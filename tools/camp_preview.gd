@@ -62,24 +62,24 @@ func _place_props() -> void:
 	var sp := Vector2(24.6, 12.6) * C
 	add(sp.y, func() -> void: _signpost(int(sp.x), int(sp.y)))
 	# Деревья и кусты внутри лагеря.
-	var inner := [[26.6, 26.2, "oak"], [17.5, 25.0, "fruit"], [27.8, 29.0, "birch"], [3.4, 25.6, "pine"],
+	var inner := [[26.6, 26.2, "oak"], [17.5, 25.0, "fruit"], [3.4, 25.6, "pine"],
 		[40.6, 25.0, "autumn"], [3.0, 17.8, "birch"], [9.6, 14.8, "fruit"]]
 	for t: Array in inner:
 		var q := Vector2(t[0], t[1]) * C
 		var kind: String = t[2]
 		add(q.y, func() -> void: _tree(int(q.x), int(q.y), 22, int(q.x) % 97, kind))
 	var bushes := [[25.4, 24.0, "flower"], [18.6, 22.9, "green"], [21.0, 27.6, "berry"], [5.0, 14.6, "green"],
-		[39.6, 21.6, "flower"], [12.8, 26.0, "dark"], [10.0, 23.4, "flower"], [35.0, 23.4, "green"]]
+		[39.6, 21.6, "flower"], [18.6, 26.4, "dark"], [10.0, 23.4, "flower"], [35.0, 23.4, "green"]]
 	for b: Array in bushes:
 		var q := Vector2(b[0], b[1]) * C
 		var kind: String = b[2]
 		add(q.y, func() -> void: _bush(int(q.x), int(q.y), 12, int(q.y) % 91, kind))
-	var rocks := [[16.0, 26.6, 9], [33.0, 26.5, 7], [36.6, 21.6, 8], [6.2, 23.0, 6], [41.0, 19.6, 7], [23.4, 26.0, 6]]
+	var rocks := [[18.4, 28.4, 9], [26.2, 28.4, 7], [36.6, 21.6, 8], [6.2, 23.0, 6], [41.0, 19.6, 7], [23.4, 26.0, 6]]
 	for r: Array in rocks:
 		var q := Vector2(r[0], r[1]) * C
 		var s: int = r[2]
 		add(q.y, func() -> void: _boulder_small(int(q.x), int(q.y), s, int(q.x)))
-	for f: Vector2 in [Vector2(23.2, 26.4), Vector2(19.6, 27.0), Vector2(27.6, 23.2), Vector2(15.8, 15.6), Vector2(29.2, 16.4), Vector2(8.6, 26.2)]:
+	for f: Vector2 in [Vector2(23.2, 26.4), Vector2(19.6, 27.0), Vector2(27.6, 23.2), Vector2(17.4, 13.0), Vector2(27.4, 13.0), Vector2(3.6, 27.3)]:
 		var q := f * C
 		add(q.y - 4, func() -> void: _flowers(int(q.x), int(q.y), int(q.x)))
 
