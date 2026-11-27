@@ -15,6 +15,8 @@ var _sprite: Sprite2D
 var _glow: Sprite2D
 var _t := 0.0
 var _flat: Sprite2D
+var _shape: CollisionShape2D
+var _label_y := 0.0
 
 
 func _exit_tree() -> void:
@@ -66,6 +68,7 @@ func _ready() -> void:
 	shape.shape = rect
 	shape.position = Vector2(float(fp[2]) if fp.size() > 2 else 0.0, -depth / 2.0)
 	add_child(shape)
+	_shape = shape
 	_label = Label.new()
 	_label.add_theme_font_size_override("font_size", 5)
 	_label.add_theme_constant_override("outline_size", 3)
@@ -73,6 +76,7 @@ func _ready() -> void:
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.size = Vector2(80, 8)
 	_label.position = Vector2(-40, top + 4.0)
+	_label_y = top + 4.0
 	_label.z_index = 5
 	add_child(_label)
 	refresh()
@@ -94,10 +98,23 @@ func refresh() -> void:
 		var lvl := Meta.level(id)
 		_label.text = "%s%s" % [title, (" %d" % lvl) if lvl > 0 else ""]
 		_label.modulate = Color.WHITE if lvl > 0 or id == "mine" else Color(0.75, 0.75, 0.8)
+	# Шахта до 1-го уровня не стоит: только утоптанная земля (её рисует лагерь), можно построить.
+	if id == "mine":
+		var built := Meta.level("mine") > 0
+		_sprite.visible = built
+		_shape.set_deferred("disabled", not built)
+		_label.position.y = _label_y if built else -30.0
+		if not built:
+			_label.text = "Шахта — можно построить"
 
 
 ## Точка, у которой можно нажать E: перед дверью; у пустыря — ближайшая к герою точка участка.
 func interact_point() -> Vector2:
+	if id == "mine" and Meta.level("mine") == 0:
+		# Пустое место шахты: ближайшая к герою точка утоптанной земли.
+		var hero: Node2D = Game.local_hero()
+		var area := Rect2(global_position + Vector2(-64, -48), Vector2(128, 54))
+		return hero.global_position.clamp(area.position, area.end) if hero else global_position
 	if id == "lot":
 		var h: Node2D = Game.local_hero()
 		var half := LAY.LOT_W * LAY.TILE / 2.0
@@ -112,6 +129,8 @@ func interact_point() -> Vector2:
 func prompt() -> String:
 	if id == "lot":
 		return "E — свободный участок: построить"
+	if id == "mine" and Meta.level("mine") == 0:
+		return "E — место для шахты: построить"
 	return "E — " + ("войти в подземелье" if id == "portal" else title)
 
 

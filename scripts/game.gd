@@ -304,6 +304,16 @@ func _camptest() -> void:
 		await get_tree().process_frame
 	_shot("camp_0e_plot")
 	chud.close()
+	cam.global_position = Vector2(600, 440)
+	for i in 4:
+		await get_tree().process_frame
+	_shot("camp_0g_mine_empty")
+	Meta.upgrade("mine")
+	for i in 4:
+		await get_tree().process_frame
+	_shot("camp_0h_mine_built")
+	Meta.levels.erase("mine")
+	Meta.changed.emit()
 	print("build forge: %s, library: %s, plots=%s" % [Meta.place_building(1, "forge"), Meta.place_building(2, "library"), Meta.plots])
 	cam.global_position = Vector2(200, 110)
 	for i in 6:
