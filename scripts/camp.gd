@@ -1,17 +1,18 @@
 extends Node2D
-## Лагерь между забегами — деревня в изометрии: мостовая, площадь с фонтаном, участки под стройку,
-## лес по краям. Раскладка — scripts/camp_layout.gd, графика — tools/gen_camp.gd (assets/camp/).
+## Лагерь между забегами — деревня (прямой 2D-вид): мостовая, площадь с фонтаном, участки под
+## стройку, лес по краям. Раскладка — scripts/camp_layout.gd, графика — tools/gen_camp.gd (assets/camp/).
 ## Постоянные постройки: портал, торговец, шахта. Остальное игрок строит сам на участках
 ## (Meta.plots); пустой участок — E: выбрать, что построить.
 
 const LAY := preload("res://scripts/camp_layout.gd")
 const BUILDING := preload("res://scripts/building.gd")
-const W := LAY.WIDTH
-const H := LAY.HEIGHT
+const TILE := LAY.TILE
+const W := LAY.W
+const H := LAY.H
 const TITLES := {"exchange": "Обменник", "merchant": "Торговец", "mentor": "Наставник"}  # постройки без улучшений
 # Радиус твёрдого основания мелочей (пиксели мира).
-const PROP_BODY := {"fountain": 26.0, "lamp": 2.5, "bench": 7.0, "barrels": 8.0, "crates": 8.0, "cart": 9.0, "sign": 2.5,
-	"tree": 4.0, "tree2": 4.0, "tree3": 4.0, "bush": 6.0}
+const PROP_BODY := {"fountain": 26.0, "lamp": 2.5, "bench": 8.0, "barrels": 9.0, "crates": 9.0, "cart": 10.0, "sign": 2.5,
+	"tree": 4.0, "tree2": 4.0, "tree3": 4.0, "bush": 7.0}
 
 var art := {}
 var _lots := {}   # номер участка -> узел (пустырь или постройка)
@@ -34,20 +35,18 @@ func _ready() -> void:
 	bg.centered = false
 	bg.scale = Vector2.ONE / LAY.ART
 	ground.add_child(bg)
-	var grid := preload("res://scripts/camp_grid.gd").new()
-	ground.add_child(grid)
+	ground.add_child(preload("res://scripts/camp_grid.gd").new())
 	_walls()
 	for id: String in LAY.FIXED:
-		var f: Dictionary = LAY.FIXED[id]
-		_building(id, f["at"], f["size"], f["face"], -1)
+		_building(id, (LAY.FIXED[id] as Vector2) * TILE, -1)
 	_refresh_lots()
 	Meta.changed.connect(_refresh_lots)
 	for p: Array in LAY.PROPS:
-		_prop(p[0], LAY.to_screen(p[1]), p[2])
+		_prop(p[0], (p[1] as Vector2) * TILE, p[2])
 	for t: Array in art["trees"]:
 		_prop(t[2], Vector2(t[0], t[1]), false)
 	if not Net.is_guest():
-		player.position = LAY.to_screen(LAY.START)
+		player.position = LAY.START * TILE
 		setup_camera(player.get_node("Camera"))
 		Game.spawn_guest_heroes()
 	Net.scene_loaded()
@@ -63,47 +62,40 @@ func _refresh_lots() -> void:
 		if cur and is_instance_valid(cur):
 			entities.remove_child(cur)
 			cur.queue_free()
-		var lot: Dictionary = LAY.LOTS[i]
-		var at: Vector2 = lot["at"]
-		if want == "":
-			_lots[i] = _building("lot", at, Vector2(LAY.LOT_SIZE, LAY.LOT_SIZE), lot["face"], i)
-		else:
-			_lots[i] = _building(want, at + Vector2(0.5, 0.5), Vector2(3, 3), lot["face"], i)
+		_lots[i] = _building(want if want != "" else "lot", (LAY.LOTS[i] as Vector2) * TILE, i)
 
 
-func _building(id: String, at: Vector2, size: Vector2, face: String, plot: int) -> Node:
+func _building(id: String, pos: Vector2, plot: int) -> Node:
 	var b: StaticBody2D = BUILDING.new()
 	b.id = id
 	b.plot = plot
-	b.cell = at
-	b.size = size
 	b.title = Meta.UPGRADES[id]["name"] if Meta.UPGRADES.has(id) else TITLES.get(id, "")
-	var key := "b_%s_%s" % [id, face]
-	b.art = art["sprites"].get(key, {})
-	b.art_name = key
-	b.position = LAY.to_screen(at + size / 2.0)
+	b.art = art["sprites"].get("b_" + id, {})
+	b.position = pos
 	entities.add_child(b)
 	return b
 
 
-## Непроходимые лес и вода — параллелограммы по рядам клеток.
+## Непроходимые лес и вода — прямоугольники по рядам клеток.
 func _walls() -> void:
 	var body := StaticBody2D.new()
 	body.collision_layer = 1
 	ground.add_child(body)
-	for j in LAY.N:
-		var i := 0
-		while i < LAY.N:
-			if not LAY.solid(i, j):
-				i += 1
+	for y in H:
+		var x := 0
+		while x < W:
+			if not LAY.solid(x, y):
+				x += 1
 				continue
-			var i0 := i
-			while i < LAY.N and LAY.solid(i, j):
-				i += 1
-			var poly := CollisionPolygon2D.new()
-			poly.polygon = PackedVector2Array([LAY.to_screen(Vector2(i0, j)), LAY.to_screen(Vector2(i, j)),
-				LAY.to_screen(Vector2(i, j + 1)), LAY.to_screen(Vector2(i0, j + 1))])
-			body.add_child(poly)
+			var x0 := x
+			while x < W and LAY.solid(x, y):
+				x += 1
+			var shape := CollisionShape2D.new()
+			var r := RectangleShape2D.new()
+			r.size = Vector2((x - x0) * TILE, TILE)
+			shape.shape = r
+			shape.position = Vector2((x0 + x) * TILE / 2.0, (y + 0.5) * TILE)
+			body.add_child(shape)
 
 
 func _prop(name: String, pos: Vector2, solid: bool) -> void:
@@ -130,8 +122,8 @@ func _prop(name: String, pos: Vector2, solid: bool) -> void:
 func setup_camera(cam: Camera2D) -> void:
 	cam.limit_left = 0
 	cam.limit_top = 0
-	cam.limit_right = W
-	cam.limit_bottom = H
+	cam.limit_right = W * TILE
+	cam.limit_bottom = H * TILE
 	cam.reset_smoothing()
 
 

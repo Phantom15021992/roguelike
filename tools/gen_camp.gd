@@ -1,33 +1,33 @@
 extends SceneTree
-## Лагерь-деревня в изометрии (по референсам владельца: дом-бар как образец перспективы,
-## лист домиков — цвета крыш, деревня — мостовая и зелень). Детализация ART = 4 пикселя
-## картинки на 1 пиксель мира.
+## Лагерь-деревня — прямой 2D-вид сверху-спереди (без поворота), по референсам владельца:
+## фахверк, черепица с мхом, слуховые окна, ставни, ящики с цветами, навесы, плющ; объём и тени.
+## Детализация ART = 4 пикселя картинки на 1 пиксель мира.
 ##
-## Постройки собираются из настоящих 3D-плоскостей (стены, скаты крыши, фронтоны, карнизы,
-## трубы), которые проецируются в изометрию: экран = (X - Y, (X + Y) / 2 - Z). Клетка сетки —
-## 64 единицы по X и Y (ромб 128x64 пикселя картинки = 32x16 пикселей мира). Свет сверху-слева:
-## левые стены (+Y) освещены, правые (+X) в тени, тень на земле падает вправо.
-## Вариант «x» (дверь на правой стене) рисуется с зеркальным светом и отражается.
+## Постройки собираются из 3D-плоскостей (фасады, скаты крыш, фронтоны, карнизы, трубы),
+## проекция: экран = (X, Y - Z) — фасады видны прямо, крыши сверху-спереди. Свет сверху-слева,
+## тень на землю — вправо-назад (рисуется в самой картинке постройки).
 ##
-##   godot --headless --path . --script res://tools/gen_camp.gd
-## Выход: assets/camp/ — ground.png (вся земля с сеткой участков и лесом), b_<id>_<y|x>.png,
-##   p_<имя>.png (мелочи, деревья), glow.png, camp.json (точки привязки, двери, деревья-спрайты).
+##   godot --headless --path . --script res://tools/gen_camp.gd   (-- --only=buildings — без земли)
+## Выход: assets/camp/ — ground.png (земля, участки с разметкой, лес), b_<id>.png (постройки),
+##   p_<имя>.png (мелочи, деревья), glow.png, camp.json (anchor, door, top, foot; деревья-спрайты).
 
 const LAY := preload("res://scripts/camp_layout.gd")
 const ART := 4
 const U := 64.0            # клетка в единицах 3D
 const LEAF := [Color8(156, 204, 86), Color8(104, 164, 64), Color8(64, 120, 52), Color8(36, 78, 44)]
-const LIGHT_Y := Vector3(0.25, 0.9, 1.1)
-const SHD_Y := Vector3(0.62, -0.2, 0.0)
+const LIGHT_Y := Vector3(-0.5, 0.6, 0.8)
+const SHD_Y := Vector3(0.72, -0.34, 0.0)
 const PLASTER := Color8(236, 222, 190)
 const TIMBER := Color8(112, 66, 40)
 const NONE := Color(0, 0, 0, 0)
 
 var errors := 0
 var meta := {"sprites": {}, "trees": []}
+var foot := Rect2()   # основание текущей постройки (единицы 3D)
 var LIGHT := LIGHT_Y.normalized()
 var SHD := SHD_Y
 var O := Vector2.ZERO
+var T := Vector3.ZERO   # сдвиг начала координат постройки
 var spts: Array[Vector3] = []
 var icons := {}
 var noise := FastNoiseLite.new()
@@ -95,6 +95,7 @@ static func hh(x: int, y: int, i: int) -> int:
 	return hash(Vector3i(x, y, i)) & 1023
 
 
+
 func _init() -> void:
 	noise.seed = 11
 	noise.frequency = 0.004
@@ -103,19 +104,17 @@ func _init() -> void:
 	var dir := ProjectSettings.globalize_path("res://assets/camp")
 	DirAccess.make_dir_recursive_absolute(dir)
 	for f in DirAccess.get_files_at(dir):
-		DirAccess.remove_absolute(dir + "/" + f)
-	_icons()
-	_glow()
+		if f.ends_with(".png") or f.ends_with(".json"):
+			DirAccess.remove_absolute(dir + "/" + f)
 	var only := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
 			only = a.substr(7)
+	_icons()
+	_glow()
 	for id: String in ["workshop", "merchant", "mine", "portal", "training", "library", "forge", "infirmary", "treasury", "storage", "exchange", "mentor"]:
-		for face: String in ["y", "x"]:
-			if id in ["portal", "merchant", "mine"] and face == "x":
-				continue
-			_building(id, face)
-	for name: String in ["fountain", "lamp", "bench", "barrels", "crates", "cart", "bush", "flowers", "sign", "tree", "tree2", "tree3", "ftree", "ftree2"]:
+		_building(id)
+	for name: String in ["fountain", "lamp", "bench", "barrels", "crates", "cart", "bush", "flowers", "sign", "tree", "tree2", "tree3", "ftree", "ftree2", "lot", "hedge", "hedge2"]:
 		_prop(name)
 	if only != "buildings":
 		_ground()
@@ -124,6 +123,7 @@ func _init() -> void:
 	f.close()
 	print("gen_camp: done, errors=%d" % errors)
 	quit(1 if errors else 0)
+
 
 
 func _save(img: Image, name: String) -> void:
@@ -147,8 +147,9 @@ func _glow() -> void:
 #                             ИЗОМЕТРИЧЕСКИЙ «ДВИЖОК»
 # ===================================================================================
 
+## Прямой вид сверху-спереди: фасады (+Y) видны без искажения, земля — как на карте.
 func pr(p: Vector3) -> Vector2:
-	return Vector2(p.x - p.y, (p.x + p.y) * 0.5 - p.z) + O
+	return Vector2(p.x + T.x, p.y + T.y - p.z) + O
 
 
 ## Цвет с учётом освещённости грани (b: 0.5 тень … 1.15 свет); в тени — холоднее.
@@ -178,7 +179,7 @@ func quad(cv: Cv, p0: Vector3, e1: Vector3, e2: Vector3, n: Vector3, tex: Callab
 	var r := Rect2(a, Vector2.ZERO).expand(a + b).expand(a + c).expand(a + b + c)
 	var l1 := e1.length()
 	var l2 := e2.length()
-	var bright := 0.5 + 0.62 * maxf(0.0, n.normalized().dot(LIGHT)) if shade else 1.0
+	var bright := 0.6 + 0.5 * maxf(0.0, n.normalized().dot(LIGHT)) if shade else 1.0
 	for iy in range(int(floor(r.position.y)), int(ceil(r.end.y)) + 1):
 		for ix in range(int(floor(r.position.x)), int(ceil(r.end.x)) + 1):
 			var dx := ix + 0.5 - a.x
@@ -380,6 +381,24 @@ func tex_plaster(u: float, v: float, col: Color) -> Color:
 
 ## Стена: материал + балки фахверка + особенности (дверь, окна, вывеска) + затенение.
 func tex_wall(u: float, v: float, l1: float, l2: float, spec: Dictionary) -> Color:
+	var c := _wall_raw(u, v, l1, l2, spec)
+	# Плющ с карниза и по углам.
+	var ivy: float = spec.get("ivy", 0.0)
+	if ivy > 0.0:
+		var n := noise2.get_noise_2d(u * 1.4 + 77.0, v * 0.6)
+		var hang := (l2 - v) < 18.0 + ivy * 60.0 * (n + 0.6) and (u < l1 * 0.3 or u > l1 * 0.72)
+		var side := (u < 10.0 + ivy * 30.0 * (n + 0.5) or u > l1 - 10.0 - ivy * 30.0 * (n + 0.5)) and v > 30.0
+		if (hang or side) and hh(int(u / 3), int(v / 3), 64) < 760:
+			var l := hh(int(u / 4), int(v / 4), 65) % 4
+			c = [LEAF[0], LEAF[1], LEAF[1], LEAF[2]][l]
+			if hh(int(u / 4), int(v / 4), 66) < 40:
+				c = Color8(240, 130, 150)
+	# Объём: слева светлее, справа темнее.
+	var g := u / maxf(1.0, l1) - 0.4
+	return c.darkened(g * 0.16) if g > 0.0 else c.lightened(-g * 0.12)
+
+
+func _wall_raw(u: float, v: float, l1: float, l2: float, spec: Dictionary) -> Color:
 	var feats: Array = spec.get("feats", [])
 	for f: Dictionary in feats:
 		var fc: Color = _feature(f, u, v)
@@ -460,6 +479,20 @@ func _arch_in(u: float, v: float, c: float, w: float, h: float) -> bool:
 ## Дверь, окно, вывеска, знамя на стене (в координатах стены, v снизу вверх).
 func _feature(f: Dictionary, u: float, v: float) -> Color:
 	match f["t"]:
+		"fire":
+			var c: float = f["u"]
+			var w: float = f["w"]
+			var h: float = f["h"]
+			if not _arch_in(u, v, c, w + 14.0, h + 7.0):
+				return NONE
+			if not _arch_in(u, v, c, w, h):
+				return Color8(96, 90, 86) if hh(int((u - c) / 7.0 + 20), int(v / 8.0), 67) % 3 != 0 else Color8(70, 66, 64)
+			var t := v / h
+			var fc := Color8(255, 190, 80).lerp(Color8(70, 26, 20), clampf(t * 1.3, 0, 1))
+			var fl := sin(u * 0.25) * 6.0 + sin(u * 0.61) * 4.0
+			if v < h * 0.4 + fl:
+				fc = Color8(255, 236, 160) if v < h * 0.18 + fl * 0.5 else Color8(255, 150, 50)
+			return fc
 		"door":
 			var c: float = f["u"]
 			var w: float = f["w"]
@@ -518,6 +551,9 @@ func _feature(f: Dictionary, u: float, v: float) -> Color:
 				return Color8(100, 64, 44) if vv > 0.0 else Color8(140, 96, 64)
 			var t := clampf(vv / h, 0.0, 1.0)
 			var g := Color8(96, 140, 196).lerp(Color8(40, 56, 98), t)
+			# Тень от рамы сверху и слева — окно «утоплено» в стену.
+			if vv > h - 7.0 or du < -w * 0.5 + 5.0:
+				return Color8(30, 34, 58)
 			if fposmod(du + vv * 0.8, 22.0) < 3.0:
 				g = Color8(196, 224, 248)
 			if f.get("warm", true) and t < 0.45 and hh(int(u / 4), int(v / 4), 57) < 300:
@@ -612,9 +648,6 @@ func walls(cv: Cv, x0: float, y0: float, w: float, d: float, h: float, front: Di
 	for dx: float in [0.0, w]:
 		for dy: float in [0.0, d]:
 			spts.append(Vector3(x0 + dx, y0 + dy, h))
-	var wood: Color = front.get("wood", TIMBER)
-	if front["mat"] != "stone":
-		box(cv, Vector3(x0 + w - 6, y0 + d - 6, 0), Vector3(10, 10, h), tex_wood.bind(wood), tex_wood.bind(wood), flat(wood))
 
 
 ## Крыша, конёк вдоль X (передний скат смотрит на +Y). part: "back" — до стен, "front" — после.
@@ -635,6 +668,43 @@ func roof_x(cv: Cv, x0: float, y0: float, w: float, d: float, h: float, o: float
 	quad(cv, Vector3(x0 + w + o, y0 + d + o, h - t), Vector3(0, -a, rise), Vector3(0, 0, t), Vector3(1, 0, 0), tex_board.bind(board))
 	quad(cv, Vector3(x0 - o, y0 + d + o, h - t), Vector3(w + 2 * o, 0, 0), Vector3(0, 0, t), Vector3(0, 1, 0), tex_board.bind(board))
 	box(cv, Vector3(x0 - o, y0 + d * 0.5 - 5, h + rise - 3), Vector3(w + 2 * o, 10, 7), tex_board.bind(col.darkened(0.3)), tex_board.bind(col.darkened(0.4)), tex_board.bind(col.darkened(0.15)))
+
+
+## Вальмовая крыша: конёк вдоль X, спереди трапеция, по бокам треугольные скаты.
+func roof_hip(cv: Cv, x0: float, y0: float, w: float, d: float, h: float, o: float, rise: float, col: Color, kind: String, part: String, _gable: Dictionary, moss := 0.04) -> void:
+	var a := d * 0.5 + o
+	var ww := w + 2 * o
+	var hip := minf(a, ww * 0.5)
+	var rt := tex_roof.bind(col, kind, moss)
+	var trap := func(u: float, v: float, l1: float, l2: float) -> Color:
+		var t := v / l2
+		var m := t * hip
+		if u < m or u > l1 - m:
+			return NONE
+		var c: Color = rt.call(u - m, v, l1, l2)
+		if u < m + 4.0 or u > l1 - m - 4.0:
+			c = col.darkened(0.45)
+		return c
+	var tri := func(u: float, v: float, l1: float, l2: float) -> Color:
+		var t := v / l2
+		var m := t * l1 * 0.5
+		if u < m or u > l1 - m:
+			return NONE
+		var c: Color = rt.call(u, v, l1, l2)
+		if u < m + 4.0 or u > l1 - m - 4.0:
+			c = col.darkened(0.45)
+		return c
+	if part == "back":
+		quad(cv, Vector3(x0 - o, y0 - o, h), Vector3(ww, 0, 0), Vector3(0, a, rise), Vector3(0, -rise, a), trap)
+		spts.append(Vector3(x0 - o + hip, y0 + d * 0.5, h + rise))
+		spts.append(Vector3(x0 + w + o - hip, y0 + d * 0.5, h + rise))
+		return
+	quad(cv, Vector3(x0 - o, y0 - o, h), Vector3(0, d + 2 * o, 0), Vector3(hip, 0, rise), Vector3(-rise, 0, hip), tri)
+	quad(cv, Vector3(x0 + w + o, y0 + d + o, h), Vector3(0, -(d + 2 * o), 0), Vector3(-hip, 0, rise), Vector3(rise, 0, hip), tri)
+	quad(cv, Vector3(x0 - o, y0 + d + o, h), Vector3(ww, 0, 0), Vector3(0, -a, rise), Vector3(0, rise, a), trap)
+	quad(cv, Vector3(x0 - o, y0 + d + o, h - 9), Vector3(ww, 0, 0), Vector3(0, 0, 9), Vector3(0, 1, 0), tex_board.bind(Color8(92, 56, 38)))
+	if ww - 2 * hip > 4.0:
+		box(cv, Vector3(x0 - o + hip, y0 + d * 0.5 - 5, h + rise - 3), Vector3(ww - 2 * hip, 10, 7), tex_board.bind(col.darkened(0.3)), tex_board.bind(col.darkened(0.4)), tex_board.bind(col.darkened(0.15)))
 
 
 ## Крыша, конёк вдоль Y (фронтон смотрит на +Y — к зрителю слева).
@@ -726,173 +796,194 @@ func barrel3(cv: Cv, p: Vector3, r: float, hgt: float) -> void:
 	spts.append(p + Vector3(0, 0, hgt))
 
 
+
+
 # ===================================================================================
 #                                   ПОСТРОЙКИ
 # ===================================================================================
 
-func _building(id: String, face: String) -> void:
-	var fp := Vector2(192, 192)
-	if LAY.FIXED.has(id):
-		var s: Vector2 = LAY.FIXED[id]["size"]
-		fp = s * U
-	var mirror := face == "x"
-	LIGHT = (Vector3(LIGHT_Y.y, LIGHT_Y.x, LIGHT_Y.z) if mirror else LIGHT_Y).normalized()
-	SHD = Vector3(SHD_Y.y, SHD_Y.x, 0) if mirror else SHD_Y
-	var cw := 900
-	var ch := 900
-	var anchor := Vector2(450, 700)
-	var center := Vector3(fp.x / 2.0, fp.y / 2.0, 0)
-	O = Vector2.ZERO
-	O = anchor - pr(center)
+func _building(id: String) -> void:
+	LIGHT = LIGHT_Y.normalized()
+	SHD = SHD_Y
+	T = Vector3.ZERO
+	var cw := 1000
+	var ch := 840
+	var anchor := Vector2(420, 660)
+	O = anchor
 	spts = []
+	foot = Rect2(-140, -120, 280, 120)
 	var cv := Cv.new(cw, ch)
 	var door: Vector3 = call("_b_" + id, cv)
+	# Тень на землю: выпуклая оболочка основания и точек, сдвинутых по свету.
 	var pts := PackedVector2Array()
-	for c: Vector3 in [Vector3(0, 0, 0), Vector3(fp.x, 0, 0), Vector3(fp.x, fp.y, 0), Vector3(0, fp.y, 0)]:
-		pts.append(pr(c))
+	for c: Vector2 in [foot.position, Vector2(foot.end.x, foot.position.y), foot.end, Vector2(foot.position.x, foot.end.y)]:
+		pts.append(pr(Vector3(c.x, c.y, 0)))
 	for p: Vector3 in spts:
 		pts.append(pr(Vector3(p.x, p.y, 0) + SHD * p.z))
 	var hull := Geometry2D.convex_hull(pts)
 	var sh := Cv.new(cw, ch)
 	if hull.size() >= 3:
-		sh.poly(hull, Color(0.06, 0.05, 0.14, 0.34))
+		sh.poly(hull, Color(0.07, 0.06, 0.16, 0.32))
+	# Тень у самого фасада (земля темнее у стены).
+	var fl := pr(Vector3(foot.position.x, foot.end.y, 0))
+	var fr := pr(Vector3(foot.end.x, foot.end.y, 0))
+	for i in 10:
+		sh.rect(fl.x + 4, fl.y + i, fr.x - fl.x - 8, 1, Color(0.06, 0.05, 0.12, 0.22 * (1.0 - i / 10.0)))
 	sh.img.blend_rect(cv.img, Rect2i(0, 0, cw, ch), Vector2i.ZERO)
 	var img := sh.img
 	var used := img.get_used_rect()
 	img = img.get_region(used)
-	var a := anchor - Vector2(used.position)
-	var dp := (pr(door) - anchor) / ART
+	var base := pr(Vector3(foot.get_center().x, foot.end.y, 0))
+	var a := base - Vector2(used.position)
+	var dp := (pr(door) - base) / ART
 	var top := 0.0
 	for p: Vector3 in spts:
-		top = minf(top, pr(p).y - anchor.y)
-	if mirror:
-		img.flip_x()
-		a.x = img.get_width() - a.x
-		dp.x = -dp.x
-	var name := "b_%s_%s" % [id, face]
+		top = minf(top, pr(p).y - base.y)
+	var name := "b_" + id
 	_save(img, name)
-	meta["sprites"][name] = {"anchor": [a.x, a.y], "door": [dp.x, dp.y], "top": top / ART}
+	meta["sprites"][name] = {"anchor": [a.x, a.y], "door": [dp.x, dp.y], "top": top / ART,
+		"foot": [foot.size.x / ART, foot.size.y / ART]}
 	print("building ", name, " ", img.get_size())
+	T = Vector3.ZERO
 
 
-## Обычный дом по описанию. Возвращает точку перед дверью.
+## Слуховое окно на переднем скате крыши (конёк вдоль X).
+func dormer(cv: Cv, cx: float, y0: float, d: float, h: float, o: float, rise: float, roof: Color, kind: String, wall: Dictionary) -> void:
+	var a := d * 0.5 + o
+	var yf := y0 + d * 0.8
+	var zb := h + rise * ((y0 + d + o) - yf) / a
+	var ws := {"mat": wall["mat"], "col": wall["col"], "wood": wall.get("wood", TIMBER), "eave": true,
+		"feats": [{"t": "win", "u": 36.0, "v": 22.0, "w": 30.0, "h": 34.0, "box": true, "shut": wall.get("shut", NONE)}]}
+	quad(cv, Vector3(cx - 36, yf, zb - 10), Vector3(72, 0, 0), Vector3(0, 0, 72), Vector3(0, 1, 0), tex_wall.bind(ws))
+	var g := {"mat": wall["mat"], "col": wall["col"], "wood": wall.get("wood", TIMBER), "gfeats": []}
+	roof_y(cv, cx - 36, yf - 40, 72, 40, zb + 62, 9, 38, roof, kind, "back", g, 0.03)
+	roof_y(cv, cx - 36, yf - 40, 72, 40, zb + 62, 9, 38, roof, kind, "front", g, 0.03)
+
+
+## Дом по описанию. Начало координат — середина фасада у земли; дом стоит в y ∈ [-d, 0].
 func _house(cv: Cv, s: Dictionary) -> Vector3:
-	var x0: float = s.get("x0", 18.0)
-	var y0: float = s.get("y0", 22.0)
-	var w: float = s.get("w", 156.0)
-	var d: float = s.get("d", 150.0)
-	var h: float = s.get("h", 150.0)
-	var o: float = s.get("o", 16.0)
+	var w: float = s.get("w", 280.0)
+	var d: float = s.get("d", 120.0)
+	var h: float = s.get("h", 170.0)
+	var o: float = s.get("o", 18.0)
 	var rise: float = s.get("rise", 110.0)
-	var ridge: String = s.get("ridge", "y")
+	var ridge: String = s.get("ridge", "x")
 	var roof: Color = s["roof"]
 	var kind: String = s.get("kind", "tile")
 	var moss: float = s.get("moss", 0.04)
+	var x0: float = -w * 0.5 + float(s.get("xoff", 0.0))
+	var y0 := -d
+	foot = Rect2(x0 - 4, y0, w + 8 + float(s.get("extra", 0.0)), d)
 	var front: Dictionary = s["front"]
-	var side: Dictionary = s["side"]
+	var side := front.duplicate()
+	side["feats"] = []
 	var gable: Dictionary = s.get("gable", {})
 	gable["mat"] = front["mat"]
 	gable["col"] = front["col"]
 	gable["wood"] = front.get("wood", TIMBER)
-	var rf: Callable = roof_y if ridge == "y" else roof_x
+	var rf: Callable = roof_y if ridge == "y" else roof_hip
 	rf.call(cv, x0, y0, w, d, h, o, rise, roof, kind, "back", gable, moss)
 	if s.has("chimney"):
 		var c: Vector2 = s["chimney"]
-		chimney(cv, c.x, c.y, h - 10.0, rise + 60.0)
+		chimney(cv, x0 + c.x, y0 + c.y, h - 10.0, rise + float(s.get("chimney_h", 50.0)))
 	if s.has("pre"):
 		(s["pre"] as Callable).call(cv)
 	walls(cv, x0, y0, w, d, h, front, side)
 	if s.has("mid"):
 		(s["mid"] as Callable).call(cv)
 	rf.call(cv, x0, y0, w, d, h, o, rise, roof, kind, "front", gable, moss)
-	var du: float = s.get("door_u", w * 0.5)
-	porch(cv, x0 + du, y0 + d, 70.0)
+	for du: float in s.get("dormers", []):
+		dormer(cv, x0 + du, y0, d, h, o, rise, roof, kind, front)
+	var door_u: float = s.get("door_u", w * 0.5)
+	porch(cv, x0 + door_u, 0, 84.0)
 	for b: Array in s.get("bushes", []):
-		bush(cv, x0 + float(b[0]), y0 + d + 14.0, float(b[1]), true, int(b[0]))
+		bush(cv, x0 + float(b[0]), 12.0, float(b[1]), true, int(b[0]))
 	if s.has("post"):
 		(s["post"] as Callable).call(cv)
-	return Vector3(x0 + du, y0 + d + 20.0, 0)
+	return Vector3(x0 + door_u, 22.0, 0)
 
 
 func _b_workshop(cv: Cv) -> Vector3:
-	var front := {"mat": "timber", "col": PLASTER, "wood": TIMBER, "feats": [
-		{"t": "door", "u": 46.0, "w": 52.0, "h": 104.0, "col": Color8(140, 84, 48)},
-		{"t": "win", "u": 100.0, "v": 56.0, "w": 30.0, "h": 44.0, "shut": Color8(70, 120, 90)},
-		{"t": "sign", "u": 100.0, "v": 106.0, "icon": "gear", "col": Color8(150, 100, 62)}]}
-	var side := {"mat": "timber", "col": PLASTER, "wood": TIMBER, "feats": [
-		{"t": "win", "u": 30.0, "v": 58.0, "w": 30.0, "h": 40.0},
-		{"t": "win", "u": 118.0, "v": 58.0, "w": 30.0, "h": 40.0}]}
-	var gable := {"gfeats": [{"t": "win", "u": 63.0, "v": 52.0, "w": 26.0, "h": 34.0, "arch": true, "box": false}]}
+	var front := {"mat": "timber", "col": PLASTER, "wood": TIMBER, "ivy": 0.5, "feats": [
+		{"t": "door", "u": 70.0, "w": 56.0, "h": 108.0, "col": Color8(140, 84, 48)},
+		{"t": "win", "u": 190.0, "v": 58.0, "w": 40.0, "h": 50.0, "shut": Color8(70, 120, 90)},
+		{"t": "sign", "u": 190.0, "v": 126.0, "icon": "gear", "col": Color8(150, 100, 62)}]}
+	var gable := {"gfeats": [{"t": "win", "u": 130.0, "v": 52.0, "w": 32.0, "h": 40.0, "arch": true, "box": false}]}
 	var lean := func(c: Cv) -> void:
-		# Навес с верстаком у правой стены.
+		# Навес с верстаком справа от дома.
 		var wood := Color8(120, 78, 48)
-		box(c, Vector3(146, 62, 0), Vector3(30, 92, 44), func(u: float, v: float, _a: float, _b: float) -> Color: return tex_planks(u, v, wood),
+		box(c, Vector3(96, -50, 0), Vector3(64, 30, 48), func(u: float, v: float, _a: float, _b: float) -> Color: return tex_planks(u, v, wood),
 			func(u: float, v: float, _a: float, _b: float) -> Color: return tex_planks(u, v, wood.darkened(0.1)),
-			func(u: float, v: float, _a: float, _b: float) -> Color: return tex_wood(v, u, 92, 30, Color8(170, 120, 76)))
-		box(c, Vector3(152, 80, 44), Vector3(8, 30, 6), flat(Color8(170, 176, 190)), flat(Color8(130, 136, 150)), flat(Color8(210, 214, 226)))
-		box(c, Vector3(156, 124, 44), Vector3(14, 10, 10), flat(Color8(120, 80, 50)), flat(Color8(96, 64, 40)), flat(Color8(150, 104, 66)))
-		ball3(c, Vector3(166, 64, 62), 14, tones(Color8(132, 128, 124)), 1.0)
-		for p: Vector2 in [Vector2(182, 56), Vector2(182, 160)]:
-			box(c, Vector3(p.x, p.y, 0), Vector3(8, 8, 94), tex_wood.bind(TIMBER), tex_wood.bind(TIMBER), flat(TIMBER))
-		quad(c, Vector3(196, 170, 92), Vector3(0, -122, 0), Vector3(-52, 0, 30), Vector3(30, 0, 52), func(u: float, v: float, _a: float, _b: float) -> Color:
-			var cc := Color8(70, 140, 96) if int(u / 16.0) % 2 == 0 else Color8(236, 228, 200)
+			func(u: float, v: float, _a: float, _b: float) -> Color: return tex_wood(u, v, 64, 30, Color8(176, 124, 78)))
+		box(c, Vector3(104, -40, 48), Vector3(26, 6, 5), flat(Color8(170, 176, 190)), flat(Color8(130, 136, 150)), flat(Color8(214, 218, 230)))
+		box(c, Vector3(138, -44, 48), Vector3(12, 12, 12), flat(Color8(120, 80, 50)), flat(Color8(96, 64, 40)), flat(Color8(150, 104, 66)))
+		ball3(c, Vector3(84 + 30, -6, 22), 18, tones(Color8(140, 136, 130)), 1.0, false, 9, true)
+		box(c, Vector3(164, -12, 0), Vector3(9, 9, 114), tex_wood.bind(TIMBER), tex_wood.bind(TIMBER), flat(TIMBER))
+		var awn := func(u: float, v: float, _a: float, l2: float) -> Color:
+			var cc := Color8(70, 140, 96) if int(u / 18.0) % 2 == 0 else Color8(236, 228, 200)
 			if v < 6.0:
 				cc = cc.darkened(0.25)
-			return cc)
-		spts.append(Vector3(196, 170, 92))
+			elif v > l2 - 4.0:
+				cc = cc.darkened(0.1)
+			return cc
+		quad(c, Vector3(86, -4, 112), Vector3(92, 0, 0), Vector3(0, -64, 18), Vector3(0, 0.27, 0.96), awn)
+		for i in 6:
+			var p := pr(Vector3(94 + i * 16.0, -4, 110))
+			c.ell(p.x, p.y + 3, 8, 5, Color8(70, 140, 96) if i % 2 == 0 else Color8(236, 228, 200))
+		spts.append(Vector3(178, -4, 112))
 	var post := func(c: Cv) -> void:
-		barrel3(c, Vector3(4, 180, 0), 16, 40)
-		crate3(c, Vector3(148, 172, 0), 28)
-	return _house(cv, {"x0": 18.0, "y0": 24.0, "w": 126.0, "d": 146.0, "h": 150.0, "rise": 96.0, "ridge": "y",
-		"roof": Color8(198, 104, 54), "front": front, "side": side, "gable": gable, "chimney": Vector2(34, 70),
-		"door_u": 46.0, "mid": lean, "post": post, "moss": 0.05, "bushes": [[90, 15]]})
+		barrel3(c, Vector3(-182, 6, 0), 17, 44)
+		crate3(c, Vector3(108, 8, 0), 30)
+	return _house(cv, {"w": 260.0, "d": 120.0, "h": 170.0, "rise": 120.0, "ridge": "y", "xoff": -40.0, "extra": 86.0,
+		"roof": Color8(198, 104, 54), "front": front, "gable": gable, "chimney": Vector2(40, 34),
+		"door_u": 70.0, "mid": lean, "post": post, "moss": 0.06, "bushes": [[124, 15]]})
 
 
 func _b_merchant(cv: Cv) -> Vector3:
 	var wall := Color8(240, 226, 196)
-	var front := {"mat": "timber", "col": wall, "wood": Color8(104, 62, 40), "feats": [
-		{"t": "door", "u": 132.0, "w": 48.0, "h": 100.0, "col": Color8(70, 120, 96)},
-		{"t": "win", "u": 58.0, "v": 34.0, "w": 76.0, "h": 50.0, "box": false},
-		{"t": "sign", "u": 58.0, "v": 108.0, "icon": "coin", "col": Color8(150, 100, 62)}]}
-	var side := {"mat": "timber", "col": wall, "wood": Color8(104, 62, 40), "feats": [
-		{"t": "win", "u": 62.0, "v": 50.0, "w": 30.0, "h": 40.0, "shut": Color8(170, 70, 60)}]}
-	var gable := {"gfeats": [{"t": "win", "u": 63.0, "v": 34.0, "w": 22.0, "h": 28.0, "arch": true, "box": false}]}
+	var front := {"mat": "timber", "col": wall, "wood": Color8(104, 62, 40), "ivy": 0.3, "feats": [
+		{"t": "door", "u": 236.0, "w": 54.0, "h": 104.0, "col": Color8(70, 120, 96)},
+		{"t": "win", "u": 98.0, "v": 32.0, "w": 120.0, "h": 60.0, "box": false},
+		{"t": "sign", "u": 236.0, "v": 116.0, "icon": "coin", "col": Color8(150, 100, 62)}]}
 	var post := func(c: Cv) -> void:
 		var awn := func(u: float, v: float, _a: float, l2: float) -> Color:
 			var cc := Color8(66, 142, 92) if int(u / 18.0) % 2 == 0 else Color8(240, 234, 210)
-			if v > l2 - 6.0:
-				cc = cc.darkened(0.15)
+			if v > l2 - 5.0:
+				cc = cc.lightened(0.1)
+			elif v < 5.0:
+				cc = cc.darkened(0.2)
 			return cc
-		quad(c, Vector3(12, 144, 124), Vector3(170, 0, 0), Vector3(0, 40, -28), Vector3(0, 28, 40), awn)
-		for i in 10:
-			var p := pr(Vector3(20 + i * 17.0, 184, 96))
-			c.ell(p.x, p.y, 9, 5, Color8(66, 142, 92) if i % 2 == 0 else Color8(240, 234, 210))
-		crate3(c, Vector3(8, 154, 0), 32, Color8(220, 60, 60))
-		crate3(c, Vector3(44, 158, 0), 30, Color8(240, 160, 50))
-		crate3(c, Vector3(78, 156, 0), 30, Color8(130, 200, 80))
-		barrel3(c, Vector3(186, 178, 0), 15, 40)
-		spts.append(Vector3(182, 184, 96))
-	return _house(cv, {"x0": 10.0, "y0": 18.0, "w": 172.0, "d": 124.0, "h": 140.0, "rise": 90.0, "ridge": "x",
-		"roof": Color8(206, 108, 58), "front": front, "side": side, "gable": gable, "chimney": Vector2(140, 34),
-		"door_u": 132.0, "post": post, "moss": 0.03})
+		quad(c, Vector3(-136, 0, 130), Vector3(176, 0, 0), Vector3(0, 34, -20), Vector3(0, 0.5, 0.86), awn)
+		for i in 11:
+			var p := pr(Vector3(-128 + i * 16.0, 34, 110))
+			c.ell(p.x, p.y, 8, 5, Color8(66, 142, 92) if i % 2 == 0 else Color8(240, 234, 210))
+		crate3(c, Vector3(-136, 10, 0), 36, Color8(220, 60, 60))
+		crate3(c, Vector3(-94, 16, 0), 34, Color8(240, 160, 50))
+		crate3(c, Vector3(-54, 10, 0), 34, Color8(130, 200, 80))
+		barrel3(c, Vector3(166, 10, 0), 16, 42)
+		spts.append(Vector3(40, 34, 110))
+	return _house(cv, {"w": 300.0, "d": 112.0, "h": 166.0, "rise": 100.0, "ridge": "x",
+		"roof": Color8(206, 108, 58), "front": front, "chimney": Vector2(232, 30), "dormers": [130.0],
+		"door_u": 236.0, "post": post, "moss": 0.04})
 
 
 func _b_portal(cv: Cv) -> Vector3:
+	T = Vector3(-96, -96, 0)
+	foot = Rect2(0, 10, 192, 86)
 	var stone := Color8(150, 146, 168)
 	var st := func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone, 14.0)
 	var st2 := func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone.darkened(0.05), 14.0)
-	box(cv, Vector3(-10, -6, 0), Vector3(212, 102, 10), st, st2, func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone.lightened(0.05), 20.0))
-	box(cv, Vector3(8, 10, 10), Vector3(176, 70, 10), st, st2, func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone.lightened(0.08), 20.0))
-	# Вихрь в проёме.
+	box(cv, Vector3(-10, -6, 0), Vector3(212, 102, 12), st, st2, func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone.lightened(0.05), 20.0))
+	box(cv, Vector3(8, 10, 12), Vector3(176, 70, 10), st, st2, func(u: float, v: float, _a: float, _b: float) -> Color: return tex_stone(u, v, stone.lightened(0.08), 20.0))
 	var vortex := func(u: float, v: float, _a: float, _b: float) -> Color:
 		var cx := 56.0
-		var top := 154.0
+		var top := 214.0
 		var dx := (u - cx) / 56.0
 		if v > top:
 			var dy := (v - top) / 56.0
 			if dx * dx + dy * dy > 1.0:
 				return NONE
-		var ry := (v - 100.0) / 110.0
+		var ry := (v - 130.0) / 140.0
 		var r := sqrt(dx * dx + ry * ry * 0.7)
 		var ang := atan2(ry, dx)
 		var sw := sin(ang * 3.0 + r * 10.0)
@@ -906,150 +997,221 @@ func _b_portal(cv: Cv) -> Vector3:
 		if r < 0.3:
 			c = Color8(236, 226, 255) if r < 0.17 else Color8(176, 146, 250)
 		return c
-	quad(cv, Vector3(40, 46, 20), Vector3(112, 0, 0), Vector3(0, 0, 210), Vector3(0, 1, 0), vortex, false)
+	quad(cv, Vector3(40, 46, 22), Vector3(112, 0, 0), Vector3(0, 0, 270), Vector3(0, 1, 0), vortex, false)
 	for px: float in [12.0, 152.0]:
 		var rune := func(u: float, v: float, _a: float, _b: float) -> Color:
 			var c := tex_stone(u, v, stone, 20.0)
 			if absf(u - 14.0) < 4.0 and fmod(v, 46.0) > 18.0 and fmod(v, 46.0) < 34.0 and v > 20.0 and v < 200.0:
 				c = Color8(120, 236, 255)
 			return c
-		box(cv, Vector3(px, 30, 20), Vector3(28, 30, 200), rune, st2, flat(stone.lightened(0.1)))
-		box(cv, Vector3(px - 6, 24, 220), Vector3(40, 42, 14), st, st2, flat(stone.lightened(0.15)))
+		box(cv, Vector3(px, 30, 22), Vector3(28, 30, 200), rune, st2, flat(stone.lightened(0.1)))
+		box(cv, Vector3(px - 6, 24, 222), Vector3(40, 42, 14), st, st2, flat(stone.lightened(0.15)))
 	var arch := func(u: float, v: float, _a: float, _b: float) -> Color:
 		var dx := u - 90.0
-		var dy := v + 160.0 - 234.0
+		var dy := v + 162.0 - 236.0
 		var d := sqrt(dx * dx + dy * dy)
-		if d > 88.0 or d < 56.0 or v + 160.0 < 232.0:
+		if d > 88.0 or d < 56.0 or v + 162.0 < 234.0:
 			return NONE
 		var a := atan2(dy, dx)
 		var seg := int(a / (PI / 9.0))
 		var c := Color8(166, 162, 184) if seg % 2 == 0 else Color8(150, 146, 168)
 		if absf(fmod(a, PI / 9.0)) < 0.03 or d > 85.0 or d < 58.0:
 			c = Color8(96, 92, 112)
-		if absf(dx) < 12.0 and dy > 70.0:
-			c = Color8(120, 236, 255) if d < 80.0 and d > 66.0 else Color8(180, 176, 196)
+		if absf(dx) < 12.0 and dy > 66.0:
+			c = Color8(120, 236, 255) if d < 80.0 and d > 68.0 else Color8(180, 176, 196)
 		return c
-	quad(cv, Vector3(6, 60, 160), Vector3(180, 0, 0), Vector3(0, 0, 170), Vector3(0, 1, 0), arch)
+	quad(cv, Vector3(6, 60, 162), Vector3(180, 0, 0), Vector3(0, 0, 170), Vector3(0, 1, 0), arch)
 	for px: float in [-4.0, 196.0]:
-		var p := pr(Vector3(px, 70, 10))
+		var p := pr(Vector3(px, 80, 12))
 		cv.poly(PackedVector2Array([p + Vector2(-8, 0), p + Vector2(-4, -40), p + Vector2(2, -48), p + Vector2(8, 0)]), Color8(110, 200, 250))
 		cv.poly(PackedVector2Array([p + Vector2(-3, 0), p + Vector2(-1, -38), p + Vector2(2, -42), p + Vector2(3, 0)]), Color8(220, 246, 255))
-	spts.append(Vector3(96, 60, 300))
-	return Vector3(96, 104, 0)
+	spts.append(Vector3(96, 60, 324))
+	spts.append(Vector3(10, 40, 240))
+	spts.append(Vector3(186, 40, 240))
+	return Vector3(96, 112, 0)
 
 
 func _b_mine(cv: Cv) -> Vector3:
-	var rock := tones(Color8(146, 136, 124))
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 31
-	var rocks: Array[Vector3] = []
-	for i in 26:
-		var x := rng.randf_range(6, 186)
-		var y := rng.randf_range(6, 140)
-		var hgt := 150.0 - Vector2(x - 96, (y - 70) * 1.3).length() * 1.2
-		rocks.append(Vector3(x, y, maxf(16.0, rng.randf_range(0.4, 1.0) * hgt)))
-	rocks.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.x + a.y < b.x + b.y)
-	for r: Vector3 in rocks:
-		if r.y > 120 and r.x > 60 and r.x < 140:
-			continue
-		var pal := rock.duplicate()
-		if r.z > 110:
-			pal = [Color8(150, 180, 90), Color8(120, 130, 100), Color8(100, 96, 90), Color8(66, 60, 58)]
-		ball3(cv, r, rng.randf_range(24, 40), pal, 0.8, false, int(r.x * 7 + r.y), true)
-		spts.append(r + Vector3(0, 0, 20))
-	for i in 60:
-		var p := pr(Vector3(rng.randf_range(20, 170), rng.randf_range(20, 120), rng.randf_range(20, 120)))
-		if cv.img.get_pixel(clampi(int(p.x), 0, cv.w - 1), clampi(int(p.y), 0, cv.h - 1)).a > 0.5 and cv.img.get_pixel(clampi(int(p.x) + 3, 0, cv.w - 1), clampi(int(p.y) + 2, 0, cv.h - 1)).a > 0.5:
-			cv.rect(p.x, p.y, 3, 2, Color8(250, 214, 90))
-			cv.rect(p.x + 1, p.y, 1, 1, Color8(255, 250, 200))
+	foot = Rect2(-170, -150, 340, 150)
+	var rockc := Color8(132, 120, 106)
+	var topline := func(u: float) -> float:
+		var x := u - 170.0
+		return 180.0 - absf(x) * 0.36 + noise2.get_noise_2d(u * 0.45, 9.0) * 28.0 + sin(u * 0.05) * 8.0
+	# Травяная «шапка» скалы (вид сверху), затем лицевая скальная стена.
+	for ui in 340:
+		var u := float(ui)
+		var tz: float = topline.call(u)
+		var p_front := pr(Vector3(-170 + u, -20, tz))
+		var p_back := pr(Vector3(-170 + u, -62 + absf(u - 170.0) * 0.1, tz - 8.0))
+		for yy in range(int(p_back.y), int(p_front.y) + 1):
+			var t := float(yy - p_back.y) / maxf(1.0, p_front.y - p_back.y)
+			var c: Color = LEAF[1] if hh(ui / 3, yy / 3, 80) % 5 != 0 else LEAF[0]
+			if t < 0.15:
+				c = LEAF[2]
+			if hh(ui / 2, yy / 2, 81) < 12:
+				c = [Color8(240, 220, 110), Color8(250, 250, 240), Color8(236, 120, 140)][hh(ui, yy, 82) % 3]
+			cv.put(int(p_front.x), yy, c)
+	var face := func(u: float, v: float, _l1: float, _l2: float) -> Color:
+		var tz: float = topline.call(u)
+		if v > tz:
+			return NONE
+		var c := tex_stone(u + noise2.get_noise_2d(u, v) * 14.0, v, rockc, 30.0)
+		var n := noise.get_noise_2d(u * 3.0, v * 3.0)
+		if n > 0.35:
+			c = c.darkened(0.15)
+		if absf(noise2.get_noise_2d(u * 2.0 + 500.0, v * 0.7)) < 0.018:
+			c = Color8(52, 44, 40)
+		if hh(int(u / 3), int(v / 3), 83) < 10:
+			c = Color8(250, 214, 90)
+		# Мох и трава свисают с края, низ темнее.
+		if v > tz - 6.0 - absf(noise2.get_noise_2d(u * 1.2, 3.0)) * 22.0:
+			c = LEAF[1] if v > tz - 5.0 else LEAF[2]
+		elif v < 18.0:
+			c = c.darkened((18.0 - v) * 0.02)
+		return c
+	quad(cv, Vector3(-170, -20, 0), Vector3(340, 0, 0), Vector3(0, 0, 230), Vector3(0, 1, 0), face)
+	spts.append(Vector3(-150, -60, 150))
+	spts.append(Vector3(0, -60, 190))
+	spts.append(Vector3(150, -60, 130))
+	# Вход: темнота, крепь, рельсы.
 	var dark := func(_u: float, v: float, _a: float, l2: float) -> Color:
-		return Color8(14, 10, 12).lerp(Color8(54, 42, 36), clampf(1.0 - v / l2, 0, 1) * 0.8)
-	quad(cv, Vector3(70, 150, 0), Vector3(56, 0, 0), Vector3(0, 0, 100), Vector3(0, 1, 0), dark, false)
+		return Color8(12, 9, 11).lerp(Color8(56, 44, 38), clampf(1.0 - v / l2, 0, 1) * 0.8)
+	quad(cv, Vector3(-34, -18, 0), Vector3(68, 0, 0), Vector3(0, 0, 118), Vector3(0, 1, 0), dark, false)
 	var wood := Color8(130, 86, 52)
-	for px: float in [60.0, 126.0]:
-		box(cv, Vector3(px, 146, 0), Vector3(12, 14, 106), tex_wood.bind(wood), tex_wood.bind(wood), flat(wood))
-	box(cv, Vector3(52, 144, 106), Vector3(94, 18, 14), tex_wood.bind(wood), tex_wood.bind(wood), tex_wood.bind(wood.lightened(0.1)))
+	for px: float in [-48.0, 34.0]:
+		box(cv, Vector3(px, -26, 0), Vector3(14, 12, 124), tex_wood.bind(wood), tex_wood.bind(wood), flat(wood))
+	box(cv, Vector3(-58, -28, 124), Vector3(116, 16, 18), tex_wood.bind(wood), tex_wood.bind(wood), tex_wood.bind(wood.lightened(0.1)))
 	for i in 6:
-		box(cv, Vector3(70, 156 + i * 9, 0), Vector3(56, 5, 3), flat(Color8(100, 70, 46)), flat(Color8(80, 56, 38)), flat(Color8(120, 84, 54)))
-	for px: float in [80.0, 114.0]:
-		box(cv, Vector3(px, 150, 3), Vector3(4, 56, 3), flat(Color8(150, 150, 162)), flat(Color8(110, 110, 122)), flat(Color8(200, 200, 210)))
-	for r: Vector3 in [Vector3(30, 160, 20), Vector3(166, 156, 24), Vector3(16, 130, 40), Vector3(180, 128, 36)]:
-		ball3(cv, r, 26, rock, 0.8, false, int(r.x * 3 + r.y), true)
-	var lp := pr(Vector3(140, 150, 96))
-	cv.rect(lp.x, lp.y, 12, 16, Color8(250, 214, 110))
-	cv.rect(lp.x + 3, lp.y + 3, 6, 9, Color8(255, 250, 220))
-	cv.rect(lp.x - 1, lp.y - 2, 14, 2, Color8(50, 44, 48))
-	cv.rect(lp.x - 1, lp.y + 16, 14, 2, Color8(50, 44, 48))
-	return Vector3(96, 206, 0)
+		box(cv, Vector3(-38, -16 + i * 9, 0), Vector3(76, 4, 3), flat(Color8(100, 70, 46)), flat(Color8(80, 56, 38)), flat(Color8(124, 86, 56)))
+	for px: float in [-24.0, 20.0]:
+		box(cv, Vector3(px, -20, 3), Vector3(4, 58, 4), flat(Color8(150, 150, 162)), flat(Color8(110, 110, 122)), flat(Color8(206, 206, 216)))
+	var rock := tones(Color8(146, 136, 124))
+	for r: Vector3 in [Vector3(-130, -6, 20), Vector3(112, -8, 24), Vector3(-160, -14, 30), Vector3(150, -16, 26), Vector3(-90, -4, 16)]:
+		ball3(cv, r, 22.0 + absf(r.x) * 0.05, rock, 0.75, false, int(r.x * 3 + r.y), true)
+	var lp := pr(Vector3(46, -10, 104))
+	cv.rect(lp.x, lp.y, 13, 18, Color8(250, 214, 110))
+	cv.rect(lp.x + 3, lp.y + 3, 7, 11, Color8(255, 250, 220))
+	cv.rect(lp.x - 1, lp.y - 2, 15, 2, Color8(50, 44, 48))
+	cv.rect(lp.x - 1, lp.y + 18, 15, 2, Color8(50, 44, 48))
+	# Табличка с киркой над входом.
+	var sp := pr(Vector3(-20, -26, 172))
+	cv.rect(sp.x, sp.y, 40, 22, Color8(60, 38, 28))
+	cv.rect(sp.x + 2, sp.y + 2, 36, 18, Color8(150, 104, 66))
+	cv.line(sp + Vector2(8, 16), sp + Vector2(30, 5), Color8(120, 80, 50), 2)
+	cv.line(sp + Vector2(22, 3), sp + Vector2(34, 10), Color8(180, 186, 200), 3)
+	return Vector3(0, 40, 0)
 
 
-# --------------- остальные постройки (пока простые, по общему виду) ---------------
+# --------------- остальные постройки ---------------
 
 func _simple(cv: Cv, mat: String, wall: Color, roof: Color, kind: String, ridge: String, icon: String, extra := {}) -> Vector3:
 	var shut: Color = extra.get("shut", NONE)
-	var feats: Array = [
-		{"t": "door", "u": 78.0, "w": 52.0, "h": 104.0, "col": extra.get("door", Color8(130, 80, 48))},
-		{"t": "win", "u": 30.0, "v": 56.0, "w": 30.0, "h": 40.0, "shut": shut},
-		{"t": "win", "u": 128.0, "v": 56.0, "w": 30.0, "h": 40.0, "shut": shut},
-		{"t": "sign", "u": 78.0, "v": 118.0, "icon": icon}]
-	if extra.has("banner"):
-		feats.append({"t": "banner", "u": 10.0, "v": 140.0, "col": extra["banner"], "icon": icon})
-		feats.append({"t": "banner", "u": 146.0, "v": 140.0, "col": extra["banner"], "icon": icon})
-	var sfeats: Array = [
-		{"t": "win", "u": 46.0, "v": 58.0, "w": 30.0, "h": 40.0, "shut": shut},
-		{"t": "win", "u": 106.0, "v": 58.0, "w": 30.0, "h": 40.0, "shut": shut}]
 	var floors: int = extra.get("floors", 1)
-	var h := 150.0 if floors == 1 else 230.0
+	var h := 170.0 if floors == 1 else 262.0
+	var door_u: float = extra.get("door_u", 140.0)
+	var feats: Array = [
+		{"t": "door", "u": door_u, "w": float(extra.get("door_w", 56.0)), "h": float(extra.get("door_h", 108.0)), "col": extra.get("door", Color8(130, 80, 48)), "arch": extra.get("arch", true)},
+		{"t": "sign", "u": float(extra.get("sign_u", 140.0)), "v": float(extra.get("sign_v", 128.0)), "icon": icon}]
+	for wu: float in extra.get("wins", [50.0, 230.0]):
+		feats.append({"t": "win", "u": wu, "v": 58.0, "w": 40.0, "h": 50.0, "shut": shut})
 	if floors > 1:
-		feats.append({"t": "win", "u": 30.0, "v": 150.0, "w": 30.0, "h": 40.0})
-		feats.append({"t": "win", "u": 128.0, "v": 150.0, "w": 30.0, "h": 40.0})
-		sfeats.append({"t": "win", "u": 76.0, "v": 150.0, "w": 30.0, "h": 40.0})
-	var front := {"mat": mat, "col": wall, "wood": TIMBER, "feats": feats, "floors": floors}
-	var side := {"mat": mat, "col": wall, "wood": TIMBER, "feats": sfeats, "floors": floors}
-	var s := {"x0": 18.0, "y0": 20.0, "w": 156.0, "d": 152.0, "h": h, "rise": extra.get("rise", 100.0), "ridge": ridge,
-		"roof": roof, "kind": kind, "front": front, "side": side, "door_u": 78.0,
-		"gable": {"gfeats": [{"t": "win", "u": 78.0, "v": 46.0, "w": 24.0, "h": 30.0, "arch": true, "box": false}]},
-		"bushes": [[22, 14], [140, 13]], "moss": extra.get("moss", 0.03)}
+		for wu: float in [50.0, 230.0]:
+			feats.append({"t": "win", "u": wu, "v": 176.0, "w": 40.0, "h": 50.0, "shut": shut})
+	for f: Dictionary in extra.get("feats", []):
+		feats.push_front(f)
+	var front := {"mat": mat, "col": wall, "wood": TIMBER, "feats": feats, "floors": floors, "ivy": extra.get("ivy", 0.0), "shut": shut}
+	var s := {"w": 280.0, "d": 120.0, "h": h, "rise": extra.get("rise", 110.0), "ridge": ridge,
+		"roof": roof, "kind": kind, "front": front, "door_u": door_u, "dormers": extra.get("dormers", []),
+		"gable": {"gfeats": extra.get("gfeats", [{"t": "win", "u": 140.0, "v": 50.0, "w": 30.0, "h": 38.0, "arch": true, "box": false}])},
+		"bushes": extra.get("bushes", [[20, 15], [262, 14]]), "moss": extra.get("moss", 0.04)}
 	if extra.get("chimney", true):
-		s["chimney"] = Vector2(120, 40) if ridge == "x" else Vector2(40, 60)
+		s["chimney"] = extra.get("chimney_at", Vector2(220, 30) if ridge == "x" else Vector2(50, 40))
+		s["chimney_h"] = extra.get("chimney_h", 50.0)
 	if extra.has("post"):
 		s["post"] = extra["post"]
 	return _house(cv, s)
 
 
 func _b_library(cv: Cv) -> Vector3:
-	return _simple(cv, "timber", Color8(236, 226, 200), Color8(64, 94, 172), "tile", "x", "book", {"floors": 2, "shut": Color8(60, 96, 156)})
+	return _simple(cv, "timber", Color8(236, 226, 200), Color8(64, 94, 172), "tile", "x", "book",
+		{"floors": 2, "shut": Color8(60, 96, 156), "dormers": [70.0, 210.0], "ivy": 0.4, "sign_v": 124.0})
 
 
 func _b_forge(cv: Cv) -> Vector3:
 	var post := func(c: Cv) -> void:
-		box(c, Vector3(120, 178, 0), Vector3(40, 22, 28), flat(Color8(90, 60, 40)), flat(Color8(70, 46, 32)), flat(Color8(110, 74, 50)))
-		box(c, Vector3(124, 180, 28), Vector3(32, 18, 14), flat(Color8(84, 86, 100)), flat(Color8(64, 66, 80)), flat(Color8(140, 144, 160)))
-	return _simple(cv, "stone", Color8(140, 134, 128), Color8(150, 66, 50), "tile", "y", "hammer", {"door": Color8(100, 60, 40), "post": post, "moss": 0.06})
+		box(c, Vector3(96, 10, 0), Vector3(40, 22, 30), flat(Color8(96, 64, 42)), flat(Color8(70, 46, 32)), flat(Color8(120, 80, 54)))
+		box(c, Vector3(90, 14, 30), Vector3(52, 14, 14), flat(Color8(84, 86, 100)), flat(Color8(64, 66, 80)), flat(Color8(150, 154, 170)))
+		barrel3(c, Vector3(-150, 8, 0), 16, 40)
+		var p := pr(Vector3(60, 0, 30))
+		c.ell(p.x, p.y, 40, 22, Color(1.0, 0.55, 0.2, 0.12))
+	return _simple(cv, "stone", Color8(140, 134, 128), Color8(150, 66, 50), "tile", "y", "hammer",
+		{"door": Color8(100, 60, 40), "door_u": 70.0, "wins": [], "sign_u": 196.0, "sign_v": 96.0,
+		"feats": [{"t": "fire", "u": 196.0, "w": 72.0, "h": 76.0}], "post": post, "moss": 0.07, "chimney_at": Vector2(230, 50), "chimney_h": 90.0})
 
 
 func _b_infirmary(cv: Cv) -> Vector3:
-	return _simple(cv, "timber", Color8(246, 244, 236), Color8(64, 146, 128), "tile", "x", "cross", {"door": Color8(220, 220, 214), "shut": Color8(80, 150, 110)})
+	return _simple(cv, "timber", Color8(246, 244, 236), Color8(64, 146, 128), "tile", "x", "cross",
+		{"door": Color8(220, 220, 214), "shut": Color8(80, 150, 110), "dormers": [140.0], "ivy": 0.3})
 
 
 func _b_treasury(cv: Cv) -> Vector3:
-	return _simple(cv, "stone", Color8(184, 178, 162), Color8(112, 74, 150), "slate", "x", "coin", {"banner": Color8(110, 70, 150), "door": Color8(96, 60, 44)})
+	var post := func(c: Cv) -> void:
+		var col := Color8(206, 200, 186)
+		var colt := func(u: float, v: float, l1: float, _b: float) -> Color:
+			var cc := col
+			if u < 4.0:
+				cc = col.lightened(0.12)
+			elif u > l1 - 5.0:
+				cc = col.darkened(0.2)
+			if v < 12.0 or v > 160.0:
+				cc = cc.darkened(0.08)
+			if fmod(u, 8.0) < 1.5 and v > 12.0 and v < 160.0:
+				cc = cc.darkened(0.12)
+			return cc
+		for px: float in [-150.0, 126.0]:
+			box(c, Vector3(px, -2, 0), Vector3(24, 14, 172), colt, colt, flat(col.lightened(0.1)))
+	return _simple(cv, "stone", Color8(184, 178, 162), Color8(112, 74, 150), "slate", "x", "coin",
+		{"door": Color8(96, 60, 44), "feats": [{"t": "banner", "u": 82.0, "v": 160.0, "col": Color8(110, 70, 150), "icon": "coin"},
+		{"t": "banner", "u": 198.0, "v": 160.0, "col": Color8(110, 70, 150), "icon": "coin"}], "post": post, "chimney": false, "bushes": []})
 
 
 func _b_storage(cv: Cv) -> Vector3:
-	return _simple(cv, "planks", Color8(156, 108, 68), Color8(176, 70, 56), "tile", "y", "box", {"moss": 0.05})
+	var post := func(c: Cv) -> void:
+		crate3(c, Vector3(-140, 8, 0), 34)
+		crate3(c, Vector3(-136, 8, 24), 28)
+		barrel3(c, Vector3(130, 8, 0), 16, 42)
+	return _simple(cv, "planks", Color8(156, 108, 68), Color8(176, 70, 56), "tile", "y", "box",
+		{"door_w": 112.0, "door_h": 124.0, "arch": false, "wins": [], "sign_v": 138.0, "moss": 0.06, "post": post,
+		"gfeats": [{"t": "door", "u": 140.0, "w": 40.0, "h": 46.0, "arch": false, "col": Color8(110, 70, 44)}]})
 
 
 func _b_training(cv: Cv) -> Vector3:
-	return _simple(cv, "timber", Color8(226, 210, 176), Color8(160, 84, 52), "tile", "y", "sword", {"shut": Color8(150, 60, 56)})
+	var post := func(c: Cv) -> void:
+		var wood := Color8(130, 86, 52)
+		box(c, Vector3(-150, 6, 0), Vector3(66, 8, 8), flat(wood), flat(wood), flat(wood.lightened(0.1)))
+		box(c, Vector3(-150, 6, 54), Vector3(66, 8, 8), flat(wood), flat(wood), flat(wood.lightened(0.1)))
+		for i in 5:
+			box(c, Vector3(-144 + i * 13.0, 4, 8), Vector3(4, 4, 70), flat(Color8(200, 206, 220)), flat(Color8(150, 156, 170)), flat(Color8(230, 236, 246)))
+		box(c, Vector3(112, 6, 0), Vector3(8, 8, 90), flat(wood), flat(wood), flat(wood))
+		box(c, Vector3(94, 8, 62), Vector3(44, 6, 6), flat(wood), flat(wood), flat(wood))
+		ball3(c, Vector3(116, 10, 58), 18, tones(Color8(214, 178, 96)), 1.3)
+		ball3(c, Vector3(116, 10, 92), 12, tones(Color8(226, 206, 160)), 1.0)
+	return _simple(cv, "timber", Color8(226, 210, 176), Color8(160, 84, 52), "tile", "x", "sword",
+		{"shut": Color8(150, 60, 56), "post": post, "bushes": [], "dormers": [140.0]})
 
 
 func _b_exchange(cv: Cv) -> Vector3:
-	return _simple(cv, "planks", Color8(146, 100, 66), Color8(70, 140, 90), "tile", "x", "scales", {"chimney": false})
+	return _simple(cv, "planks", Color8(146, 100, 66), Color8(70, 140, 90), "tile", "y", "scales", {"chimney": false, "ivy": 0.2})
 
 
 func _b_mentor(cv: Cv) -> Vector3:
-	return _simple(cv, "timber", Color8(230, 212, 176), Color8(208, 170, 88), "thatch", "y", "star", {"rise": 110.0, "shut": Color8(60, 100, 170)})
+	var post := func(c: Cv) -> void:
+		box(c, Vector3(190, 0, 0), Vector3(6, 6, 130), flat(Color8(60, 50, 50)), flat(Color8(50, 40, 40)), flat(Color8(80, 70, 70)))
+		var p := pr(Vector3(196, 0, 126))
+		c.rect(p.x - 2, p.y, 14, 18, Color8(250, 214, 110))
+		c.rect(p.x + 2, p.y + 4, 6, 10, Color8(255, 250, 220))
+	return _simple(cv, "timber", Color8(230, 212, 176), Color8(208, 170, 88), "thatch", "y", "star",
+		{"rise": 124.0, "shut": Color8(60, 100, 170), "ivy": 0.6, "post": post})
 
 
 # ===================================================================================
@@ -1125,6 +1287,10 @@ func _prop(name: String) -> void:
 	var cw := 420
 	var ch := 480
 	var anchor := Vector2(210, 400)
+	if name == "lot":
+		cw = 460
+		ch = 280
+		anchor = Vector2(230, 250)
 	O = anchor
 	spts = []
 	var cv := Cv.new(cw, ch)
@@ -1310,6 +1476,54 @@ func _tree(cv: Cv, kind: int, sd: int) -> void:
 	spts.append(Vector3(-r * 0.5, r * 0.5, th + r * 0.4))
 
 
+## Пустой участок под стройку: утоптанная земля, разметка клетками, колышки и верёвка.
+func _p_lot(cv: Cv) -> void:
+	var half := LAY.LOT_W * U * 0.5
+	var dep := LAY.LOT_DEPTH * U
+	for yy in range(int(-dep) - 6, 6):
+		for xx in range(int(-half) - 6, int(half) + 6):
+			var e := minf(minf(xx + half, half - xx), minf(yy + dep, -yy))
+			var jag := noise2.get_noise_2d(xx * 3.0, yy * 3.0) * 6.0
+			if e + jag < 0.0:
+				continue
+			var c := _lot(xx + half, yy + dep, noise.get_noise_2d(xx, yy), xx, yy)
+			if e + jag < 3.0 and hh(xx / 2, yy / 2, 84) < 500:
+				c = Color8(88, 144, 62)
+			cv.put(int(O.x + xx), int(O.y + yy), c)
+	for cc: Vector2 in [Vector2(-half, -dep), Vector2(half, -dep), Vector2(-half, 0), Vector2(half, 0)]:
+		var q := O + cc
+		cv.ell(q.x + 6, q.y, 8, 3, Color(0.05, 0.04, 0.1, 0.3))
+		cv.rect(q.x - 3, q.y - 30, 7, 30, Color8(150, 100, 60))
+		cv.rect(q.x - 3, q.y - 30, 2, 30, Color8(190, 140, 90))
+		cv.rect(q.x + 3, q.y - 30, 1, 30, Color8(100, 66, 40))
+		cv.rect(q.x - 4, q.y - 33, 9, 5, Color8(200, 60, 50))
+	# Верёвка между колышками.
+	var rope := Color8(236, 214, 160)
+	for pair: Array in [[Vector2(-half, -dep), Vector2(half, -dep)], [Vector2(-half, 0), Vector2(half, 0)], [Vector2(-half, -dep), Vector2(-half, 0)], [Vector2(half, -dep), Vector2(half, 0)]]:
+		var a2: Vector2 = O + (pair[0] as Vector2) + Vector2(0, -22)
+		var b2: Vector2 = O + (pair[1] as Vector2) + Vector2(0, -22)
+		var n := int(a2.distance_to(b2))
+		for i in n:
+			var t := float(i) / n
+			var sag := sin(t * PI) * 6.0
+			cv.put(int(lerpf(a2.x, b2.x, t)), int(lerpf(a2.y, b2.y, t) + sag), rope)
+
+
+## Живая изгородь (нижний край леса — высокие деревья закрыли бы улицу).
+func _p_hedge(cv: Cv) -> void:
+	var pal := [Color8(120, 170, 72), Color8(76, 130, 56), Color8(48, 96, 48), Color8(28, 62, 38)]
+	for i in 5:
+		ball3(cv, Vector3(-48 + i * 24, 4 - (i % 2) * 6, 26 + (i % 2) * 8), 26, pal, 0.85, true, 90 + i)
+	spts.append(Vector3(0, 0, 50))
+
+
+func _p_hedge2(cv: Cv) -> void:
+	var pal := [Color8(130, 180, 80), Color8(90, 146, 62), Color8(56, 108, 50), Color8(30, 66, 40)]
+	for i in 4:
+		ball3(cv, Vector3(-40 + i * 26, 2 - (i % 2) * 8, 30 + (i % 2) * 10), 28, pal, 0.85, true, 120 + i)
+	spts.append(Vector3(0, 0, 54))
+
+
 func _p_tree(cv: Cv) -> void:
 	_tree(cv, 0, 4242)
 
@@ -1330,32 +1544,37 @@ func _p_ftree2(cv: Cv) -> void:
 	_tree(cv, 1, 2718)
 
 
+
+
 # ===================================================================================
 #                                    ЗЕМЛЯ
 # ===================================================================================
 
 func _ground() -> void:
+	T = Vector3.ZERO
 	var gw := LAY.WIDTH * ART
 	var gh := LAY.HEIGHT * ART
 	var img := Image.create(gw, gh, false, Image.FORMAT_RGBA8)
 	# Вид земли с шагом 1/8 клетки (быстрее, чем считать на каждый пиксель).
 	var R := 8
-	var kn := (LAY.N + 8) * R
+	var kw := LAY.W * R
+	var kh := LAY.H * R
 	var kinds := PackedByteArray()
-	kinds.resize(kn * kn)
-	for gj in kn:
-		for gi in kn:
-			kinds[gj * kn + gi] = LAY.kind_at((gi + 0.5) / R - 4.0, (gj + 0.5) / R - 4.0)
+	kinds.resize(kw * kh)
+	for gj in kh:
+		for gi in kw:
+			kinds[gj * kw + gi] = LAY.kind_at((gi + 0.5) / R, (gj + 0.5) / R)
 	var grass := [Color8(70, 122, 56), Color8(88, 144, 62), Color8(106, 160, 68), Color8(132, 180, 80)]
 	var flowers := [Color8(240, 220, 110), Color8(236, 120, 140), Color8(250, 250, 240), Color8(150, 150, 236), Color8(240, 150, 80)]
+	var cpx := float(LAY.TILE * ART)
 	for y in gh:
 		for x in gw:
-			var cell := LAY.to_cell(Vector2(x / float(ART), y / float(ART)))
+			var cell := Vector2(x / cpx, y / cpx)
 			var n := noise.get_noise_2d(x, y)
 			var wn := noise2.get_noise_2d(x, y) * 0.12
-			var ki := clampi(int((cell.x + wn + 4.0) * R), 0, kn - 1)
-			var kj := clampi(int((cell.y - wn + 4.0) * R), 0, kn - 1)
-			var k := kinds[kj * kn + ki]
+			var ki := clampi(int((cell.x + wn) * R), 0, kw - 1)
+			var kj := clampi(int((cell.y - wn) * R), 0, kh - 1)
+			var k := kinds[kj * kw + ki]
 			var gx := cell.x * U
 			var gy := cell.y * U
 			var c: Color
@@ -1367,11 +1586,11 @@ func _ground() -> void:
 				4:
 					c = _lot(gx, gy, n, x, y)
 				5:
-					c = Color8(168, 138, 100) if n > -0.1 else Color8(150, 122, 88)
+					c = Color8(160, 130, 94) if n > -0.1 else Color8(146, 118, 86)
 					if hh(x / 3, y / 3, 6) < 30:
 						c = Color8(190, 176, 150)
 					elif hh(x / 2, y / 2, 7) < 40:
-						c = Color8(126, 100, 72)
+						c = Color8(122, 96, 70)
 				3:
 					c = _water(cell, x, y)
 				2:
@@ -1392,7 +1611,7 @@ func _ground() -> void:
 	cv.img = img
 	cv.w = gw
 	cv.h = gh
-	_lot_stakes(cv)
+
 	_forest(cv)
 	_save(cv.img, "ground")
 
@@ -1422,57 +1641,63 @@ func _paver(gx: float, gy: float, n: float) -> Color:
 	return base
 
 
+## Участок под стройку: утоптанная земля, разметка клетками, верёвка по краю.
 func _lot(gx: float, gy: float, n: float, x: int, y: int) -> Color:
 	var c := Color8(150, 118, 84) if n > 0.0 else Color8(138, 108, 78)
 	if hh(x / 3, y / 3, 71) < 40:
 		c = Color8(176, 156, 126)
 	elif hh(x / 2, y / 2, 72) < 50:
 		c = Color8(116, 90, 66)
-	# Сетка разметки — клетки участка.
 	var lu := fposmod(gx, U)
 	var lv := fposmod(gy, U)
 	if lu < 2.0 or lv < 2.0:
-		c = c.lerp(Color8(236, 220, 180), 0.45)
+		c = c.lerp(Color8(236, 220, 180), 0.4)
 	var i := LAY.in_lot(gx / U, gy / U)
 	if i >= 0:
-		var a: Vector2 = LAY.LOTS[i]["at"]
-		var du := minf(gx - a.x * U, (a.x + LAY.LOT_SIZE) * U - gx)
-		var dv := minf(gy - a.y * U, (a.y + LAY.LOT_SIZE) * U - gy)
-		if minf(du, dv) < 5.0 and minf(du, dv) > 1.5:
-			c = Color8(230, 208, 150)
+		var a: Vector2 = LAY.LOTS[i]
+		var x0 := (a.x - LAY.LOT_W / 2.0) * U
+		var x1 := (a.x + LAY.LOT_W / 2.0) * U
+		var y0 := (a.y - LAY.LOT_DEPTH) * U
+		var y1 := a.y * U
+		var dd := minf(minf(gx - x0, x1 - gx), minf(gy - y0, y1 - gy))
+		if dd < 6.0 and dd > 2.0:
+			c = Color8(232, 210, 152)
 	return c
 
 
 ## Колышки по углам участков.
 func _lot_stakes(cv: Cv) -> void:
-	for l: Dictionary in LAY.LOTS:
-		var a: Vector2 = l["at"]
-		for cc: Vector2 in [a, a + Vector2(LAY.LOT_SIZE, 0), a + Vector2(LAY.LOT_SIZE, LAY.LOT_SIZE), a + Vector2(0, LAY.LOT_SIZE)]:
-			var p := LAY.to_screen(cc) * ART
-			cv.rect(p.x - 3, p.y - 26, 6, 26, Color8(150, 100, 60))
-			cv.rect(p.x - 3, p.y - 26, 2, 26, Color8(190, 140, 90))
-			cv.rect(p.x - 4, p.y - 28, 8, 4, Color8(200, 60, 50))
+	for a: Vector2 in LAY.LOTS:
+		for cc: Vector2 in [Vector2(a.x - LAY.LOT_W / 2.0, a.y - LAY.LOT_DEPTH), Vector2(a.x + LAY.LOT_W / 2.0, a.y - LAY.LOT_DEPTH),
+				Vector2(a.x - LAY.LOT_W / 2.0, a.y), Vector2(a.x + LAY.LOT_W / 2.0, a.y)]:
+			var p := cc * LAY.TILE * ART
+			cv.rect(p.x - 3, p.y - 30, 7, 30, Color8(150, 100, 60))
+			cv.rect(p.x - 3, p.y - 30, 2, 30, Color8(190, 140, 90))
+			cv.rect(p.x + 3, p.y - 30, 1, 30, Color8(100, 66, 40))
+			cv.rect(p.x - 4, p.y - 33, 9, 5, Color8(200, 60, 50))
+			cv.ell(p.x + 6, p.y, 8, 3, Color(0.05, 0.04, 0.1, 0.3))
 
 
 func _water(cell: Vector2, x: int, y: int) -> Color:
-	var d := cell.distance_to(LAY.POND) / LAY.POND_R
+	var d := Vector2((cell.x - LAY.POND.x) / LAY.POND_R.x, (cell.y - LAY.POND.y) / LAY.POND_R.y).length()
 	if d > 0.86:
 		var s := hh(x / 6, y / 4, 14)
 		return Color8(156, 150, 138) if s < 500 else Color8(122, 118, 108)
 	var c := Color8(52, 114, 172) if d < 0.55 else Color8(70, 140, 196)
 	if d > 0.76:
 		c = Color8(100, 172, 212)
-	if sin(x * 0.09 + sin(y * 0.15) * 2.0 + y * 0.3) > 0.94:
+	if sin(x * 0.07 + sin(y * 0.12) * 2.0 + y * 0.26) > 0.94:
 		c = Color8(156, 210, 238)
 	if hh(x, y, 15) < 3:
 		c = Color8(232, 246, 255)
-	for lp: Vector2 in [Vector2(4.6, 20.8), Vector2(5.9, 21.9), Vector2(5.4, 20.3)]:
-		if cell.distance_to(lp) < 0.22:
+	for lp: Vector2 in [Vector2(37.2, 16.6), Vector2(39.4, 17.8), Vector2(38.1, 18.3)]:
+		if Vector2(cell.x - lp.x, (cell.y - lp.y) * 1.4).length() < 0.28:
 			c = Color8(84, 154, 74) if hh(x, y, 16) < 920 else Color8(240, 160, 190)
 	return c
 
 
-## Лес: деревья по краям. Дальние — в картинку земли, ближние (у переднего края) — спрайтами.
+## Лес по краям. Деревья, чья крона заходит на проходимые клетки, — спрайтами (герой может
+## зайти «за» них), остальные — в картинку земли.
 func _forest(g: Cv) -> void:
 	var trees := {}
 	for nm: String in ["ftree", "ftree2", "tree3"]:
@@ -1480,26 +1705,30 @@ func _forest(g: Cv) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	var spots: Array = []
-	var stp := 26.0
-	for gy in range(-2, int(LAY.HEIGHT / (stp * 0.5)) + 4):
-		for gx in range(-2, int(LAY.WIDTH / stp) + 3):
-			var p := Vector2(gx * stp + (stp * 0.5 if gy % 2 == 1 else 0.0) + rng.randf_range(-7, 7), gy * stp * 0.5 + rng.randf_range(-4, 4))
-			var cell := LAY.to_cell(p)
+	var stp := 22.0
+	for gy in range(-1, int(LAY.HEIGHT / (stp * 0.7)) + 6):
+		for gx in range(-1, int(LAY.WIDTH / stp) + 2):
+			var p := Vector2(gx * stp + (stp * 0.5 if gy % 2 == 1 else 0.0) + rng.randf_range(-6, 6), gy * stp * 0.7 + rng.randf_range(-4, 4))
+			var cell := p / LAY.TILE
 			if LAY.kind_at(cell.x, cell.y) != LAY.FOREST:
 				continue
-			spots.append([p, cell])
-	spots.sort_custom(func(a: Array, b: Array) -> bool: return (a[0] as Vector2).y < (b[0] as Vector2).y)
+			spots.append(p)
+	spots.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.y < b.y)
 	var names: Array = ["ftree", "ftree2", "ftree", "tree3"]
-	for s: Array in spots:
-		var p: Vector2 = s[0]
-		var cell: Vector2 = s[1]
+	for p: Vector2 in spots:
 		var nm: String = names[rng.randi() % 4]
-		var front := (cell.x >= LAY.INNER1 - 0.2 or cell.y >= LAY.INNER1 - 0.2) and cell.x < LAY.INNER1 + 2.6 and cell.y < LAY.INNER1 + 2.6
-		# Перед шахтой (она у самого леса) деревья — в картинку земли, иначе закроют вход.
-		if cell.y < 8.0 and cell.x < LAY.INNER1 + 3.0:
-			front = false
-		if front:
-			meta["trees"].append([p.x, p.y, nm])
+		var cell := p / LAY.TILE
+		var near := false
+		for cy in range(int(floor(cell.y - 4.5)), int(floor(cell.y)) + 1):
+			for cx in range(int(floor(cell.x - 1.4)), int(floor(cell.x + 1.4)) + 1):
+				if cx >= 0 and cy >= 0 and cx < LAY.W and cy < LAY.H and not LAY.solid(cx, cy):
+					near = true
+		if near:
+			# Внизу карты высокие деревья закрыли бы улицу — там изгородь.
+			if cell.y > LAY.H - 3.0:
+				meta["trees"].append([p.x, p.y, "hedge" if rng.randf() < 0.5 else "hedge2"])
+			else:
+				meta["trees"].append([p.x, p.y, nm])
 			continue
 		var img: Image = trees[nm]
 		var an: Array = meta["sprites"]["p_" + nm]["anchor"]

@@ -285,12 +285,12 @@ func _camptest() -> void:
 	cam.limit_top = -10000
 	cam.limit_right = 10000
 	cam.limit_bottom = 10000
-	cam.zoom = Vector2(0.385, 0.385)
-	cam.global_position = Vector2(416, 208)
+	cam.zoom = Vector2(0.455, 0.455)
+	cam.global_position = Vector2(352, 272)
 	for i in 6:
 		await get_tree().process_frame
 	_shot("camp_0_overview")
-	for part: Array in [["camp_0a", Vector2(450, 150)], ["camp_0b", Vector2(620, 150)], ["camp_0c", Vector2(400, 260)], ["camp_0d", Vector2(560, 300)]]:
+	for part: Array in [["camp_0a", Vector2(250, 280)], ["camp_0b", Vector2(370, 120)], ["camp_0c", Vector2(560, 440)], ["camp_0d", Vector2(560, 150)]]:
 		cam.zoom = Vector2(1, 1)
 		cam.global_position = part[1]
 		for i in 4:
@@ -305,7 +305,7 @@ func _camptest() -> void:
 	_shot("camp_0e_plot")
 	chud.close()
 	print("build forge: %s, library: %s, plots=%s" % [Meta.place_building(1, "forge"), Meta.place_building(2, "library"), Meta.plots])
-	cam.global_position = Vector2(330, 150)
+	cam.global_position = Vector2(200, 110)
 	for i in 6:
 		await get_tree().process_frame
 	_shot("camp_0f_built")

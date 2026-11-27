@@ -1,141 +1,119 @@
 extends RefCounted
-## Раскладка лагеря-деревни в изометрии (общая для игры и генератора графики tools/gen_camp.gd).
+## Раскладка лагеря-деревни (прямой 2D-вид сверху-спереди; общая для игры и генератора
+## графики tools/gen_camp.gd). Клетка 16 px. Картинки нарисованы с детализацией ART = 4
+## пикселя на пиксель мира.
 ##
-## Сетка N x N клеток (i, j). Клетка на экране — ромб 32x16 пикселей мира:
-##   экран = (ORIGIN_X + (i - j) * 16, (i + j) * 8).
-## Ось i идёт вправо-вниз, ось j — влево-вниз. Видимые стены построек — «+j» (левая, освещённая)
-## и «+i» (правая, в тени). Картинки нарисованы с детализацией ART = 4 пикселя на пиксель мира.
-##
-## Постройки (кроме портала, торговца и шахты) стоят на участках LOTS: игрок сам выбирает,
-## что строить и где (Meta.plots: номер участка → постройка).
+## Три «улицы»: ряд A (основание y = 9), ряд B (y = 20), ряд C (y = 30). Двери смотрят вниз.
+## Постоянные постройки — портал, торговец, шахта; остальное игрок строит сам на участках LOTS
+## (Meta.plots: номер участка → постройка).
 
-const N := 26
+const W := 44
+const H := 34
+const TILE := 16
 const ART := 4
-const HALF_W := 16.0     # половина ширины ромба клетки, пиксели мира
-const HALF_H := 8.0
-const ORIGIN_X := N * 16.0
-const WIDTH := N * 32    # размер всей карты в пикселях мира
-const HEIGHT := N * 16
+const WIDTH := W * TILE
+const HEIGHT := H * TILE
 
-# Участок: угол (i, j), размер 4x4; постройка 3x3 в середине. face — где дверь: "y" (стена +j)
-# или "x" (стена +i).
-const LOTS := [
-	{"at": Vector2(7, 7), "face": "y"},
-	{"at": Vector2(3, 7), "face": "y"},
-	{"at": Vector2(7, 3), "face": "x"},
-	{"at": Vector2(15, 3), "face": "y"},
-	{"at": Vector2(19, 7), "face": "y"},
-	{"at": Vector2(7, 15), "face": "x"},
-	{"at": Vector2(7, 19), "face": "x"},
-	{"at": Vector2(3, 15), "face": "y"},
-	{"at": Vector2(15, 15), "face": "y"},
-	{"at": Vector2(19, 15), "face": "y"},
-]
-const LOT_SIZE := 4
-
-# Постоянные постройки: угол клетки, размер (клетки), сторона двери.
+# Постоянные постройки: середина основания (линия фасада) в клетках.
 const FIXED := {
-	"portal": {"at": Vector2(11.5, 2.6), "size": Vector2(3, 1.4), "face": "y"},
-	"merchant": {"at": Vector2(15.5, 8), "size": Vector2(3, 3), "face": "y"},
-	"mine": {"at": Vector2(19.5, 2.4), "size": Vector2(3, 3), "face": "y"},
+	"portal": Vector2(22, 9),
+	"merchant": Vector2(13.5, 20),
+	"mine": Vector2(38, 30),
 }
+
+# Участки: середина основания (клетки). Участок — 6 клеток в ширину, LOT_DEPTH вглубь.
+const LOTS := [
+	Vector2(7.5, 9), Vector2(14.5, 9), Vector2(30, 9), Vector2(37.5, 9),
+	Vector2(6.5, 20), Vector2(30.5, 20),
+	Vector2(7, 30), Vector2(14.5, 30), Vector2(30, 30),
+]
+const LOT_W := 6.0
+const LOT_DEPTH := 3.0
 
 # Что можно построить на участке.
 const BUILDABLE := ["training", "library", "forge", "infirmary", "treasury", "storage", "workshop", "exchange", "mentor"]
 
-# Мелочи: [картинка, клетка (i, j) — точка на земле, твёрдая?]
+# Мелочи: [картинка, клетка (середина основания), твёрдая?]
 const PROPS := [
-	["fountain", Vector2(13, 13), true],
-	["lamp", Vector2(10.4, 11.6), true], ["lamp", Vector2(15.6, 14.4), true],
-	["lamp", Vector2(11.7, 5.4), true], ["lamp", Vector2(14.3, 5.4), true],
-	["lamp", Vector2(3.2, 11.7), true], ["lamp", Vector2(22.8, 14.3), true],
-	["lamp", Vector2(11.7, 22.8), true],
-	["bench", Vector2(15.6, 12.4), true], ["bench", Vector2(10.4, 13.6), true],
-	["barrels", Vector2(18.9, 11.6), true], ["crates", Vector2(15.2, 11.6), true],
-	["cart", Vector2(22.6, 6.4), true],
-	["tree", Vector2(11.2, 18.6), true], ["tree2", Vector2(15.0, 21.4), true],
-	["tree", Vector2(21.6, 21.0), true], ["tree2", Vector2(18.2, 22.6), true],
-	["tree3", Vector2(2.6, 14.6), true], ["tree3", Vector2(22.8, 11.2), true],
-	["bush", Vector2(11.4, 7.4), false], ["bush", Vector2(14.6, 18.0), false],
-	["bush", Vector2(23.4, 17.0), false], ["bush", Vector2(6.6, 14.6), false],
-	["flowers", Vector2(16.4, 14.4), false], ["flowers", Vector2(9.8, 11.5), false],
-	["flowers", Vector2(14.6, 20.6), false], ["flowers", Vector2(20.4, 20.6), false],
-	["sign", Vector2(11.4, 6.6), true],
+	["fountain", Vector2(22, 15.6), true],
+	["lamp", Vector2(18.6, 9.6), true], ["lamp", Vector2(25.6, 9.6), true],
+	["lamp", Vector2(19.8, 22.6), true], ["lamp", Vector2(24.2, 22.6), true],
+	["lamp", Vector2(19.8, 29.6), true], ["lamp", Vector2(24.2, 29.6), true],
+	["lamp", Vector2(3.6, 13.2), true], ["lamp", Vector2(40.4, 13.2), true],
+	["bench", Vector2(18.4, 17.2), true], ["bench", Vector2(25.6, 17.2), true],
+	["barrels", Vector2(25.8, 8.6), true],
+	["crates", Vector2(18.6, 29.6), true], ["barrels", Vector2(10.6, 29.4), true],
+	["cart", Vector2(34.2, 30.8), true],
+	["crates", Vector2(16.6, 19.4), true], ["barrels", Vector2(10.2, 19.6), true],
+	["sign", Vector2(24.6, 12.6), true],
+	["tree", Vector2(26.6, 26.2), true], ["tree2", Vector2(17.5, 25.0), true],
+	["tree3", Vector2(27.8, 29.0), true], ["tree", Vector2(3.4, 25.6), true],
+	["tree2", Vector2(40.6, 25.0), true], ["tree3", Vector2(3.0, 17.8), true],
+	["tree", Vector2(34.2, 14.6), true], ["tree2", Vector2(9.6, 14.8), true],
+	["bush", Vector2(25.4, 24.0), true], ["bush", Vector2(18.6, 22.9), true],
+	["bush", Vector2(21.0, 27.6), false], ["bush", Vector2(5.0, 14.6), false],
+	["bush", Vector2(39.6, 21.6), false], ["bush", Vector2(12.8, 26.0), false],
+	["flowers", Vector2(23.2, 26.4), false], ["flowers", Vector2(19.6, 27.0), false],
+	["flowers", Vector2(27.6, 23.2), false], ["flowers", Vector2(15.8, 15.6), false],
+	["flowers", Vector2(29.2, 16.4), false], ["flowers", Vector2(8.6, 26.2), false],
 ]
 
-const START := Vector2(13, 15.6)
+const START := Vector2(22, 17.6)
 
 const GRASS := 0
 const STONE := 1      # мостовая
 const FOREST := 2     # непроходимо
 const WATER := 3      # непроходимо
 const DIRT := 4       # участок под стройку
-const PATH := 5       # тропинка
+const PATH := 5       # утоптанная земля
 
-const POND := Vector2(5.2, 21.2)
-const POND_R := 1.9
-const PLAZA := Vector2(13, 13)
-const PLAZA_R := 2.8
-const INNER0 := 2
-const INNER1 := N - 2
-
-
-## Клетка (дробная) → точка на экране (мир).
-static func to_screen(c: Vector2) -> Vector2:
-	return Vector2(ORIGIN_X + (c.x - c.y) * HALF_W, (c.x + c.y) * HALF_H)
-
-
-## Точка на экране → клетка (дробная).
-static func to_cell(p: Vector2) -> Vector2:
-	var u := (p.x - ORIGIN_X) / HALF_W
-	var v := p.y / HALF_H
-	return Vector2((v + u) * 0.5, (v - u) * 0.5)
+const POND := Vector2(38.2, 17.2)
+const POND_R := Vector2(2.9, 2.0)
+const PLAZA := Vector2(22, 15)
+const PLAZA_R := Vector2(6.8, 4.2)
 
 
 static func _h(x: int, y: int, i: int) -> float:
 	return float(hash(Vector3i(x, y, i)) & 1023) / 1023.0
 
 
-static func in_lot(fi: float, fj: float) -> int:
+## Номер участка в точке (клетки) или -1.
+static func in_lot(fx: float, fy: float) -> int:
 	for k in LOTS.size():
-		var a: Vector2 = LOTS[k]["at"]
-		if fi >= a.x and fi < a.x + LOT_SIZE and fj >= a.y and fj < a.y + LOT_SIZE:
+		var a: Vector2 = LOTS[k]
+		if fx >= a.x - LOT_W / 2.0 and fx < a.x + LOT_W / 2.0 and fy >= a.y - LOT_DEPTH and fy < a.y:
 			return k
 	return -1
 
 
-## Вид земли в точке (в клетках, можно дробные).
-static func kind_at(fi: float, fj: float) -> int:
-	if fi < INNER0 or fj < INNER0 or fi >= INNER1 or fj >= INNER1:
+## Вид земли в точке (в клетках, можно дробные — генератор рисует неровные края).
+static func kind_at(fx: float, fy: float) -> int:
+	var x := int(floor(fx))
+	var y := int(floor(fy))
+	var edge := 0.0
+	if x <= 2 or x >= W - 3 or y <= 3 or y >= H - 3:
+		edge = _h(x, y, 1)
+	if fx < 2.0 or fx >= W - 2.0 or fy < 2.6 or fy >= H - 2.0:
 		return FOREST
-	if Vector2(fi, fj).distance_to(POND) < POND_R:
+	if (fx < 2.6 or fx >= W - 2.6) and edge < 0.45:
+		return FOREST
+	var dp := Vector2((fx - POND.x) / POND_R.x, (fy - POND.y) / POND_R.y)
+	if dp.length() < 1.0:
 		return WATER
-	if in_lot(fi, fj) >= 0:
-		return DIRT
-	if Vector2(fi, fj).distance_to(PLAZA) < PLAZA_R:
+	var dpl := Vector2((fx - PLAZA.x) / PLAZA_R.x, (fy - PLAZA.y) / PLAZA_R.y)
+	if dpl.length() < 1.0:
 		return STONE
-	if (fj >= 12.0 and fj < 14.0 and fi >= INNER0) or (fi >= 12.0 and fi < 14.0 and fj >= 4.0):
+	if fx >= 3.0 and fx < W - 3.0:
+		if (fy >= 9.0 and fy < 11.8) or (fy >= 20.0 and fy < 22.2) or (fy >= 30.0 and fy < 31.8):
+			return STONE
+	if fx >= 20.2 and fx < 23.8 and fy >= 9.0 and fy < 32.0:
 		return STONE
-	# Тропинки к шахте и к участкам за торговцем.
-	if fj >= 6.0 and fj < 7.0 and fi >= 14.0 and fi < 23.0:
-		return PATH
-	if fi >= 18.6 and fi < 19.6 and fj >= 7.0 and fj < 12.0:
-		return PATH
-	if fj >= 19.0 and fj < 20.0 and fi >= 14.0 and fi < 23.0:
-		return PATH
-	if fi >= 2.0 and fi < 7.0 and fj >= 19.0 and fj < 19.8:
+	if fx >= 34.0 and fx < 42.0 and fy >= 27.0 and fy < 30.0:
 		return PATH
 	return GRASS
 
 
 ## Клетка непроходима (лес, вода).
-static func solid(i: int, j: int) -> bool:
-	var k := kind_at(i + 0.5, j + 0.5)
+static func solid(x: int, y: int) -> bool:
+	var k := kind_at(x + 0.5, y + 0.5)
 	return k == FOREST or k == WATER
-
-
-## Угол участка/постройки и размер → ромб основания в пикселях мира (относительно середины).
-static func footprint(at: Vector2, size: Vector2) -> PackedVector2Array:
-	var c := to_screen(at + size / 2.0)
-	return PackedVector2Array([to_screen(at) - c, to_screen(at + Vector2(size.x, 0)) - c,
-		to_screen(at + size) - c, to_screen(at + Vector2(0, size.y)) - c])

@@ -1,9 +1,9 @@
 extends Node2D
-## Сетка поля лагеря (клетки-ромбы): G — показать/скрыть.
+## Сетка клеток лагеря: G — показать/скрыть (по умолчанию скрыта).
 
 const LAY := preload("res://scripts/camp_layout.gd")
 
-static var shown := true
+static var shown := false
 
 
 func _ready() -> void:
@@ -17,7 +17,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	var c := Color(1, 1, 0.9, 0.13)
-	for k in range(LAY.INNER0, LAY.INNER1 + 1):
-		draw_line(LAY.to_screen(Vector2(k, LAY.INNER0)), LAY.to_screen(Vector2(k, LAY.INNER1)), c, 0.25)
-		draw_line(LAY.to_screen(Vector2(LAY.INNER0, k)), LAY.to_screen(Vector2(LAY.INNER1, k)), c, 0.25)
+	var c := Color(1, 1, 0.9, 0.14)
+	for x in range(2, LAY.W - 1):
+		draw_line(Vector2(x * LAY.TILE, 2 * LAY.TILE), Vector2(x * LAY.TILE, (LAY.H - 2) * LAY.TILE), c, 0.25)
+	for y in range(2, LAY.H - 1):
+		draw_line(Vector2(2 * LAY.TILE, y * LAY.TILE), Vector2((LAY.W - 2) * LAY.TILE, y * LAY.TILE), c, 0.25)
