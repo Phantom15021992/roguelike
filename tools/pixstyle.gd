@@ -22,6 +22,7 @@ var OY := 0          # запас холста сверху
 var W := 64
 var H := 64
 var img: Image
+var RP: Array = ROOF   # палитра черепицы для _shingles/_slope (меняется у разных построек)
 var nz := FastNoiseLite.new()
 
 
@@ -174,31 +175,31 @@ func _shingles(poly: PackedVector2Array, row0: int, moss := 0.06, dark := 0.0) -
 			var off := (row % 2) * 5 + (hh(row, 0, 15) % 3)
 			var sx := posmod(x + off, 11)
 			var id := (x + off) / 11
-			var c: Color = ROOF[1]
+			var c: Color = RP[1]
 			var v := hh(id, row, 6) % 6
 			if v == 0:
-				c = ROOF[0].darkened(0.06)
+				c = RP[0].darkened(0.06)
 			elif v == 5:
-				c = ROOF[2].lightened(0.05)
+				c = RP[2].lightened(0.05)
 			if ry == 0:
-				c = ROOF[0]
+				c = RP[0]
 			elif ry == 1 and sx > 0 and sx < 10:
 				c = c.lightened(0.05)
 			if sx == 1 and ry < 4:
-				c = ROOF[0]
+				c = RP[0]
 			elif sx == 10 and ry < 4:
-				c = ROOF[2]
+				c = RP[2]
 			if ry == 4:
-				c = ROOF[2]
+				c = RP[2]
 			elif ry == 5:
-				c = ROOF[3]
+				c = RP[3]
 			# Шов между черепицами — только в нижней части ряда (черепица лежит внахлёст).
 			if sx == 0 and ry >= 2:
-				c = ROOF[3] if ry < 5 else ROOF[4]
+				c = RP[3] if ry < 5 else RP[4]
 			elif sx == 0:
-				c = ROOF[0].darkened(0.04)
+				c = RP[0].darkened(0.04)
 			if ry >= 4 and (sx == 10 or sx == 1):
-				c = ROOF[4]
+				c = RP[4]
 			if hh(x / 3, y / 3, 7) < int(moss * 1023.0) and ry < 4:
 				c = MOSS[1] if hh(x, y, 8) % 2 == 0 else MOSS[0]
 			put(x, y, c.darkened(dark) if dark > 0.0 else c)
@@ -236,20 +237,20 @@ func _slope(p0: Vector2, e1: Vector2, e2: Vector2, dark: float, mask := PackedVe
 			var off := (row % 2) * 4.5
 			var tk := fposmod(tt + off, 9.0)
 			var id := int((tt + off) / 9.0)
-			var c: Color = ROOF[1]
+			var c: Color = RP[1]
 			var v := hh(id, row, 24) % 6
 			if v == 0:
-				c = ROOF[0].darkened(0.05)
+				c = RP[0].darkened(0.05)
 			elif v == 5:
-				c = ROOF[2].lightened(0.05)
+				c = RP[2].lightened(0.05)
 			if ru < 1.5:
-				c = ROOF[0]
+				c = RP[0]
 			elif ru > 5.0:
-				c = ROOF[3]
+				c = RP[3]
 			elif ru > 4.0:
-				c = ROOF[2]
+				c = RP[2]
 			if tk < 1.0 and ru <= 4.0:
-				c = ROOF[3]
+				c = RP[3]
 			elif tk < 2.0 and ru <= 4.0:
 				c = c.lightened(0.05)
 			if hh(ix / 3, iy / 3, 25) < 50 and ru < 4.0:
@@ -841,8 +842,9 @@ func _plaster(x: int, y: int, w: int, h: int) -> void:
 			for c in 2:
 				bar(bx + c * 5 + r * 2, by + r * 3, 4, 2, [Color8(200, 128, 100), Color8(170, 96, 78), Color8(130, 70, 60)], false)
 
-func _window(x: int, y: int, w: int, h: int) -> void:
-	# Витрина: рама, стекло с бликами, переплёт; подоконник с тенью.
+## Окно: рама, стекло с бликами, переплёт, подоконник с тенью. goods — витрина с бутылочками
+## (у торговца), box — ящик с цветами под окном.
+func _window(x: int, y: int, w: int, h: int, goods := true, box := false) -> void:
 	rect(x - 3, y - 3, w + 6, h + 6, OUT)
 	bar(x - 2, y - 2, w + 4, h + 4, WOOD, false)
 	rect(x, y, w, h, GLASS[1])
@@ -853,18 +855,32 @@ func _window(x: int, y: int, w: int, h: int) -> void:
 			elif (xx + yy) % 13 == 0 or (xx + yy) % 13 == 1:
 				put(x + xx, y + yy, GLASS[0])
 	# Товар за стеклом: бутылочки.
-	for i in 6:
+	for i in (6 if goods else 0):
 		var bx := x + 4 + i * 8
+		if bx + 4 > x + w:
+			break
 		var col: Color = [Color8(176, 84, 84), Color8(96, 140, 110), Color8(196, 160, 84)][i % 3]
 		rect(bx, y + h - 11, 4, 9, col)
 		put(bx, y + h - 11, col.lightened(0.3))
 		rect(bx + 1, y + h - 14, 2, 3, Color8(200, 190, 170))
-	for k in [w / 3, 2 * w / 3]:
+	for k in ([w / 3, 2 * w / 3] if goods else [w / 2 - 1]):
 		rect(x + k, y, 2, h, WOOD[2])
 		put(x + k, y, WOOD[1])
 	rect(x, y + h / 2, w, 1, WOOD[2])
+	if not goods:
+		# Тёплый свет внутри — нижняя часть стекла.
+		for yy in range(h / 2 + 1, h):
+			for xx in w:
+				if (xx + yy) % 13 > 1 and yy > h / 2 + 1:
+					put(x + xx, y + yy, Color8(206, 168, 108) if xx < w / 2 else Color8(180, 144, 96))
 	bar(x - 4, y + h + 2, w + 8, 3, WOOD)
 	shadow(x - 3, y + h + 6, w + 6, 2, 0.3)
+	if box:
+		bar(x - 2, y + h + 5, w + 4, 4, WOOD)
+		for i in range(0, w + 2, 3):
+			put(x - 1 + i, y + h + 4, LEAF5[1] if i % 2 == 0 else LEAF5[2])
+			if hh(x + i, y, 94) % 3 == 0:
+				put(x - 1 + i, y + h + 3, [Color8(244, 150, 170), Color8(250, 240, 230), Color8(244, 210, 110)][hh(i, y, 95) % 3])
 
 func _awning(x: int, y: int, w: int) -> void:
 	# Полосатый навес: наклон, полосы 2 тона + тень, фестоны снизу, тень на стене.
