@@ -277,6 +277,30 @@ func _camptest() -> void:
 	for i in 20:
 		await get_tree().process_frame
 	_shot("camp_1_start")
+	# Вид на весь лагерь.
+	var cam: Camera2D = Game.local_hero().get_node("Camera")
+	cam.position_smoothing_enabled = false
+	cam.top_level = true
+	cam.limit_left = -10000
+	cam.limit_top = -10000
+	cam.limit_right = 10000
+	cam.limit_bottom = 10000
+	cam.zoom = Vector2(0.44, 0.44)
+	cam.global_position = Vector2(352, 272)
+	for i in 6:
+		await get_tree().process_frame
+	_shot("camp_0_overview")
+	for part: Array in [["camp_0a", Vector2(180, 150)], ["camp_0b", Vector2(520, 150)], ["camp_0c", Vector2(180, 400)], ["camp_0d", Vector2(520, 400)]]:
+		cam.zoom = Vector2(1, 1)
+		cam.global_position = part[1]
+		for i in 4:
+			await get_tree().process_frame
+		_shot(part[0])
+	cam.top_level = false
+	cam.position = Vector2.ZERO
+	cam.zoom = Vector2.ONE
+	cam.position_smoothing_enabled = true
+	get_tree().current_scene.setup_camera(cam)
 	var hud: Node = get_tree().current_scene.get_node("CampHUD")
 	Meta.gold = 300
 	hud.open_building("forge")
