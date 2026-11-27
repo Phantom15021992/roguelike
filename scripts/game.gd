@@ -1212,6 +1212,9 @@ func _fx_anim_local(fname: String, pos: Vector2, k: float) -> Sprite2D:
 	return s
 
 
+const METEOR_FALL := 0.22   # сколько летит метеорит (урон — в момент падения)
+
+
 ## Метеорит: падает сверху-слева в точку, там взрыв и столб огня.
 func fx_meteor(target: Vector2) -> void:
 	Net.fx("fx_meteor", [target])
@@ -1224,8 +1227,8 @@ func fx_meteor(target: Vector2) -> void:
 	s.position = target + Vector2(-70, -100)
 	fx().add_child(s)
 	var tw := s.create_tween()
-	tw.tween_property(s, "position", target + Vector2(0, -4), 0.22)
-	tw.parallel().tween_method(func(t: float) -> void: s.frame = int(t) % 3, 0.0, 6.0, 0.22)
+	tw.tween_property(s, "position", target + Vector2(0, -4), METEOR_FALL)
+	tw.parallel().tween_method(func(t: float) -> void: s.frame = int(t) % 3, 0.0, 6.0, METEOR_FALL)
 	tw.tween_callback(func() -> void:
 		_fx_anim_local("fire_hit", target + Vector2(0, -6), 1.9)
 		_fx_anim_local("flame", target, 0.7)

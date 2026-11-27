@@ -821,11 +821,15 @@ func _release_pro_thunder(lvl: int, target: Vector2, mult: float) -> void:
 # ---------------- Визард ----------------
 
 func _release_meteor(_lvl: int, target: Vector2, mult: float) -> void:
-	Game.shake(5.0, 0.3)
-	Game.ring(target, METEOR_RADIUS, Color(1.0, 0.5, 0.15), 0.4)
+	# Каст короче на время полёта камня: урон — когда метеорит долетел.
 	Game.fx_meteor(target)
-	if not hit_circle(target, METEOR_RADIUS, mult).is_empty():
-		Game.hitstop(0.06)
+	get_tree().create_timer(Game.METEOR_FALL).timeout.connect(func() -> void:
+		if not is_instance_valid(self):
+			return
+		Game.shake(5.0, 0.3)
+		Game.ring(target, METEOR_RADIUS, Color(1.0, 0.5, 0.15), 0.4)
+		if not hit_circle(target, METEOR_RADIUS, mult).is_empty():
+			Game.hitstop(0.06))
 
 
 func _release_chain_lightning(_lvl: int, _target: Vector2, mult: float) -> void:
