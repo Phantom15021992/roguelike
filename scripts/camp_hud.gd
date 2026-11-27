@@ -12,6 +12,9 @@ const GOLD := Color(1.0, 0.85, 0.3)
 const GOOD := Color(0.45, 0.95, 0.45)
 const BAD := Color(1.0, 0.4, 0.4)
 const DIM := Color(0.66, 0.63, 0.72)
+const LAYOUT := preload("res://scripts/camp_layout.gd")
+const TITLES := {"exchange": "Обменник", "mentor": "Наставник"}
+const BUILD_DESC := {"exchange": "Обмен материалов: 5 любых на 1 нужный.", "mentor": "Поручения на забег с наградой."}
 
 var _player: Node
 var _info: Label
@@ -238,6 +241,11 @@ func open_building(id: String) -> void:
 
 func _refill() -> void:
 	_clear()
+	if _open_id.begins_with("plot:"):
+		_fill_plot(int(_open_id.substr(5)))
+		_recenter()
+		_recenter.call_deferred()
+		return
 	match _open_id:
 		"menu":
 			_fill_menu()
@@ -270,6 +278,32 @@ func _recenter() -> void:
 
 
 # ---------------- Постройки ----------------
+
+## Свободный участок: что здесь построить (каждую постройку — один раз).
+func _fill_plot(n: int) -> void:
+	_panel_box.add_child(_rich(190, "[b]Свободный участок[/b]
+[color=#a8a0b8]Выбери, что здесь построить. Каждую постройку можно поставить один раз.[/color]"))
+	var list := _scroll(118)
+	var any := false
+	for id: String in LAYOUT.BUILDABLE:
+		if Meta.plot_of(id) >= 0:
+			continue
+		any = true
+		var name: String = Meta.UPGRADES[id]["name"] if Meta.UPGRADES.has(id) else TITLES.get(id, id)
+		var desc: String = Meta.UPGRADES[id]["desc"] if Meta.UPGRADES.has(id) else BUILD_DESC.get(id, "")
+		var price := Meta.build_cost(id)
+		var row := _hc(3)
+		row.add_child(_rich(150, "[b]%s[/b]  %s
+[color=#a8a0b8]%s[/color]" % [name, ("[color=#%s]%d зол.[/color]" % [GOLD.to_html(false), price]) if price > 0 else "бесплатно", desc]))
+		row.add_child(_button("Построить", func() -> void:
+			if Meta.place_building(n, id):
+				close()
+				show_banner("Построено: %s" % name), Meta.gold >= price))
+		list.add_child(row)
+	if not any:
+		list.add_child(_rich(170, "[color=#a8a0b8]Всё уже построено.[/color]"))
+	_panel_box.add_child(_button("Закрыть (E)", close))
+
 
 func _fill_upgrade(id: String) -> void:
 	var u: Dictionary = Meta.UPGRADES[id]

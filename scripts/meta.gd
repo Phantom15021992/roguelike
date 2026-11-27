@@ -52,6 +52,11 @@ func bag_max() -> int:
 
 var gold := 0
 var levels := {}
+## Что стоит на участках лагеря: номер участка (строкой) → постройка (camp_layout.gd LOTS / BUILDABLE).
+var plots := {}
+## Пока владелец утверждает стиль лагеря, мастерская стоит сразу (потом убрать).
+const DEMO_WORKSHOP := true
+const LAYOUT := preload("res://scripts/camp_layout.gd")
 var best_depth := 0
 var runs := 0
 var mine_stored := 0.0
@@ -134,6 +139,51 @@ func upgrade(id: String) -> bool:
 	save_game()
 	changed.emit()
 	return true
+
+
+## Номер участка, где стоит постройка, или -1.
+func plot_of(id: String) -> int:
+	for k: String in plots:
+		if plots[k] == id:
+			return int(k)
+	return -1
+
+
+## Цена постройки на участке: первый уровень улучшения; обменник и наставник — бесплатно.
+func build_cost(id: String) -> int:
+	if UPGRADES.has(id) and level(id) == 0:
+		return cost(id)
+	return 0
+
+
+## Построить на свободном участке.
+func place_building(plot: int, id: String) -> bool:
+	if plots.has(str(plot)) or plot_of(id) >= 0 or not id in LAYOUT.BUILDABLE:
+		return false
+	var price := build_cost(id)
+	if gold < price:
+		return false
+	if UPGRADES.has(id) and level(id) == 0:
+		upgrade(id)
+	plots[str(plot)] = id
+	save_game()
+	changed.emit()
+	return true
+
+
+## Постройки, построенные до участков (старые сохранения), встают на свободные участки.
+func fix_plots() -> void:
+	var free: Array = []
+	for i in LAYOUT.LOTS.size():
+		if not plots.has(str(i)):
+			free.append(i)
+	if DEMO_WORKSHOP and plot_of("workshop") < 0 and not free.is_empty():
+		plots[str(free.pop_front())] = "workshop"
+		if level("workshop") == 0:
+			levels["workshop"] = 1
+	for id: String in LAYOUT.BUILDABLE:
+		if UPGRADES.has(id) and level(id) > 0 and plot_of(id) < 0 and not free.is_empty():
+			plots[str(free.pop_front())] = id
 
 
 ## Короткое описание эффекта на уровне lvl.
@@ -345,7 +395,7 @@ func _write_own_heroes() -> void:
 ## Хозяин: что показать гостям (постройки, склад, золото лагеря).
 func net_dict() -> Dictionary:
 	update_mine()
-	return {"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
+	return {"gold": gold, "levels": levels, "plots": plots, "best_depth": best_depth, "runs": runs,
 		"materials": materials, "stash": stash, "mine_stored": mine_stored, "ore_stored": ore_stored}
 
 
@@ -361,6 +411,7 @@ func apply_host(d: Dictionary) -> void:
 	levels = {}
 	for k: String in d["levels"]:
 		levels[k] = int(d["levels"][k])
+	plots = (d.get("plots", {}) as Dictionary).duplicate()
 	best_depth = int(d["best_depth"])
 	runs = int(d["runs"])
 	materials = d["materials"]
@@ -378,6 +429,7 @@ func restore_own() -> void:
 	persist = _own_persist
 	gold = 0
 	levels = {}
+	plots = {}
 	materials = {}
 	stash = []
 	if persist or "--loadsave" in OS.get_cmdline_user_args():
@@ -414,7 +466,7 @@ func save_game() -> void:
 	update_mine()
 	var data := {
 		"kind": slot_kind, "saved_at": Time.get_unix_time_from_system(),
-		"gold": gold, "levels": levels, "best_depth": best_depth, "runs": runs,
+		"gold": gold, "levels": levels, "plots": plots, "best_depth": best_depth, "runs": runs,
 		"mine_stored": mine_stored, "ore_stored": ore_stored, "mine_time": mine_time,
 		"materials": materials, "stash": stash, "heroes": heroes, "hero_cls": hero_cls,
 		"run": run_save,
@@ -427,6 +479,7 @@ func save_game() -> void:
 func _clear() -> void:
 	gold = 0
 	levels = {}
+	plots = {}
 	best_depth = 0
 	runs = 0
 	mine_stored = 0.0
@@ -468,6 +521,11 @@ func load_game() -> void:
 			if typeof(it) == TYPE_DICTIONARY and _valid_item(it):
 				stash.append(_fix_item(it))
 	_load_levels(data)
+	var pl: Variant = data.get("plots", {})
+	if typeof(pl) == TYPE_DICTIONARY:
+		for k: String in pl:
+			if str(pl[k]) in LAYOUT.BUILDABLE:
+				plots[k] = str(pl[k])
 	var hs: Variant = data.get("heroes", {})
 	if typeof(hs) == TYPE_DICTIONARY:
 		for k: String in hs:

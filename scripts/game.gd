@@ -285,17 +285,36 @@ func _camptest() -> void:
 	cam.limit_top = -10000
 	cam.limit_right = 10000
 	cam.limit_bottom = 10000
-	cam.zoom = Vector2(0.44, 0.44)
-	cam.global_position = Vector2(352, 272)
+	cam.zoom = Vector2(0.385, 0.385)
+	cam.global_position = Vector2(416, 208)
 	for i in 6:
 		await get_tree().process_frame
 	_shot("camp_0_overview")
-	for part: Array in [["camp_0a", Vector2(180, 150)], ["camp_0b", Vector2(520, 150)], ["camp_0c", Vector2(180, 400)], ["camp_0d", Vector2(520, 400)]]:
+	for part: Array in [["camp_0a", Vector2(450, 150)], ["camp_0b", Vector2(620, 150)], ["camp_0c", Vector2(400, 260)], ["camp_0d", Vector2(560, 300)]]:
 		cam.zoom = Vector2(1, 1)
 		cam.global_position = part[1]
 		for i in 4:
 			await get_tree().process_frame
 		_shot(part[0])
+	# Стройка на участке: окно выбора, затем кузница и библиотека на участках 1 и 2.
+	var chud: Node = get_tree().current_scene.get_node("CampHUD")
+	Meta.gold = 1000
+	chud.open_building("plot:1")
+	for i in 5:
+		await get_tree().process_frame
+	_shot("camp_0e_plot")
+	chud.close()
+	print("build forge: %s, library: %s, plots=%s" % [Meta.place_building(1, "forge"), Meta.place_building(2, "library"), Meta.plots])
+	cam.global_position = Vector2(330, 150)
+	for i in 6:
+		await get_tree().process_frame
+	_shot("camp_0f_built")
+	Meta.plots.erase("1")
+	Meta.plots.erase("2")
+	Meta.levels.erase("forge")
+	Meta.levels.erase("library")
+	Meta.gold = 0
+	Meta.changed.emit()
 	cam.top_level = false
 	cam.position = Vector2.ZERO
 	cam.zoom = Vector2.ONE
