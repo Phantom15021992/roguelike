@@ -30,7 +30,7 @@ func _init() -> void:
 	for id: String in BUILDINGS:
 		_sprite("b_" + id, 440, 380, Vector2i(220, 330), func(sx: int, sy: int) -> void: call("_b_" + id, sx, sy), true)
 	# Мелочи.
-	_sprite("p_fountain", 160, 120, Vector2i(80, 100), func(sx: int, sy: int) -> void: _fountain(sx, sy))
+	_sprite("p_fountain", 200, 140, Vector2i(90, 124), func(sx: int, sy: int) -> void: _fountain(sx, sy))
 	_sprite("p_lamp", 40, 70, Vector2i(14, 62), func(sx: int, sy: int) -> void: _lamp(sx, sy))
 	_sprite("p_bench", 60, 30, Vector2i(26, 24), func(sx: int, sy: int) -> void: _bench(sx - 19, sy))
 	_sprite("p_signpost", 50, 50, Vector2i(24, 44), func(sx: int, sy: int) -> void: _signpost(sx, sy))

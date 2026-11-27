@@ -681,31 +681,16 @@ func _generate_boss(rng: RandomNumberGenerator) -> Array:
 		line.fill("#")
 		grid.append(line)
 
-	# Путь из ячеек: от левого края к ячейке перед ареной (столбец 2), арена — столбцы 3–4.
+	# Решение владельца: на этаже с боссом только три части — комната с порталом домой
+	# (герой появляется в ней), коридор, арена босса (столбцы 3–4).
 	var ay := rng.randi_range(0, BLOCK_GRID_H - 1)
-	var cur := Vector2i(0, rng.randi_range(0, BLOCK_GRID_H - 1))
-	var hall := Vector2i(2, ay)
-	var path: Array[Vector2i] = [cur]
-	while cur != hall:
-		var moves: Array[Vector2i] = []
-		if cur.x < hall.x:
-			moves.append(Vector2i.RIGHT)
-		if cur.y != hall.y:
-			moves.append(Vector2i(0, signi(hall.y - cur.y)))
-		cur += moves[rng.randi() % moves.size()]
-		path.append(cur)
-	var need := {}
-	for c in path:
-		need[c] = {}
-	for i in range(1, path.size()):
-		var d := path[i] - path[i - 1]
-		need[path[i - 1]][_side(d)] = true
-		need[path[i]][_side(-d)] = true
-	need[hall]["E"] = true  # проход в арену
-
-	for i in path.size():
-		var c: Vector2i = path[i]
-		var v := _pick_variant(rng, "start" if i == 0 else "", need[c])
+	var room := Vector2i(1, ay)
+	var corr := Vector2i(2, ay)
+	var parts := [[room, "start", {"E": true}], [corr, "corridor", {"W": true, "E": true}]]
+	for part: Array in parts:
+		var c: Vector2i = part[0]
+		var need: Dictionary = part[2]
+		var v := _pick_variant(rng, part[1], need)
 		var ox := c.x * BLOCK
 		var oy := c.y * BLOCK
 		for y in BLOCK:
@@ -714,12 +699,12 @@ func _generate_boss(rng: RandomNumberGenerator) -> Array:
 				var out := ch
 				match ch:
 					"D":
-						out = "." if need[c].has(_door_side(x, y)) else "#"
+						out = "." if need.has(_door_side(x, y)) else "#"
 					"M", "L", "S", "A":
 						out = "."  # перед логовом тихо: ни монстров, ни лестницы
 				grid[oy + y][ox + x] = out
-	# Портал домой — на полу ближе к середине зала перед ареной.
-	_portal_cell = _open_cell_in(grid, hall * BLOCK + Vector2i(BLOCK / 2, BLOCK / 2), Vector2i(BLOCK / 2, BLOCK / 2))
+	# Портал домой — в комнате, ближе к выходу в коридор (не на месте появления героя).
+	_portal_cell = _open_cell_in(grid, room * BLOCK + Vector2i(BLOCK / 2 + 3, BLOCK / 2), Vector2i(3, 4))
 
 	# Арена.
 	var boss_id := Roster.kind_of(boss_for(Run.depth))

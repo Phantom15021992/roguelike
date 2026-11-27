@@ -84,27 +84,55 @@ func grass_where(kinds: PackedByteArray) -> void:
 				c = [Color8(236, 214, 120), Color8(232, 140, 150), Color8(240, 236, 226)][hh(x, y, 23) % 3]
 			put(x, y, c)
 
-## Мостовая из плит 18x9 со светом сверху-слева и тенью снизу-справа, мох в швах.
+## Брусчатка: камни случайной формы (ячейки вороного на сетке 10 px со сдвигом), между ними
+## тёмные швы и мох; у каждого камня свой оттенок, свет по верхне-левой кромке, тень по нижне-правой.
 func _paver(x: int, y: int) -> Color:
-	var row := y / 9
-	var off := (row % 2) * 9
-	var sx := posmod(x + off, 18)
-	var sy := y % 9
+	var g := 10
+	var gx := int(floor(x / float(g)))
+	var gy := int(floor(y / float(g)))
+	var p := Vector2(x + 0.5, y + 0.5)
+	var d1 := 1e9
+	var d2 := 1e9
+	var near := Vector2.ZERO
+	var nid := Vector2i.ZERO
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var cx := gx + ox
+			var cy := gy + oy
+			var sp := Vector2(cx * g + 2 + hh(cx, cy, 31) % (g - 4), cy * g + 2 + hh(cx, cy, 32) % (g - 4))
+			# Сжатие по вертикали — камни чуть шире, чем выше (вид сверху-спереди).
+			var d := Vector2(p.x - sp.x, (p.y - sp.y) * 1.25).length()
+			if d < d1:
+				d2 = d1
+				d1 = d
+				near = sp
+				nid = Vector2i(cx, cy)
+			elif d < d2:
+				d2 = d
+	var edge := d2 - d1
+	if edge < 1.3:
+		return MOSS[2] if hh(x, y, 4) % 6 == 0 else GROUND[3].darkened(0.1)
+	var v := hh(nid.x, nid.y, 33) % 6
 	var c: Color = GROUND[1]
-	var v := hh((x + off) / 18, row, 3) % 4
 	if v == 0:
-		c = GROUND[0].darkened(0.05)
+		c = GROUND[0].darkened(0.04)
+	elif v == 1:
+		c = GROUND[2].lightened(0.04)
+	elif v == 2:
+		c = GROUND[1].lerp(Color8(160, 140, 112), 0.25)
 	elif v == 3:
-		c = GROUND[2]
-	if sy == 0 or sx == 0:
-		c = GROUND[3]
-		if hh(x, y, 4) % 5 == 0:
-			c = MOSS[2]
-	elif sy == 1 or sx == 1:
-		c = GROUND[0]
-	elif sy == 8 or sx == 17:
-		c = GROUND[2]
+		c = GROUND[1].lerp(Color8(120, 132, 140), 0.2)
+	var dir := (p - near).normalized()
+	if edge < 2.6:
+		var lit := dir.dot(Vector2(-0.7, -0.7))
+		if lit > 0.25:
+			c = c.lightened(0.14)
+		elif lit < -0.25:
+			c = c.darkened(0.2)
+	elif hh(x, y, 34) < 30:
+		c = c.darkened(0.08)
 	return c
+
 
 func _water(x: int, y: int) -> Color:
 	var cx := LAY.POND.x * C
@@ -540,89 +568,153 @@ func _b_mine(sx: int, sy: int) -> void:
 #                                 ОСОБЫЕ ПОСТРОЙКИ
 # ===================================================================================
 
-## Портал: каменные ступени, две колонны из блоков с рунами, арка из клиновидных камней,
-## фиолетовый вихрь, кристаллы по бокам.
+## Портал: круглый помост с плитами и светящимся кольцом рун, две колонны из блоков с рунами и
+## капителями, арка из клиновидных камней с замковым камнем-кристаллом, вихрь с тёмной кромкой,
+## плющ, кристаллы по бокам. Каждый камень — с контуром, светом и тенью.
 func _portal() -> void:
-	ground_shadow(30, 0, 70, 6, 0.3)
-	bar(-62, -8, 124, 8, STONE)
-	bar(-54, -16, 108, 8, STONE)
-	# Вихрь.
-	for py in range(-118, -16):
-		for px in range(-34, 35):
-			var top := -84
-			if py < top:
-				var d := Vector2(px, py - top).length()
-				if d > 34:
-					continue
-			var dx := px / 34.0
-			var dy := (py + 60) / 60.0
-			var r := sqrt(dx * dx + dy * dy * 0.7)
+	ground_shadow(26, 0, 80, 9, 0.3)
+	# Помост: передняя стенка и верх-эллипс.
+	var prx := 72.0
+	var pry := 16.0
+	var pyc := -14.0
+	var pix := {}
+	for x in range(-int(prx), int(prx) + 1):
+		var arc := pry * sqrt(maxf(0.0, 1.0 - pow(x / prx, 2)))
+		var t := (x + prx) / (2.0 * prx)
+		for y in range(int(pyc + arc), int(pyc + arc) + 10):
+			var c: Color = STONE[1] if t < 0.65 else STONE[2]
+			if t < 0.2:
+				c = STONE[0]
+			var seg := int(floor(x / 14.0))
+			if posmod(x, 14) == 0:
+				c = STONE[3]
+			if y == int(pyc + arc) + 5 and seg % 2 == 0:
+				c = STONE[3]
+			pix[Vector2i(x, y)] = c
+	for y in range(int(pyc - pry), int(pyc + pry) + 1):
+		for x in range(-int(prx), int(prx) + 1):
+			var e := pow(x / prx, 2) + pow((y - pyc) / pry, 2)
+			if e > 1.0:
+				continue
+			var ang := atan2((y - pyc) / pry, x / prx)
+			var c: Color = STONE[0] if (y - pyc) < 0.0 else STONE[1]
+			if e > 0.86:
+				c = STONE[0].lightened(0.08) if (y - pyc) > 0.0 else STONE[1]
+			if absf(fmod(ang + PI, PI / 6.0)) < 0.08 and e > 0.3:
+				c = STONE[3]
+			if absf(e - 0.55) < 0.06:
+				c = STONE[3]
+			pix[Vector2i(x, y)] = c
+	_blit_outlined(pix)
+	# Кольцо рун.
+	for i in 24:
+		var a := i * TAU / 24.0
+		var q := Vector2(cos(a) * prx * 0.74, pyc + sin(a) * pry * 0.74)
+		if sin(a) < -0.2 and absf(cos(a)) < 0.5:
+			continue
+		put(int(q.x), int(q.y), Color8(140, 236, 252))
+		put(int(q.x) + 1, int(q.y), Color8(80, 180, 220))
+	# Вихрь в проёме.
+	var top := -136
+	var r_in := 32
+	for y in range(top - r_in, int(pyc) + 2):
+		for x in range(-r_in, r_in + 1):
+			if y < top and Vector2(x, y - top).length() > r_in:
+				continue
+			var dx := x / float(r_in)
+			var dy := (y - (top + pyc) / 2.0) / ((pyc - top + r_in) / 2.0)
+			var r := sqrt(dx * dx + dy * dy)
 			var ang := atan2(dy, dx)
-			var sw := sin(ang * 3.0 + r * 9.0)
-			var c := Color8(52, 28, 92)
-			if sw > 0.6:
-				c = Color8(164, 104, 226)
-			elif sw > 0.1:
-				c = Color8(110, 64, 176)
+			var sw := sin(ang * 3.0 + r * 8.0)
+			var c := Color8(60, 32, 104)
+			if sw > 0.55:
+				c = Color8(168, 112, 232)
+			elif sw > 0.05:
+				c = Color8(112, 66, 180)
 			elif sw < -0.7:
-				c = Color8(96, 168, 226)
-			if r < 0.3:
-				c = Color8(236, 226, 252) if r < 0.15 else Color8(184, 152, 244)
-			put(px, py, c)
+				c = Color8(92, 170, 230)
+			if r < 0.28:
+				c = Color8(240, 232, 255) if r < 0.13 else Color8(190, 160, 248)
+			if r > 0.85:
+				c = c.darkened(0.35)
+			put(x, y, c)
 	# Колонны.
 	for side: int in [-1, 1]:
-		var x0 := side * 44 - 10
-		for row in 10:
-			var y := -26 - row * 9
-			bar(x0, y, 20, 8, STONE)
-		rect(x0 + 8, -92, 4, 60, Color8(40, 36, 52))
-		for k in 3:
-			rect(x0 + 9, -86 + k * 20, 2, 10, Color8(120, 226, 250))
-			put(x0 + 9, -86 + k * 20, Color8(230, 250, 255))
-		bar(x0 - 3, -122, 26, 6, STONE)
-	# Арка.
-	for py in range(-170, -118):
-		for px in range(-58, 59):
-			var d := Vector2(px, py + 118).length()
-			if d > 56 or d < 36:
+		var x0 := side * 44 - 11
+		var y := int(pyc) - 2
+		var row := 0
+		while y > top:
+			var bw := 22 if row % 2 == 0 else 20
+			bar(x0 + (22 - bw) / 2, y - 10, bw, 10, STONE)
+			if row == 4 or row == 8:
+				rect(x0 + 9, y - 8, 4, 6, Color8(46, 40, 60))
+				rect(x0 + 10, y - 7, 2, 4, Color8(140, 236, 252))
+			y -= 11
+			row += 1
+		bar(x0 - 4, top - 8, 30, 8, STONE)
+		bar(x0 - 2, int(pyc) - 6, 26, 6, STONE)
+	# Арка: клиновидные камни.
+	var arch := {}
+	var r0 := 33.0
+	var r1 := 54.0
+	for y in range(int(top - r1) - 1, top + 1):
+		for x in range(-int(r1) - 1, int(r1) + 2):
+			var d := Vector2(x, y - top).length()
+			if d < r0 or d > r1:
 				continue
-			var ang := atan2(py + 118, px)
+			var ang := atan2(y - top, x)
 			var seg := int(floor((ang + PI) / (PI / 9.0)))
 			var local := fposmod((ang + PI) / (PI / 9.0), 1.0)
-			var rad := (d - 36) / 20.0
-			var c: Color = STONE[1] if seg % 2 == 0 else STONE[1].lightened(0.06)
-			if seg == 4:
-				c = Color8(150, 220, 240)
-			if local < 0.1 or rad > 0.9:
+			var rad := (d - r0) / (r1 - r0)
+			var c: Color = STONE[1] if seg % 2 == 0 else STONE[1].lightened(0.05)
+			if x < 0:
+				c = c.lightened(0.05)
+			if local < 0.1:
 				c = STONE[3]
-			elif rad < 0.15:
+			elif rad > 0.84:
+				c = STONE[0]
+			elif rad < 0.16:
 				c = STONE[2]
-			elif local < 0.3:
-				c = (c as Color).lightened(0.1)
-			put(px, py, c)
-	for py in range(-172, -116):
-		for px in range(-60, 61):
-			var d := Vector2(px, py + 118).length()
-			if absf(d - 56.5) < 0.8 or (absf(d - 35.5) < 0.8 and py < -118):
-				put(px, py, OUT)
-	# Кристаллы.
+			elif local > 0.88:
+				c = STONE[2]
+			if seg == 4:
+				c = STONE[0] if rad > 0.5 else STONE[1]
+			arch[Vector2i(x, y)] = c
+	_blit_outlined(arch)
+	# Камень-ключ с кристаллом.
+	for yy in range(-6, 7):
+		for xx in range(-4, 5):
+			if absf(xx) * 1.5 + absf(yy) <= 6.0:
+				var c := Color8(150, 236, 252) if xx + yy < 0 else Color8(80, 170, 220)
+				if xx == -1 and yy == -2:
+					c = Color(1, 1, 1)
+				put(xx, top - 44 + yy, c)
+	# Плющ на левой колонне и арке.
+	var ivy := {}
+	for j in range(0, 46, 2):
+		_leaf(ivy, -56 + (j / 2) % 2 * 3, top - 4 + j)
+	for i in range(0, 30, 3):
+		var a := PI + 0.15 + i * 0.03
+		_leaf(ivy, int(cos(a) * 54.0), top + int(sin(a) * 54.0))
+	_blit_c(ivy, LEAF_OUT_C)
+	# Кристаллы по бокам помоста.
 	for side: int in [-1, 1]:
-		var bx := side * 70
+		var bx := side * 66
 		for k in 3:
-			var hgt := 18 - k * 4
+			var hgt := 18 - k * 5
 			var x := bx + (k - 1) * 5 * side
 			for yy in hgt:
 				var half := int(3 * (1.0 - float(yy) / hgt)) + 1
-				for xx in range(-half, half + 1):
-					var c := Color8(126, 206, 240) if xx < 0 else Color8(80, 150, 206)
-					if xx == -half:
-						c = Color8(220, 246, 255)
-					put(x + xx, -4 - yy, c)
-			put(x, -4 - hgt, OUT)
+				for xx in range(-half - 1, half + 2):
+					var c: Color = OUT
+					if absf(xx) <= half:
+						c = Color8(126, 206, 240) if xx < 0 else Color8(80, 150, 206)
+						if xx == -half:
+							c = Color8(220, 246, 255)
+					put(x + xx, -6 - yy, c)
+			put(x, -6 - hgt, OUT)
 
-## Шахта (по референсу): высокая гора угловатых светлых валунов с мхом, массивная крепь
-## с раскосами и тёмным проходом вглубь, рельсы по диагонали с вагонеткой руды, высокий
-## подъёмник с колесом и корзиной камней на канате.
+
 func _mine() -> void:
 	ground_shadow(30, 0, 120, 8, 0.3)
 	_cliff()
@@ -1041,56 +1133,126 @@ func _lamp(x: int, base: int) -> void:
 	rect(x + 9, base - 43, 1, 9, Color8(220, 160, 70))
 	rect(x + 3, base - 46, 9, 2, Color8(50, 48, 62))
 
+## Фонтан: чаша из каменных блоков (передняя стенка со швами, свет слева, тень справа), широкий
+## бортик-кольцо с плитами, вода с рябью и бликами (у дальнего края тень), колонна с поясом,
+## верхняя чаша, навершие, струи с каплями и пеной в местах падения. Контур по силуэту.
 func _fountain(cx: int, base: int) -> void:
-	ground_shadow(cx + 14, base, 54, 8, 0.3)
+	ground_shadow(cx + 16, base, 58, 9, 0.3)
+	var rx := 52.0
+	var ry := 18.0
+	var hw := 13
+	var yc := float(base) - hw - ry
 	var pix := {}
-	for py in range(base - 30, base + 1):
-		for px in range(cx - 50, cx + 51):
-			var dx := float(px - cx) / 50.0
-			var top := base - 22 + int(10.0 * (1.0 - sqrt(maxf(0.0, 1.0 - dx * dx))))
-			var bot := base - int(6.0 * (1.0 - sqrt(maxf(0.0, 1.0 - dx * dx))))
-			if absf(dx) > 1.0 or py < top or py > bot:
-				continue
+	# Передняя стенка.
+	for x in range(-int(rx), int(rx) + 1):
+		var arc := ry * sqrt(maxf(0.0, 1.0 - pow(x / rx, 2)))
+		var t := (x + rx) / (2.0 * rx)
+		var ang := asin(clampf(x / rx, -1.0, 1.0))
+		var seg := int(floor(ang / (PI / 8.0)))
+		for y in range(int(yc + arc), int(yc + arc) + hw + 1):
+			var v := y - int(yc + arc)
 			var c: Color = STONE[1]
-			if py < top + 2:
+			if t < 0.22:
 				c = STONE[0]
-			elif py > bot - 2:
-				c = STONE[3]
-			elif dx > 0.6:
+			elif t > 0.72:
 				c = STONE[2]
-			if posmod(px, 9) == 0 and py >= top + 2:
+			if v == 0:
+				c = STONE[0].lightened(0.05)
+			elif v == 1:
+				c = STONE[3]                       # тень под бортиком
+			if v == hw / 2 + 1:
 				c = STONE[3]
-			pix[Vector2i(px, py)] = c
-	# Вода в чаше (эллипс сверху).
-	for py in range(base - 34, base - 18):
-		for px in range(cx - 46, cx + 47):
-			var e := pow((px - cx) / 46.0, 2) + pow((py - (base - 26)) / 8.0, 2)
+			var off := 0.5 if v > hw / 2 + 1 else 0.0
+			if absf(fmod(ang / (PI / 8.0) + off + 4.0, 1.0)) < 0.09 and v > 1:
+				c = STONE[3]
+			if seg % 2 == 0 and v > 2 and c != STONE[3]:
+				c = c.darkened(0.04)
+			pix[Vector2i(cx + x, y)] = c
+	# Бортик-кольцо и вода.
+	var irx := rx - 7.0
+	var iry := ry - 4.0
+	for y in range(int(yc - ry) - 1, int(yc + ry) + 1):
+		for x in range(-int(rx), int(rx) + 1):
+			var e := pow(x / rx, 2) + pow((y - yc) / ry, 2)
+			if e > 1.0:
+				continue
+			var ei := pow(x / irx, 2) + pow((y - yc) / iry, 2)
+			var c: Color
+			if ei > 1.0:
+				var ang := atan2((y - yc) / ry, x / rx)
+				c = STONE[0] if (y - yc) < 2.0 else STONE[1]
+				if absf(fmod(ang + PI, PI / 8.0)) < 0.07:
+					c = STONE[2]
+				if ei < 1.18 and (y - yc) < 0.0:
+					c = STONE[2]                     # внутренняя кромка дальнего края
+			else:
+				var wy := (y - yc) / iry
+				c = WATER[1]
+				if wy < -0.45:
+					c = WATER[3]                     # тень бортика на воде
+				elif wy < -0.15:
+					c = WATER[2]
+				var ring := sqrt(ei)
+				if absf(fmod(ring * 4.0 + 0.3, 1.0) - 0.5) < 0.06 and ring > 0.3:
+					c = WATER[0]
+				if hh(cx + x, y, 85) < 5:
+					c = Color8(232, 246, 252)
+			pix[Vector2i(cx + x, y)] = c
+	# Колонна.
+	var ctop := int(yc) - 40
+	for y in range(ctop, int(yc) + 2):
+		for x in range(-6, 7):
+			var t := (x + 6) / 12.0
+			var c: Color = STONE[0] if t < 0.3 else (STONE[1] if t < 0.7 else STONE[2])
+			if y == int(yc) - 14 or y == int(yc) - 13:
+				c = STONE[3] if y == int(yc) - 13 else STONE[0]
+			pix[Vector2i(cx + x, y)] = c
+	# Верхняя чаша.
+	var ury := 5.0
+	var urx := 20.0
+	var uyc := float(ctop) - 2.0
+	for y in range(int(uyc - ury) - 1, int(uyc + ury) + 6):
+		for x in range(-int(urx), int(urx) + 1):
+			var arc := ury * sqrt(maxf(0.0, 1.0 - pow(x / urx, 2)))
+			var e := pow(x / urx, 2) + pow((y - uyc) / ury, 2)
+			var c := Color(0, 0, 0, 0)
 			if e <= 1.0:
-				var c: Color = WATER[1] if e < 0.7 else WATER[2]
-				if py < base - 29 and e > 0.5:
-					c = WATER[3]
-				if sin(px * 0.4 + py * 1.3) > 0.9:
-					c = WATER[0].lightened(0.2)
-				pix[Vector2i(px, py)] = c
-			elif e <= 1.25:
-				pix[Vector2i(px, py)] = STONE[0] if py < base - 26 else STONE[1]
+				c = STONE[0] if e > 0.55 else (WATER[2] if (y - uyc) < 0.0 else WATER[1])
+			elif y > uyc and y <= uyc + arc + 4.0:
+				c = STONE[1] if x < urx * 0.4 else STONE[2]
+				if y > uyc + arc + 2.0:
+					c = STONE[3]
+			if c.a > 0.0:
+				pix[Vector2i(cx + x, y)] = c
+	# Навершие.
+	for y in range(int(uyc) - 12, int(uyc) - 2):
+		for x in range(-2, 3):
+			pix[Vector2i(cx + x, y)] = STONE[0] if x < 0 else STONE[2]
+	for y in range(-3, 4):
+		for x in range(-3, 4):
+			if x * x + y * y <= 9:
+				pix[Vector2i(cx + x, int(uyc) - 14 + y)] = STONE[0] if x + y < 0 else STONE[1]
 	_blit_outlined(pix)
-	# Столб, верхняя чаша, струи.
-	bar(cx - 4, base - 58, 8, 30, STONE)
-	for py in range(base - 66, base - 56):
-		for px in range(cx - 16, cx + 17):
-			var e := pow((px - cx) / 16.0, 2) + pow((py - (base - 61)) / 5.0, 2)
-			if e <= 1.0:
-				put(px, py, WATER[1] if py < base - 61 else STONE[1])
-			elif e <= 1.3:
-				put(px, py, OUT)
+	# Струи из верхней чаши в нижнюю, пена в местах падения.
 	for side: int in [-1, 1]:
-		for i in 18:
-			var t := i / 17.0
-			var p := Vector2(cx + side * (10 + t * 24), base - 66 + t * t * 38 - t * 6)
-			put(int(p.x), int(p.y), Color8(214, 240, 252))
-			put(int(p.x) + side, int(p.y), Color8(170, 214, 236))
-	rect(cx - 1, base - 74, 2, 8, Color8(214, 240, 252))
+		for i in 30:
+			var t := i / 29.0
+			var p := Vector2(cx + side * (urx - 2 + t * 22.0), uyc + 1 + t * t * (yc - uyc + 4))
+			put(int(p.x), int(p.y), Color8(206, 236, 250))
+			put(int(p.x) + side, int(p.y), Color8(150, 204, 232))
+			if i % 7 == 3:
+				put(int(p.x) + side * 2, int(p.y) + 1, Color8(236, 248, 255))
+		var fx := cx + side * int(urx + 20)
+		for k in 5:
+			put(fx + k - 2, int(yc) + 3 + (k % 2), Color8(240, 250, 255))
+			put(fx + k - 2, int(yc) + 4, Color8(190, 226, 244))
+	# Струя вверх из навершия.
+	for y in range(int(uyc) - 26, int(uyc) - 16):
+		put(cx, y, Color8(214, 240, 252))
+		put(cx + 1, y, Color8(160, 210, 236))
+	put(cx - 1, int(uyc) - 26, Color8(236, 248, 255))
+	put(cx + 2, int(uyc) - 25, Color8(236, 248, 255))
+
 
 func _boulder_small(cx: int, base: int, s: int, sd: int) -> void:
 	ground_shadow(cx + s / 2, base, s, 3, 0.3)
