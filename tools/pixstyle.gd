@@ -8,7 +8,8 @@ extends SceneTree
 ## (bar, _blit_outlined); тени на землю — вправо (ground_shadow, shadow); палитры приглушённые.
 ##
 ## Что есть:
-##   основа:  setup, save, grass, put, tint, rect, bar, shadow, ground_shadow, _blit_outlined, _line, hh
+##   основа:  setup, save, grass, put, tint, rect, bar, shadow, ground_shadow, _blit_outlined, _line, hh,
+##            thick_outline / building_outlined (жирная обводка силуэта домов и портала)
 ##   крыши:   _shingles (черепица рядами в многоугольнике), _slope (скат-параллелограмм с маской),
 ##            _board (ветровая доска), _chimney / _chimney_slope (низ под 45° по скату) / _flashing, _vent
 ##   стены:   _plaster (штукатурка с кирпичами), _brick, _window, _awning, _door (ниша, арка),
@@ -1243,3 +1244,33 @@ func _easel(x: int, base: int) -> void:
 	rect(x + 3, base - 15, 9, 1, Color8(210, 210, 200))
 	rect(x + 3, base - 12, 4, 1, Color8(222, 190, 96))
 	bar(x - 1, base - 23, 17, 2, WOOD)
+
+
+## Жирная обводка (правило владельца для домов и портала): ещё одно кольцо OUT снаружи силуэта —
+## вокруг непрозрачных пикселей (тени и дым не считаются силуэтом).
+func thick_outline(im: Image, rings := 1) -> void:
+	for r in rings:
+		var add: Array[Vector2i] = []
+		var w := im.get_width()
+		var h := im.get_height()
+		for y in h:
+			for x in w:
+				if im.get_pixel(x, y).a >= 0.9:
+					continue
+				for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var q := Vector2i(x, y) + d
+					if q.x >= 0 and q.y >= 0 and q.x < w and q.y < h and im.get_pixel(q.x, q.y).a >= 0.9:
+						add.append(Vector2i(x, y))
+						break
+		for p: Vector2i in add:
+			im.set_pixelv(p, OUT)
+
+
+## Нарисовать постройку на отдельном прозрачном слое, обвести жирно и наложить на холст.
+func building_outlined(f: Callable) -> void:
+	var base := img
+	img = Image.create(base.get_width(), base.get_height(), false, Image.FORMAT_RGBA8)
+	f.call()
+	thick_outline(img)
+	base.blend_rect(img, Rect2i(Vector2i.ZERO, img.get_size()), Vector2i.ZERO)
+	img = base
