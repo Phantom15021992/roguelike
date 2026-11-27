@@ -402,7 +402,8 @@ func _house_shadow() -> void:
 	# (проходит и позади подвесной вывески).
 	for y in range(62, BASE):
 		var w := 16 if y > 75 else clampi((y - 62) + 3, 0, 16)
-		for x in range(204, 204 + w):
+		# От линии стены крыла (x = 196): под свесом крыши светлого зазора нет.
+		for x in range(196, 204 + w):
 			put(x, y, Color(0.16, 0.08, 0.16, 0.3))
 
 
