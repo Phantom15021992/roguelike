@@ -677,33 +677,12 @@ func _portal() -> void:
 ## подъёмник с колесом и корзиной камней на канате.
 func _mine() -> void:
 	ground_shadow(30, 0, 120, 8, 0.3)
-	# Тёмная скальная масса — сплошная гора под валунами (без просветов земли).
-	var mass := {}
-	for py in range(-170, 1):
-		for px in range(-118, 104):
-			var nx := float(px + 8) / 110.0
-			var top := -160.0 * (1.0 - nx * nx) + 8.0 * sin(px * 0.13)
-			if py < top or py > 0:
-				continue
-			var c: Color = ROCK[3] if hh(px / 4, py / 4, 97) % 3 != 0 else ROCK[4]
-			mass[Vector2i(px, py)] = c
-	_blit_outlined(mass)
-	# Валуны: задние выше, передние ниже (рисуются сзади вперёд), внахлёст.
-	var back := [[-30, -136, 64, 50], [18, -150, 66, 54], [-74, -110, 60, 50], [56, -118, 60, 50],
-		[-16, -104, 56, 46], [26, -96, 54, 44], [-100, -70, 52, 46], [-58, -74, 52, 44], [74, -78, 52, 46],
-		[-38, -62, 40, 34], [44, -58, 44, 38]]
-	for rk: Array in back:
-		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 7 + int(rk[1]))
-	var sides := [[-64, -34, 54, 46], [-102, -22, 44, 36], [64, -34, 50, 44], [92, -20, 38, 32]]
-	for rk: Array in sides:
-		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 5 + int(rk[1]))
+	_cliff()
 	_mine_entrance(6, 0)
 	# Рельсы и вагонетка.
 	_rails(6, 0)
 	_cart(36, 30)
-	# Мелкие камни и трава у подножия.
-	for rk: Array in [[-104, -4, 20, 14], [-78, 2, 14, 10], [96, 0, 18, 12], [-40, 4, 12, 8]]:
-		_rock(int(rk[0]), int(rk[1]), int(rk[2]), int(rk[3]), int(rk[0]) * 3)
+	# Трава у подножия.
 	for i in 16:
 		var gx := -110 + i * 15 + hh(i, 0, 96) % 6
 		var gy := -2 + hh(i, 1, 96) % 5
@@ -712,6 +691,110 @@ func _mine() -> void:
 		put(gx - 1, gy, MOSS[1])
 		put(gx, gy - 2, MOSS[0])
 	_crane(92, 4)
+
+
+## Цельная скала рудника: силуэт горы с выступами; сверху освещённая грань со шапкой травы
+## и мха (под её кромкой тень, свисающий мох); передняя стена — пласты-уступы (светлая кромка,
+## под ней тень) и вертикальные трещины; правый бок в тени; тёмный низ; контур.
+func _cliff() -> void:
+	var chain := [Vector2(-114, 0), Vector2(-114, -28), Vector2(-100, -50), Vector2(-86, -58), Vector2(-76, -94),
+		Vector2(-54, -108), Vector2(-42, -140), Vector2(-14, -162), Vector2(14, -158), Vector2(32, -136),
+		Vector2(54, -126), Vector2(70, -100), Vector2(88, -88), Vector2(98, -56), Vector2(106, -30), Vector2(106, 0)]
+	var top := {}
+	for i in chain.size() - 1:
+		var p0: Vector2 = chain[i]
+		var p1: Vector2 = chain[i + 1]
+		var x0 := int(minf(p0.x, p1.x))
+		var x1 := int(maxf(p0.x, p1.x))
+		for x in range(x0, x1 + 1):
+			var t := 0.0 if x1 == x0 else float(x - p0.x) / (p1.x - p0.x)
+			var y := lerpf(p0.y, p1.y, clampf(t, 0.0, 1.0))
+			top[x] = minf(top.get(x, 0.0), y)
+	# Крупные рубленые грани передней стены и бока (точки-центры граней).
+	var seeds: Array[Vector2] = [Vector2(-96, -30), Vector2(-70, -70), Vector2(-62, -20), Vector2(-36, -110),
+		Vector2(-30, -60), Vector2(-8, -130), Vector2(22, -100), Vector2(46, -60), Vector2(30, -24),
+		Vector2(70, -84), Vector2(86, -30), Vector2(-100, -66), Vector2(0, -36)]
+	var pix := {}
+	for x in range(-114, 107):
+		var ty: float = top.get(x, 0.0)
+		var cap := ty + 16.0 + 6.0 * sin(x * 0.11)
+		for y in range(int(ty), 1):
+			var fy := float(y)
+			var c: Color
+			var xr := 20.0 + (fy + 160.0) * 0.5
+			if fy < cap:
+				# Верхняя грань: трава и мох шапкой, камень у края.
+				var mn := nz.get_noise_2d(x * 1.8, y * 1.8)
+				c = ROCK[0]
+				if mn > -0.15:
+					c = MOSS[0] if mn > 0.15 else MOSS[1]
+				if fy < ty + 1.5:
+					c = MOSS[0].lightened(0.1) if mn > -0.15 else ROCK[0].lightened(0.06)
+				if fy > cap - 2.0:
+					c = ROCK[0]
+			elif fy < cap + 2.0:
+				c = ROCK[3]                              # тень под кромкой верха
+			else:
+				# Грань: ближайший центр; шов между гранями — тёмное ребро, верх-лево грани светлее.
+				var pp := Vector2(x, fy)
+				var d1 := 1e9
+				var d2 := 1e9
+				var si := 0
+				for k in seeds.size():
+					var d := pp.distance_to(seeds[k])
+					if d < d1:
+						d2 = d1
+						d1 = d
+						si = k
+					elif d < d2:
+						d2 = d
+				var side := x > xr
+				var ti := 1 if si % 3 != 2 else 2
+				if side:
+					ti += 1
+				# Ниже — темнее.
+				if fy > -40.0 and ti < 3:
+					ti += 1 if hh(si, 0, 7) % 2 == 0 else 0
+				var dir := (pp - seeds[si]).normalized()
+				if d2 - d1 < 1.4:
+					c = ROCK[4]
+				elif d2 - d1 < 3.0 and dir.dot(Vector2(-0.7, -0.7)) > 0.2:
+					c = ROCK[maxi(ti - 1, 0)]               # освещённая кромка грани
+				elif d2 - d1 < 3.0 and dir.dot(Vector2(0.7, 0.7)) > 0.2:
+					c = ROCK[mini(ti + 1, 4)]
+				else:
+					c = ROCK[ti]
+				if side and absf(x - xr) < 1.0:
+					c = ROCK[4]                          # ребро бок/фасад
+				if x < -110 and not side:
+					c = ROCK[0]
+			# Пласты-уступы на передней стене и на боку.
+			if fy >= cap + 2.0:
+				for L: float in [-96.0 + 6.0 * sin(x * 0.07), -52.0 + 5.0 * sin(x * 0.09 + 1.0)]:
+					if absf(fy - L) < 1.2:
+						c = ROCK[0] if x <= xr else ROCK[1]
+					elif fy > L + 1.2 and fy < L + 4.5:
+						c = ROCK[3] if (x <= xr and fy < L + 3.0) else ROCK[4]
+				# Вертикальные трещины.
+				for k: float in [-84.0, -52.0, 40.0, 76.0]:
+					var kx := k + 2.0 * sin(fy * 0.2 + k)
+					if absf(x - kx) < 0.7 and fmod(absf(fy * 0.37 + k), 9.0) < 6.5:
+						c = ROCK[4]
+					elif x - kx > 0.7 and x - kx < 1.7 and fmod(absf(fy * 0.37 + k), 9.0) < 6.5:
+						c = c.lightened(0.08)
+				if hh(x / 3, y / 3, 98) < 70:
+					c = c.darkened(0.06)
+			if fy > -3.0:
+				c = ROCK[3]
+			pix[Vector2i(x, y)] = c
+	_blit_outlined(pix)
+	# Свисающий с верха мох.
+	for x in range(-108, 100, 7):
+		var ty: float = top.get(x, 0.0)
+		var cap := ty + 16.0 + 6.0 * sin(x * 0.11)
+		var l := 2 + hh(x, 0, 99) % 6
+		for i in l:
+			put(x + (i / 3) % 2, int(cap) + 1 + i, MOSS[1] if i % 3 != 2 else MOSS[2])
 
 
 ## Угловатый валун: многоугольник с гранями — светлая верхняя грань (с мхом), передняя
