@@ -56,6 +56,8 @@ func _ground() -> void:
 		for x in W:
 			var wn := nz.get_noise_2d(x * 2.0, y * 2.0) * 0.18
 			var k := LAY.kind_at(x / float(C) + wn, y / float(C) - wn)
+			if k == LAY.PATH:
+				k = LAY.GRASS        # у построенной шахты вместо утоптанной земли — трава
 			var c := Color(0, 0, 0, 0)
 			if k == LAY.STONE:
 				c = _paver(x, y)
