@@ -51,6 +51,8 @@ func _init() -> void:
 	_window(40, 132, 52, 28)
 	_awning(30, 116, 72)
 	_gable_wing()
+	# Тёмная обводка по низу дома (стык стен с землёй).
+	rect(11, BASE, 186, 1, OUT)
 	_door(160, BASE, 22, 46)
 	_sign_board(140, 104, 46)
 	_hanging_sign(196, 124)
