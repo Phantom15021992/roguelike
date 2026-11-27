@@ -1085,59 +1085,122 @@ func _gable_wing() -> void:
 	shadow(x0 + 5, top + 2, 1, BASE - 12 - top, 0.22)
 
 
-func _door(cx: int, base: int, w: int, h: int) -> void:
-	var x := cx - w / 2
-	var y := base - h
-	# Каменный наличник с аркой.
-	for yy in range(-4, h + 1):
-		for xx in range(-4, w + 4):
-			var inside := xx >= 0 and xx < w and yy >= 0
-			var dx := xx - w / 2.0 + 0.5
-			var r := w / 2.0 + 4
-			if yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > r * r:
-				continue
-			if inside and not (yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > (w / 2.0) * (w / 2.0)):
-				continue
-			var c: Color = STONE[1] if (xx / 4 + yy / 5) % 2 == 0 else STONE[2]
-			if (yy + 4) % 5 == 0:
-				c = STONE[3]
-			put(x + xx, y + yy, c)
-	# Полотно двери из досок.
-	for yy in h:
-		for xx in w:
-			var dx := xx - w / 2.0 + 0.5
-			if yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > (w / 2.0) * (w / 2.0):
-				continue
-			var pl := xx / 5
-			var px := xx % 5
-			var c: Color = Color8(108, 126, 98) if pl % 2 == 0 else Color8(96, 114, 88)
-			if px == 0:
-				c = Color8(54, 62, 54)
-			elif px == 1:
-				c = Color8(136, 152, 120)
-			elif px == 4:
-				c = Color8(78, 92, 74)
-			put(x + xx, y + yy, c)
-	# Петли (2 px: свет и тень) и ручка.
-	for hy: int in [y + 14, y + h - 12]:
-		rect(x + 1, hy, w - 6, 1, IRON[0])
-		rect(x + 1, hy + 1, w - 6, 1, IRON[2])
-		put(x + w - 5, hy, OUT)
-		put(x + w - 5, hy + 1, OUT)
-	rect(x + w - 6, y + h / 2, 2, 3, Color8(220, 184, 96))
-	put(x + w - 6, y + h / 2, Color8(255, 236, 170))
-	put(x + w - 5, y + h / 2 + 2, Color8(150, 110, 50))
-	# Контур арки.
-	for yy in range(-1, h):
-		for xx in range(-1, w + 1):
-			var dx := xx - w / 2.0 + 0.5
-			var dy := w / 2.0 - yy
-			var d := sqrt(dx * dx + dy * dy) if yy < w / 2 else absf(dx)
-			if absf(d - w / 2.0) < 0.6:
-				put(x + xx, y + yy, OUT)
-	# Ступенька.
-	bar(x - 5, base, w + 10, 3, STONE)
+const DOOR := [Color8(150, 168, 130), Color8(116, 136, 102), Color8(88, 106, 82), Color8(60, 72, 60)]
 
+
+## Дверь в нише: арка из клиновидных камней (у каждого свет сверху-слева, тень снизу-справа,
+## швы), замковый камень; ниша — тень под аркой и на левом откосе, правый откос на свету;
+## полотно из досок с фасками, тень от арки сверху, железные полосы с заклёпками и петлями,
+## кольцо-ручка, каменный порог.
+func _door(cx: int, base: int, w: int, h: int) -> void:
+	var x0 := cx - w / 2
+	var y0 := base - h
+	var r := w / 2.0
+	var acx := x0 + r          # центр арки
+	var acy := y0 + r
+	var ring := 5.0            # толщина каменной арки
+	var dep := 3               # глубина ниши (откосы)
+	var pix := {}
+	for py in range(y0 - int(ring) - 1, base):
+		for px in range(x0 - int(ring) - 1, x0 + w + int(ring) + 1):
+			var fx := px + 0.5
+			var fy := py + 0.5
+			var in_arch_zone := fy < acy
+			var d := Vector2(fx - acx, fy - acy).length() if in_arch_zone else absf(fx - acx)
+			var inside := d <= r
+			var outer := d <= r + ring
+			if not outer:
+				continue
+			var c: Color
+			if not inside:
+				# Камни обрамления.
+				if in_arch_zone:
+					var ang := atan2(fy - acy, fx - acx)      # -PI..0 (верх)
+					var seg := int(floor((ang + PI) / (PI / 7.0)))
+					var local := fposmod((ang + PI) / (PI / 7.0), 1.0)
+					var rad := (d - r) / ring
+					c = STONE[1] if seg % 2 == 0 else STONE[1].lightened(0.06)
+					if seg == 3:
+						c = STONE[0]                         # замковый камень
+					if local < 0.12 or rad > 0.86:
+						c = STONE[3]                         # швы и внешний край
+					elif rad < 0.2:
+						c = STONE[2]                         # внутренняя кромка — в тени
+					elif local < 0.3 and rad > 0.3:
+						c = (c as Color).lightened(0.1)
+				else:
+					var row := int(floor((fy - acy) / 6.0))
+					var lv := fposmod(fy - acy, 6.0)
+					var side_w := 5.0 if row % 2 == 0 else 3.5
+					var u := (x0 - fx) if fx < acx else (fx - x0 - w)
+					c = STONE[1] if row % 2 == 0 else STONE[1].darkened(0.05)
+					if lv < 1.0 or u > side_w + 0.5:
+						c = STONE[3]
+					elif lv < 2.0:
+						c = STONE[0]
+					elif lv > 4.8 or (fx > acx and u > side_w - 1.0):
+						c = STONE[2]
+					if u > ring - 0.5:
+						continue
+				pix[Vector2i(px, py)] = c
+				continue
+			# Ниша.
+			var uu := fx - x0
+			var top_edge := r - d if in_arch_zone else 99.0
+			if in_arch_zone and top_edge < dep:
+				c = STONE[3].darkened(0.25)                  # свод ниши — глубокая тень
+			elif uu < dep:
+				c = STONE[3]                                 # левый откос в тени
+			elif uu > w - dep + 1:
+				c = STONE[0]                                 # правый откос на свету
+			else:
+				# Полотно двери: доски 4 px с фасками.
+				var pu := int(floor(uu - dep)) 
+				var pl := posmod(pu, 4)
+				var ti := 1
+				if pl == 0:
+					ti = 3
+				elif pl == 1:
+					ti = 0
+				elif pl == 3:
+					ti = 2
+				if hh(int(floor((uu - dep) / 4.0)), int(fy) / 3, 70) < 90 and pl == 2:
+					ti = 2
+				c = DOOR[ti]
+				# Тень от арки и свода сверху.
+				var sh := (top_edge - dep) if in_arch_zone else (fy - acy + r - dep)
+				if sh < 3.0:
+					c = DOOR[mini(ti + 1, 3)].darkened(0.12)
+				# Железные полосы с петлями и заклёпками.
+				for bv: int in [y0 + int(h * 0.36), base - 10]:
+					if py == bv:
+						c = HOOP[1] if uu < w * 0.4 else HOOP[2]
+						if posmod(int(uu), 4) == 2:
+							c = HOOP[0]
+					elif py == bv + 1:
+						c = HOOP[3]
+			pix[Vector2i(px, py)] = c
+	_blit_outlined(pix)
+	# Концы петель слева — стрелкой, заклёпки.
+	for bv: int in [y0 + int(h * 0.36), base - 10]:
+		put(x0 + dep, bv - 1, HOOP[1])
+		put(x0 + dep, bv + 2, HOOP[3])
+		for k in range(x0 + dep + 3, x0 + w - 3, 4):
+			put(k, bv, HOOP[0])
+			put(k, bv + 1, OUT)
+	# Кольцо-ручка.
+	var hx := x0 + w - 6
+	var hy := y0 + int(h * 0.55)
+	for yy in range(-3, 4):
+		for xx in range(-3, 4):
+			var d := Vector2(xx, yy).length()
+			if d > 2.2 and d < 3.3:
+				put(hx + xx, hy + yy, HOOP[0] if (xx + yy) < -1 else (HOOP[1] if (xx + yy) < 2 else HOOP[3]))
+	put(hx, hy - 4, HOOP[2])
+	put(hx, hy - 3, OUT)
+	# Порог.
+	bar(x0 - 4, base, w + 8, 3, STONE)
+	shadow(x0 - 3, base + 3, w + 6, 1, 0.3)
 
 ## Вывеска «ЛАВКА» на фронтоне — как «BAR» у референса: доска со светлой кромкой, светлые буквы.
 func _sign_board(x: int, y: int, w: int) -> void:
