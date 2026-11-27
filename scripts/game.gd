@@ -1227,6 +1227,7 @@ func fx_meteor(target: Vector2) -> void:
 	s.offset = -Vector2(32, 32)
 	s.scale = Vector2.ONE * 0.8
 	s.position = target + Vector2(-70, -100)
+	s.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF  # летит твином, не в шагах физики
 	fx().add_child(s)
 	var tw := s.create_tween()
 	tw.tween_property(s, "position", target + Vector2(0, -4), METEOR_FALL)
@@ -2365,6 +2366,15 @@ func _perftest() -> void:
 	var t0 := Time.get_ticks_usec()
 	var last := t0
 	var keys := ["move_right", "move_down", "move_left", "move_up"]
+	if "--diag" in OS.get_cmdline_user_args():
+		var ev2 := InputEventAction.new()
+		ev2.action = "move_down"
+		ev2.pressed = true
+		Input.parse_input_event(ev2)
+		keys = ["move_right", "move_right", "move_left", "move_left"]
+	var moved := 0
+	var jumps := 0
+	var prev_o := get_viewport().get_canvas_transform().origin
 	var k := 0
 	while Time.get_ticks_usec() - t0 < 6000000:
 		var ev := InputEventAction.new()
@@ -2376,6 +2386,12 @@ func _perftest() -> void:
 		worst = maxf(worst, (now - last) / 1000.0)
 		last = now
 		frames += 1
+		var o := get_viewport().get_canvas_transform().origin
+		if o.distance_to(prev_o) > 0.001:
+			moved += 1
+		if o.distance_to(prev_o) > 6.0:
+			jumps += 1
+		prev_o = o
 		if frames % 90 == 0:
 			var up := InputEventAction.new()
 			up.action = keys[k % 4]
@@ -2383,7 +2399,7 @@ func _perftest() -> void:
 			Input.parse_input_event(up)
 			k += 1
 	var secs := (Time.get_ticks_usec() - t0) / 1000000.0
-	print("PERF fps=%.1f worst_ms=%.1f art=%s" % [frames / secs, worst, not ("--noart" in OS.get_cmdline_user_args())])
+	print("PERF fps=%.1f worst_ms=%.1f art=%s camera_moved_frames=%d%% big_jumps=%d interp=%s" % [frames / secs, worst, not ("--noart" in OS.get_cmdline_user_args()), int(100.0 * moved / maxi(frames, 1)), jumps, get_tree().physics_interpolation])
 	get_tree().quit()
 
 

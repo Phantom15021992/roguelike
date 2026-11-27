@@ -9,6 +9,10 @@ var color := Color.WHITE
 var _t := 0.0
 
 
+func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF  # всплывает в _process
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	position.y -= 24.0 * delta * (1.0 - _t / LIFETIME)

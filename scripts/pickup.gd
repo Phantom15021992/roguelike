@@ -22,6 +22,7 @@ var _t := 0.0
 
 
 func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF  # летит к герою в _process — без интерполяции физики
 	add_to_group("pickups")
 	# Выпадение: подпрыгивает и разлетается в сторону.
 	_vz = randf_range(70.0, 100.0)

@@ -105,6 +105,9 @@ func is_local() -> bool:
 
 func _ready() -> void:
 	add_to_group("player")
+	# Плавное движение между шагами физики (мониторы 120+ Гц): у хозяина и в одиночной игре.
+	# Гость двигает копии мира по сети, не в шагах физики — ему интерполяция только мешает.
+	get_tree().physics_interpolation = not Net.is_guest()
 	var cam: Camera2D = get_node_or_null("Camera")
 	if cam:
 		cam.enabled = is_local()
@@ -628,6 +631,7 @@ func _cast_target(dir: Vector2, reach := 110.0) -> Vector2:
 func _start_cast(id: String, lvl: int, dir: Vector2, mult: float, time: float, channel := false) -> void:
 	var target := _cast_target(dir)
 	var marker: Node2D = TELEGRAPH.new()
+	marker.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF  # круг идёт за героем в _process
 	marker.color = HOLY_COLOR if id == "prayer" else CAST_COLOR
 	marker.hostile = false
 	marker.position = target
