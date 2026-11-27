@@ -41,7 +41,9 @@ func _init() -> void:
 	nz.frequency = 0.05
 	_ground()
 	_tree(-34, 126, 26, 3)
-	_tree(258, 112, 23, 8)
+	_tree(258, 112, 23, 8, "birch")
+	_bush(-52, 152, 13, 21, "flower")
+	_bush(286, 140, 13, 22, "berry")
 	_house_shadow()
 	_wing_roof()
 	_chimney_slope(175, 6, 16)
@@ -74,8 +76,34 @@ func _init() -> void:
 	var big := img.duplicate()
 	big.resize(W * 4, H * 4, Image.INTERPOLATE_NEAREST)
 	big.save_png(out + "sample_merchant_x4.png")
+	_gallery()
 	print("sample: done")
 	quit()
+
+
+## Галерея деревьев и кустов на траве (shots/sample_trees.png, увеличено в 4 раза).
+func _gallery() -> void:
+	var main := img
+	img = Image.create(W, 200, false, Image.FORMAT_RGBA8)
+	for y in range(-OY, 200 - OY):
+		for x in range(-OX, W - OX):
+			var n := nz.get_noise_2d(x, y * 1.3)
+			var c: Color = GRASS[1]
+			if n > 0.25:
+				c = GRASS[1].lerp(GRASS[0], 0.35)
+			elif n < -0.3:
+				c = GRASS[1].lerp(GRASS[2], 0.6)
+			put(x, y, c)
+	var kinds := ["oak", "birch", "pine", "fruit", "autumn"]
+	for i in kinds.size():
+		_tree(-38 + i * 74, 30, 24, 3 + i * 5, kinds[i])
+	var bk := ["green", "flower", "berry", "dark", "green", "flower"]
+	for i in bk.size():
+		_bush(-44 + i * 62, 96, 12 + (i % 3) * 3, 40 + i, bk[i])
+	var big := img.duplicate()
+	big.resize(img.get_width() * 4, img.get_height() * 4, Image.INTERPOLATE_NEAREST)
+	big.save_png(ProjectSettings.globalize_path("res://shots/sample_trees.png"))
+	img = main
 
 
 # ------------------------------- кисточки -------------------------------
@@ -760,6 +788,10 @@ func _keg_side(x: int, base: int, length: int, r: int) -> void:
 	put(int(xl + length * 0.5), int(cy - r) - 1, KEG[4])
 
 
+const LEAF_BIRCH := [Color8(222, 232, 132), Color8(182, 210, 98), Color8(136, 174, 76), Color8(94, 132, 62), Color8(60, 92, 52)]
+const LEAF_AUTUMN := [Color8(246, 202, 108), Color8(226, 154, 72), Color8(190, 108, 56), Color8(142, 72, 48), Color8(94, 48, 42)]
+const LEAF_PINE := [Color8(118, 170, 108), Color8(78, 136, 92), Color8(54, 104, 78), Color8(36, 78, 62), Color8(24, 54, 48)]
+const BARK_BIRCH := [Color8(244, 240, 228), Color8(214, 208, 196), Color8(166, 160, 152)]
 const LEAF5 := [Color8(198, 222, 112), Color8(150, 192, 80), Color8(100, 154, 62), Color8(62, 112, 58), Color8(38, 72, 50)]
 
 
@@ -767,26 +799,42 @@ const LEAF5 := [Color8(198, 222, 112), Color8(150, 192, 80), Color8(100, 154, 62
 ## уходят в крону, под кроной ствол в тени. Крона — пучки листвы ярусами: у каждого пучка
 ## свой свет сверху-слева и тень снизу-справа, край из кончиков листьев, мазки листьев внутри;
 ## передний пучок отбрасывает тень на задние. Контур — по силуэту. Тень на траву вправо.
-func _tree(cx: int, base: int, s: int, sd: int) -> void:
+func _tree(cx: int, base: int, s: int, sd: int, kind := "oak") -> void:
+	if kind == "pine":
+		_pine(cx, base, s, sd)
+		return
+	var pal: Array = LEAF5
+	var bark: Array = BARK
+	if kind == "birch":
+		pal = LEAF_BIRCH
+		bark = BARK_BIRCH
+	elif kind == "autumn":
+		pal = LEAF_AUTUMN
 	var rng := RandomNumberGenerator.new()
 	rng.seed = sd
 	ground_shadow(cx + s / 2 + 4, base, s + 8, s / 3 + 3, 0.34)
 	var pix := {}
 	# Ствол.
 	var th := int(s * 1.25)
+	if kind == "birch":
+		th = int(s * 1.7)
 	for yy in th + 1:
 		var k := float(yy) / th
 		var bend := sin(k * 2.4 + sd) * 2.0
 		var half := 4.5 - k * 1.5 + (2.0 if yy < 3 else 0.0)
+		if kind == "birch":
+			half -= 1.5
 		for xx in range(int(floor(-half)), int(ceil(half)) + 1):
 			var t := (xx + half) / (half * 2.0)
-			var c: Color = BARK[1]
+			var c: Color = bark[1]
 			if t < 0.28:
-				c = BARK[0]
+				c = bark[0]
 			elif t > 0.72:
-				c = BARK[2]
+				c = bark[2]
 			if hh(xx + 31, int((yy + sd) / 3.0), 60) < 180:
 				c = (c as Color).darkened(0.14)
+			if kind == "birch" and posmod(yy + (hh(yy / 5, 0, 63 + sd) % 3), 5) == 0 and xx >= int(floor(-half)) + 1 and xx <= hh(yy, 1, 64) % 3 - 1:
+				c = Color8(54, 46, 50)            # чёрные чёрточки бересты
 			if k > 0.6:
 				c = (c as Color).darkened(0.25)   # тень от кроны
 			pix[Vector2i(cx + xx + int(round(bend)), base - yy)] = c
@@ -795,16 +843,16 @@ func _tree(cx: int, base: int, s: int, sd: int) -> void:
 		for i in 6:
 			var rx := cx + side * (4 + i)
 			var ry := base - 2 + i / 2
-			pix[Vector2i(rx, ry)] = BARK[0] if side < 0 else BARK[2]
-			pix[Vector2i(rx, ry - 1)] = BARK[1] if side < 0 else BARK[2]
+			pix[Vector2i(rx, ry)] = bark[0] if side < 0 else bark[2]
+			pix[Vector2i(rx, ry - 1)] = bark[1] if side < 0 else bark[2]
 	# Ветки в крону.
 	var top := base - th
 	for side: int in [-1, 1]:
 		for i in 9:
 			var bx := cx + side * (2 + i)
 			var by := top + 6 - i
-			pix[Vector2i(bx, by)] = BARK[1]
-			pix[Vector2i(bx, by + 1)] = BARK[2]
+			pix[Vector2i(bx, by)] = bark[1]
+			pix[Vector2i(bx, by + 1)] = bark[2]
 	_blit_outlined(pix)
 	# Крона: пучки ярусами (задние — выше и темнее).
 	var cy := top - s / 3
@@ -819,6 +867,34 @@ func _tree(cx: int, base: int, s: int, sd: int) -> void:
 	for i in 3:
 		var px := lerpf(-s * 0.45, s * 0.45, i / 2.0) + rng.randf_range(-2, 2)
 		clumps.append([px, s * 0.44 + rng.randf_range(-1, 2), s * rng.randf_range(0.32, 0.4), 0])
+	if kind == "birch":
+		for c2: Array in clumps:
+			c2[0] = float(c2[0]) * 0.7
+			c2[1] = float(c2[1]) * 1.25 - s * 0.15
+			c2[2] = float(c2[2]) * 0.85
+	var leaves := _draw_clumps(clumps, cx, cy, pal, sd, rng)
+	if kind == "fruit":
+		# Яблоки в освещённой части кроны: 2x2, блик и тень.
+		var keys := leaves.keys()
+		var n := 0
+		for i in 400:
+			var k: Vector2i = keys[rng.randi() % keys.size()]
+			if leaves[k] != pal[1] and leaves[k] != pal[2]:
+				continue
+			if not (leaves.has(k + Vector2i(1, 1)) and leaves.has(k + Vector2i(-1, -1))):
+				continue
+			put(k.x, k.y, Color8(236, 96, 80))
+			put(k.x + 1, k.y, Color8(196, 52, 50))
+			put(k.x, k.y + 1, Color8(196, 52, 50))
+			put(k.x + 1, k.y + 1, Color8(140, 36, 42))
+			n += 1
+			if n >= 9:
+				break
+
+
+## Пучки листвы (общие для деревьев и кустов): тон сверху вниз, кромки, тень на соседние,
+## мазки листьев, контур по силуэту. Возвращает пиксели листвы.
+func _draw_clumps(clumps: Array, cx: int, cy: int, pal: Array, sd: int, rng: RandomNumberGenerator) -> Dictionary:
 	var leaves := {}
 	for cl: Array in clumps:
 		var ccx: float = cx + float(cl[0])
@@ -875,14 +951,106 @@ func _tree(cx: int, base: int, s: int, sd: int) -> void:
 				var stroke := posmod(xx * 2 + yy * 3 + sd, 7)
 				if stroke == 0 and hh(xx / 2, yy / 2, 62) < 520:
 					ti = clampi(ti - 1 if g < 0.0 else ti + 1, 0, 4)
-				leaves[Vector2i(xx, yy)] = LEAF5[ti]
+				leaves[Vector2i(xx, yy)] = pal[ti]
 	# Контур кроны по силуэту.
 	for k: Vector2i in leaves:
 		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			if not leaves.has(k + d):
-				put(k.x + d.x, k.y + d.y, LEAF_OUT)
+				put(k.x + d.x, k.y + d.y, (pal[4] as Color).darkened(0.35))
 	for k: Vector2i in leaves:
 		put(k.x, k.y, leaves[k])
+	return leaves
+
+
+
+## Ель: короткий ствол, ярусы-треугольники с зубчатым низом; у каждого яруса свет сверху-слева,
+## тёмная полоса по низу (на неё падает следующий ярус), контур по силуэту.
+func _pine(cx: int, base: int, s: int, sd: int) -> void:
+	ground_shadow(cx + s / 2 + 2, base, s, s / 3 + 2, 0.34)
+	var pix := {}
+	for yy in 8:
+		for xx in range(-2, 3):
+			pix[Vector2i(cx + xx, base - yy)] = BARK[0] if xx < 0 else (BARK[1] if xx == 0 else BARK[2])
+	_blit_outlined(pix)
+	var leaves := {}
+	var tiers := 4
+	var tier_h := int(s * 0.74)
+	for t in tiers:
+		var bottom := base - 6 - t * int(tier_h * 0.62)
+		var half_w := s * (0.95 - t * 0.2)
+		var topy := bottom - tier_h
+		for yy in range(topy, bottom + 3):
+			var k := float(yy - topy) / tier_h
+			var hw := half_w * clampf(k, 0.0, 1.0)
+			for xx in range(int(-hw) - 2, int(hw) + 3):
+				# Зубчатый низ яруса.
+				var tooth := 2.5 * absf(sin((xx + sd) * 0.9))
+				if yy > bottom + tooth - 2.0:
+					continue
+				if absf(xx) > hw + (hh(xx, yy, 70 + sd) % 3) - 1:
+					continue
+				var g := k + xx / maxf(1.0, half_w) * 0.25
+				var ti := 2
+				if g < 0.3:
+					ti = 0
+				elif g < 0.55:
+					ti = 1
+				elif g < 0.8:
+					ti = 2
+				else:
+					ti = 3
+				if yy > bottom + tooth - 4.0:
+					ti = 4
+				if xx > hw * 0.55:
+					ti = maxi(ti, 3)
+				if posmod(xx * 3 + yy * 2 + sd, 9) == 0 and ti > 0:
+					ti -= 1
+				leaves[Vector2i(cx + xx, yy)] = LEAF_PINE[ti]
+	for k: Vector2i in leaves:
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if not leaves.has(k + d):
+				put(k.x + d.x, k.y + d.y, Color8(20, 40, 38))
+	for k: Vector2i in leaves:
+		put(k.x, k.y, leaves[k])
+
+
+## Куст: низкие пучки листвы (тот же приём, что у кроны), обычный / цветущий / с ягодами.
+func _bush(cx: int, base: int, s: int, sd: int, kind := "green") -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	ground_shadow(cx + s / 2, base, s + 4, 3, 0.34)
+	var clumps: Array = []
+	var n := 3 + int(s / 8)
+	for i in n:
+		var px := lerpf(-s * 0.6, s * 0.6, float(i) / maxf(1, n - 1)) + rng.randf_range(-1.5, 1.5)
+		clumps.append([px, -s * 0.15 + rng.randf_range(-2, 1), s * rng.randf_range(0.36, 0.46), 1])
+	for i in n - 1:
+		var px := lerpf(-s * 0.45, s * 0.45, float(i) / maxf(1, n - 2)) + rng.randf_range(-1.5, 1.5)
+		clumps.append([px, s * 0.12, s * rng.randf_range(0.34, 0.42), 0])
+	var pal: Array = LEAF5 if kind != "dark" else LEAF_PINE
+	var leaves := _draw_clumps(clumps, cx, base - int(s * 0.45), pal, sd, rng)
+	if kind == "flower" or kind == "berry":
+		var keys := leaves.keys()
+		var cnt := 0
+		for i in 300:
+			var k: Vector2i = keys[rng.randi() % keys.size()]
+			if not (leaves.has(k + Vector2i(1, 1)) and leaves.has(k + Vector2i(-1, -1))):
+				continue
+			if kind == "flower":
+				var fc: Color = [Color8(246, 170, 190), Color8(250, 246, 236), Color8(244, 210, 110)][cnt % 3]
+				put(k.x, k.y - 1, fc)
+				put(k.x - 1, k.y, fc)
+				put(k.x + 1, k.y, fc.darkened(0.15))
+				put(k.x, k.y + 1, fc.darkened(0.25))
+				put(k.x, k.y, Color8(250, 220, 120))
+			else:
+				put(k.x, k.y, Color8(110, 120, 210))
+				put(k.x + 1, k.y, Color8(70, 70, 150))
+				put(k.x, k.y + 1, Color8(70, 70, 150))
+				put(k.x, k.y - 1, Color8(190, 200, 250))
+			cnt += 1
+			if cnt >= 10:
+				break
 
 
 ## Стык трубы с черепицей: жестяной фартук (свет сверху, тень снизу) и тень на скате под ним.
