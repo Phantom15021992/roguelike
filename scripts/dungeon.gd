@@ -9,8 +9,21 @@ const TILE := 16
 const TILES_TEX := preload("res://assets/tiles.png")
 # Новая графика (по референсам владельца): пока только первый биом — кристальная пещера.
 const CAVE_TEX := preload("res://assets/cave_tiles.png")
-const CAVE_DECOR := preload("res://assets/cave_decor.png")
-const CAVE_FLOOR := preload("res://assets/cave_floor.png")  # 64x128: пол 4x4 клетки + верх скалы 4x4
+# Биомы в новом стиле (пещера): пол+скала 64x128 (пол 4x4 клетки + скала 4x4), украшения 192x16,
+# цвет света кристаллов, сумрак, цвета краёв скал и колонн. Остальные биомы — старые плитки.
+# Картинки: tools/gen_cave.gd (биом 0) и tools/gen_biomes.gd (2, 3, 4, 8).
+const STYLES := {
+	0: {"floor": "res://assets/cave_floor.png", "decor": "res://assets/cave_decor.png", "light": Color(0.4, 0.85, 1.0),
+		"ambient": Color(0.3, 0.32, 0.5), "rock": Color8(15, 14, 29), "edge": Color8(30, 30, 54), "rim": Color8(74, 84, 130), "pillar": Color8(52, 56, 88)},
+	2: {"floor": "res://assets/biome_floor_2.png", "decor": "res://assets/biome_decor_2.png", "light": Color(1.0, 0.55, 0.2),
+		"ambient": Color(0.42, 0.3, 0.3), "rock": Color8(26, 14, 14), "edge": Color8(56, 30, 26), "rim": Color8(200, 90, 40), "pillar": Color8(70, 46, 42)},
+	3: {"floor": "res://assets/biome_floor_3.png", "decor": "res://assets/biome_decor_3.png", "light": Color(0.6, 0.88, 1.0),
+		"ambient": Color(0.45, 0.5, 0.66), "rock": Color8(40, 56, 90), "edge": Color8(70, 96, 140), "rim": Color8(220, 236, 252), "pillar": Color8(110, 140, 180)},
+	4: {"floor": "res://assets/biome_floor_4.png", "decor": "res://assets/biome_decor_4.png", "light": Color(0.5, 1.0, 0.6),
+		"ambient": Color(0.32, 0.4, 0.32), "rock": Color8(16, 26, 16), "edge": Color8(34, 52, 30), "rim": Color8(90, 140, 70), "pillar": Color8(70, 80, 56)},
+	8: {"floor": "res://assets/biome_floor_8.png", "decor": "res://assets/biome_decor_8.png", "light": Color(1.0, 0.75, 0.4),
+		"ambient": Color(0.42, 0.38, 0.34), "rock": Color8(20, 18, 24), "edge": Color8(50, 46, 52), "rim": Color8(170, 130, 70), "pillar": Color8(110, 100, 96)},
+}
 const LIGHT_TEX := preload("res://assets/light.png")
 const Blocks := preload("res://scripts/blocks.gd")
 const Arenas := preload("res://scripts/arenas.gd")
@@ -223,7 +236,7 @@ func _ready() -> void:
 	if "--mapdump" in OS.get_cmdline_user_args():
 		_dump_map(rows, "res://shots/map_floor%d_%d.png" % [Run.depth, randi() % 1000])
 		print("anvil on floor: %s" % ("".join(rows).contains("A")))
-	map.modulate = pool_for(Run.depth)["tint"]
+	map.modulate = Color.WHITE if _cave_style() else pool_for(Run.depth)["tint"]
 	_decorate()
 	Game.spawn_guest_heroes()
 	Net.scene_loaded()
@@ -245,7 +258,7 @@ func _ready_guest() -> void:
 	entities.remove_child(player)
 	player.queue_free()
 	_build(rows, true)
-	map.modulate = pool_for(Run.depth)["tint"]
+	map.modulate = Color.WHITE if _cave_style() else pool_for(Run.depth)["tint"]
 	_decorate()
 	Net.scene_loaded()
 
@@ -315,9 +328,17 @@ func _floor_cell(cell: Vector2i) -> void:
 		map.set_cell(cell, 0, FLOOR_VARIANTS[0])
 
 
-## Первый биом (этажи 1–10) — в новом стиле; остальные пока старые.
+## Биомы из STYLES — в новом стиле; остальные пока старые.
 func _cave_style() -> bool:
-	return Roster.biome_of(Run.depth) == 0
+	return STYLES.has(Roster.biome_of(Run.depth))
+
+
+func _style() -> Dictionary:
+	return STYLES.get(Roster.biome_of(Run.depth), STYLES[0])
+
+
+var _decor_tex: Texture2D
+var _lc := Color(0.4, 0.85, 1.0)   # цвет света кристаллов биома
 
 
 ## Украшения и свет. Расклад зависит только от карты — у гостя в коопе получается тот же.
@@ -334,6 +355,10 @@ func _decorate() -> void:
 	_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/cave_light.gdshader")
+	var st := _style()
+	mat.set_shader_parameter("ambient", Vector3((st["ambient"] as Color).r, (st["ambient"] as Color).g, (st["ambient"] as Color).b))
+	_decor_tex = load(st["decor"])
+	_lc = st["light"]
 	_shade.material = mat
 	cl.add_child(_shade)
 	var rng := RandomNumberGenerator.new()
@@ -354,17 +379,21 @@ func _decorate() -> void:
 				orow[c.x] = "."
 		open_rows.append(orow)
 	edges.rows = open_rows
+	edges.rock = st["rock"]
+	edges.rock_edge = st["edge"]
+	edges.rim_col = st["rim"]
 	$Ground.add_child(edges)
 	$Ground.move_child(edges, 0)
 	for r: Rect2i in _col_rects:
 		var pil: Node2D = preload("res://scripts/cave_pillar.gd").new()
 		pil.cells = r.size
 		pil.seed_v = hash(r.position)
+		pil.set_palette(st["pillar"])
 		pil.position = Vector2(r.position.x * TILE + r.size.x * TILE / 2.0, (r.position.y + r.size.y) * TILE)
 		$Entities.add_child(pil)
 		if pil.has_crystals():
 			var cp: Vector2 = pil.position + pil.crystal_pos()
-			_light(layer, cp, Color(0.45, 0.8, 1.0), 1.2 + r.size.x * 0.4, 0.8)
+			_light(layer, cp, _lc, 1.2 + r.size.x * 0.4, 0.8)
 			# Кристаллы верхушки — над пеленой полумрака, чтобы сияли.
 			var cs := _decor_sprite(_glow_layer(), int(hash(r.position) % 3), cp + Vector2(0, -2))
 			cs.modulate = Color(1.3, 1.4, 1.5)
@@ -383,7 +412,7 @@ func _decorate() -> void:
 					_rock_decor(layer, rng, open_rows, x, y, pos)
 				continue
 			if ch == "S":
-				_light(layer, pos, Color(0.45, 0.85, 1.0), 2.0, 0.7)
+				_light(layer, pos, _lc, 2.0, 0.7)
 				continue
 			var under_wall := (open_rows[y - 1] as String)[x] == "#"
 			var r2 := rng.randf()
@@ -392,13 +421,13 @@ func _decorate() -> void:
 				c.flip_h = rng.randf() < 0.5
 				c.modulate = Color(1.3, 1.4, 1.5)
 				_glow(layer, pos + Vector2(0, -7), 1.0, rng.randf() * TAU)
-				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.6, 1.3)
+				_light(layer, pos + Vector2(0, -6), _lc, 2.6, 1.3)
 				lights += 1
 			elif under_wall and r2 < 0.13:
 				_decor_sprite(layer, 4, pos).modulate = Color(1.3, 1.5, 1.7)
 				if lights < 28 and rng.randf() < 0.5:
 					_glow(layer, pos, 0.5, rng.randf() * TAU)
-					_light(layer, pos, Color(0.4, 0.8, 1.0), 1.2, 0.9)
+					_light(layer, pos, _lc, 1.2, 0.9)
 					lights += 1
 			elif r2 < 0.05:
 				_decor_sprite(layer, 6, pos)
@@ -407,7 +436,7 @@ func _decorate() -> void:
 			elif r2 < 0.095 and lights < 28:
 				_decor_sprite(_glow_layer(), rng.randi_range(0, 2), pos).modulate = Color(1.3, 1.4, 1.5)
 				_glow(layer, pos + Vector2(0, -3), 0.9, rng.randf() * TAU)
-				_light(layer, pos + Vector2(0, -6), Color(0.4, 0.85, 1.0), 2.4, 1.2)
+				_light(layer, pos + Vector2(0, -6), _lc, 2.4, 1.2)
 				lights += 1
 	set_process(true)
 
@@ -435,7 +464,7 @@ func _rock_decor(layer: Node2D, rng: RandomNumberGenerator, open_rows: Array, x:
 			_decor_sprite(_glow_layer(), 9, pos + jitter).flip_h = rng.randf() < 0.5
 			if rng.randf() < 0.5:
 				_glow(layer, pos + jitter + Vector2(0, -3), 0.55, rng.randf() * TAU)
-				_light(layer, pos, Color(0.35, 0.7, 1.0), 0.9, 0.4)
+				_light(layer, pos, _lc, 0.9, 0.4)
 		elif r < 0.25:
 			_decor_sprite(layer, 11, pos + jitter)
 		elif r < 0.3:
@@ -454,7 +483,7 @@ func _glow(_layer: Node2D, pos: Vector2, size: float, phase: float) -> void:
 	g.material = m
 	g.position = pos
 	g.scale = Vector2.ONE * size * 0.7
-	g.modulate = Color(0.35, 0.8, 1.0, 0.55)
+	g.modulate = Color(_lc.r * 0.9, _lc.g * 0.9, _lc.b * 0.9, 0.55)
 	# Над пеленой полумрака — иначе она гасит ореол; под кристаллами.
 	_glow_layer().add_child(g)
 	_glow_layer().move_child(g, 0)
@@ -477,7 +506,7 @@ func _glow_layer() -> Node2D:
 
 func _decor_sprite(layer: Node2D, frame: int, pos: Vector2) -> Sprite2D:
 	var s := Sprite2D.new()
-	s.texture = CAVE_DECOR
+	s.texture = _decor_tex if _decor_tex else load(_style()["decor"])
 	s.region_enabled = true
 	s.region_rect = Rect2(frame * 16, 0, 16, 16)
 	s.position = pos
@@ -1170,7 +1199,7 @@ func _make_tileset() -> TileSet:
 	# Пещера: большой бесшовный пол и скала (источник 1) — сетка тайлов не видна.
 	if _cave_style():
 		var big := TileSetAtlasSource.new()
-		big.texture = CAVE_FLOOR
+		big.texture = load(_style()["floor"])
 		big.texture_region_size = Vector2i(TILE, TILE)
 		ts.add_source(big, 1)
 		for y in 8:

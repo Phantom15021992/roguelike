@@ -149,6 +149,12 @@ static func start_floors(cp: int) -> Array:
 static func make(cfg: Dictionary, depth: int, as_mini := false) -> Node2D:
 	var e: Node2D = (load(cfg["scene"]) as PackedScene).instantiate()
 	e.BOSS_NAME = cfg["name"]
+	# Картинка босса: assets/mon/boss_<биом>_<номер 0–3>.png (tools/gen_monsters.gd).
+	for b in ROSTER.size():
+		var i: int = (ROSTER[b] as Array).find(cfg)
+		if i >= 0:
+			e.boss_art = "boss_%d_%d" % [b, i]
+			break
 	e.tempo = float(cfg.get("tempo", 1.0))
 	e.shot_chill = float(cfg.get("chill", 0.0))
 	e.tint = cfg.get("tint", Color(1, 1, 1, 1))

@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args or "--lineup" in args or _arg("--lineup", "") != "":
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -83,6 +83,8 @@ func _ready() -> void:
 		_herotest()
 	elif "--showcase" in args:
 		_showcase()
+	elif "--lineup" in args or _arg("--lineup", "") != "":
+		_lineup()
 	elif "--traptest" in args:
 		_traptest()
 	elif "--runtest" in args:
@@ -2130,6 +2132,73 @@ func _traptest() -> void:
 		if is_instance_valid(e):
 			print("TRAP left: %s dead=%s hp=%d" % [e.name, e.dead, e.hp])
 	_shot("trap_3_open")
+	get_tree().quit()
+
+
+# --- Смотр новой графики монстров (`--lineup`, `--lineup=slime,bat`, `--bosses`): ряды вокруг
+# героя, снимок стоя (лицом вниз), потом — как идут к герою (стороны). ---
+func _lineup() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(0.5)
+	var dg := get_tree().current_scene
+	var p: Node2D = local_hero()
+	p.god = true
+	await _wait(2.5)  # пока сойдёт заставка этажа
+	var c0: Vector2 = get_viewport().get_camera_2d().get_screen_center_position()
+	for e in get_tree().get_nodes_in_group("enemies"):
+		e.queue_free()
+	var names: Array = []
+	var only := _arg("--lineup", "")
+	if only == "bosses":
+		# Боссы: по 2 биома на снимок (8 штук), стоят, лицом вниз.
+		var Roster := preload("res://scripts/boss_roster.gd")
+		for b2 in range(0, Roster.ROSTER.size(), 2):
+			for bb in [b2, b2 + 1]:
+				for i in 4:
+					var e: Node2D = Roster.make(Roster.ROSTER[bb][i], bb * 10 + 3)
+					e.position = dg.open_spot(c0 + Vector2(-105 + i * 70, -40 + (bb - b2) * 70))
+					dg.get_node("Entities").add_child(e)
+					e.set_physics_process(false)
+					e.set_process(false)
+			await _wait(0.6)
+			_shot("lineup_bosses_%d" % (b2 / 2 + 1))
+			for e in get_tree().get_nodes_in_group("enemies"):
+				e.queue_free()
+			await _wait(0.3)
+		get_tree().quit()
+		return
+	if only != "":
+		names = Array(only.split(","))
+	else:
+		for f in DirAccess.get_files_at("res://assets/mon"):
+			if f.ends_with(".png") and not f.begins_with("boss_") and ResourceLoader.exists("res://scenes/%s.tscn" % f.get_basename()):
+				names.append(f.get_basename())
+	var per_shot := 18
+	var shot := 0
+	while not names.is_empty():
+		var batch := names.slice(0, per_shot)
+		names = names.slice(per_shot)
+		var spawned: Array = []
+		for i in batch.size():
+			var e: Node2D = (load("res://scenes/%s.tscn" % batch[i]) as PackedScene).instantiate()
+			e.position = dg.open_spot(c0 + Vector2(-110 + (i % 6) * 44, -60 + int(i / 6) * 44))
+			dg.get_node("Entities").add_child(e)
+			e.set_physics_process(false)
+			spawned.append(e)
+		await _wait(0.5)
+		shot += 1
+		_shot("lineup_%d_stand" % shot)
+		for e: Node2D in spawned:
+			if is_instance_valid(e):
+				e.set_physics_process(true)
+		await _wait(1.6)
+		_shot("lineup_%d_move" % shot)
+		print("LINEUP %d: %s" % [shot, ", ".join(batch)])
+		for e in get_tree().get_nodes_in_group("enemies"):
+			e.queue_free()
+		for x in get_tree().get_nodes_in_group("puddles"):
+			x.queue_free()
+		await _wait(0.3)
 	get_tree().quit()
 
 

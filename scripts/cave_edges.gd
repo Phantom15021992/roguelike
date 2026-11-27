@@ -6,9 +6,9 @@ extends Node2D
 ##   — внутренние углы пола: скругление.
 
 const TILE := 16
-const ROCK := Color8(15, 14, 29)
-const ROCK_EDGE := Color8(30, 30, 54)
-const RIM := Color8(74, 84, 130)
+var rock := Color8(15, 14, 29)        # цвета биома (задаёт dungeon из STYLES)
+var rock_edge := Color8(30, 30, 54)
+var rim_col := Color8(74, 84, 130)
 
 var rows: Array = []
 
@@ -64,13 +64,13 @@ func _lip(a: Vector2, b: Vector2, out: Vector2, x: int, y: int, side: int, rim: 
 	for p: Vector2 in edge:
 		pts.append(p)
 	pts.append(b)
-	draw_colored_polygon(pts, ROCK)
+	draw_colored_polygon(pts, rock)
 	# Чуть светлее у самого края — объём выступа.
 	for k in range(1, edge.size()):
-		draw_line(edge[k - 1], edge[k], ROCK_EDGE, 2.0)
+		draw_line(edge[k - 1], edge[k], rock_edge, 2.0)
 	if rim:
 		for k in range(1, edge.size()):
-			draw_line(edge[k - 1], edge[k], RIM, 1.0)
+			draw_line(edge[k - 1], edge[k], rim_col, 1.0)
 
 
 ## Внутренний угол пола (скала с двух соседних сторон) — скругление.
@@ -84,7 +84,7 @@ func _floor_corners(x: int, y: int) -> void:
 			var cx := ox + (0 if dx < 0 else TILE)
 			var cy := oy + (0 if dy < 0 else TILE)
 			var r := 5.0 + _n(x, y, 60 + dx + dy * 2) * 3.0
-			draw_colored_polygon(_corner(cx, cy, dx, dy, r), ROCK)
+			draw_colored_polygon(_corner(cx, cy, dx, dy, r), rock)
 
 
 ## Угол между двумя стенами: область между вершиной угла и дугой радиуса r (выпуклая к полу).

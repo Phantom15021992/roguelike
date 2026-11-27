@@ -125,7 +125,10 @@ func _ready() -> void:
 	sprite.material = mat
 	_win_start = global_position
 	_setup()
-	if tint != Color(1, 1, 1, 1):
+	if own_art:
+		# Своя цветная картинка: перекраска наследника не нужна (прозрачность — оставить).
+		sprite.self_modulate = Color(1, 1, 1, sprite.self_modulate.a)
+	elif tint != Color(1, 1, 1, 1):
 		sprite.self_modulate = tint
 	if size != 1.0:
 		scale = Vector2(size, size)
@@ -141,11 +144,11 @@ func _ready() -> void:
 # У гостя монстр — копия: не думает и не ранит, только показывает то, что прислал хозяин.
 
 func net_props() -> Array:
-	return ["elite", "elite_kind", "tint", "is_mini"]
+	return ["elite", "elite_kind", "tint", "is_mini", "boss_art"]
 
 
 func net_state() -> Array:
-	return [Net.pack_sprite(sprite), hp, max_hp, dead, _net_extra()]
+	return [Net.pack_sprite(sprite), hp, max_hp, dead, _net_extra(), look_dir]
 
 
 func net_apply(a: Array) -> void:
@@ -156,6 +159,8 @@ func net_apply(a: Array) -> void:
 		dead = true
 		remove_from_group("enemies")
 	_net_apply_extra(a[4])
+	if a.size() > 5:
+		_set_look(str(a[5]))
 
 
 ## Наследники (боссы) добавляют свои поля: фазы, щиты, лучи.
@@ -201,6 +206,7 @@ func _physics_process(delta: float) -> void:
 	velocity = desired + _knockback
 	move_and_slide()
 	_check_contact()
+	_update_look()
 
 
 # --- Обход препятствий ---
@@ -498,8 +504,71 @@ func hurt_players_in(pos: Vector2, radius: float, damage: int) -> void:
 			pl.take_damage(damage, pos)
 
 
+# ---------------- Новая графика: 4 стороны ----------------
+# Лист assets/mon/<имя>.png: 3 ряда — вниз, вбок (лицом вправо; влево — зеркально), вверх;
+# столбцы — те же кадры, что у старого листа (анимации скриптов не меняются), кадр квадратный
+# (высота листа / 3). Имя — сцена монстра (ice_slime), иначе — старый лист (slime);
+# у босса из списка — art из boss_roster. Нет листа — старая картинка, как раньше.
+
+var own_art := false           # своя картинка (перекраска наследника и tint не применяются)
+var boss_art := ""             # имя картинки босса (задаёт boss_roster)
+var look_dir := "down"
+var _look_frames := {}
+
+
+func _art_key(sheet: Texture2D) -> String:
+	for key: String in [boss_art, scene_file_path.get_file().get_basename()]:
+		if key != "" and ResourceLoader.exists("res://assets/mon/%s.png" % key):
+			return key
+	var base := sheet.resource_path.get_file().get_basename() if sheet else ""
+	if base != "" and ResourceLoader.exists("res://assets/mon/%s.png" % base):
+		return "~" + base
+	return ""
+
+
+## Куда смотрит монстр: по движению, а стоя — на ближайшего героя.
+func _update_look() -> void:
+	if _look_frames.is_empty():
+		return
+	var v := velocity - _knockback
+	if v.length() < 6.0:
+		var p := nearest_player()
+		if p == null or p.global_position.distance_to(global_position) > 260.0:
+			return
+		v = p.global_position - global_position
+	var d := "side"
+	if absf(v.x) < absf(v.y) * 1.1:
+		d = "up" if v.y < 0.0 else "down"
+	_set_look(d)
+	if d == "side":
+		sprite.flip_h = v.x < 0.0
+
+
+func _set_look(d: String) -> void:
+	if d == look_dir or not _look_frames.has(d):
+		return
+	look_dir = d
+	sprite.sprite_frames = _look_frames[d]
+
+
 ## anims: {"имя": [[номера кадров], fps]} — квадратные кадры size x size по горизонтали.
 func make_frames(sheet: Texture2D, anims: Dictionary, size := 16) -> SpriteFrames:
+	var key := _art_key(sheet)
+	if key != "":
+		own_art = not key.begins_with("~")
+		var tex: Texture2D = load("res://assets/mon/%s.png" % key.trim_prefix("~"))
+		var fs := tex.get_height() / 3
+		_look_frames.clear()
+		for row in 3:
+			_look_frames[["down", "side", "up"][row]] = _frames_from(tex, anims, fs, row)
+		# Низ новой картинки — там же, где низ старой.
+		sprite.offset.y = -(fs - size) / 2.0
+		look_dir = "down"
+		return _look_frames["down"]
+	return _frames_from(sheet, anims, size, 0)
+
+
+func _frames_from(sheet: Texture2D, anims: Dictionary, size: int, row: int) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	for anim_name: String in anims:
@@ -510,7 +579,7 @@ func make_frames(sheet: Texture2D, anims: Dictionary, size := 16) -> SpriteFrame
 		for i: int in spec[0]:
 			var t := AtlasTexture.new()
 			t.atlas = sheet
-			t.region = Rect2(i * size, 0, size, size)
+			t.region = Rect2(i * size, row * size, size, size)
 			frames.add_frame(anim_name, t)
 	return frames
 

@@ -4,13 +4,24 @@ extends Node2D
 ## за колонной, тот прячется за ней). Твёрдость даёт карта (клетки колонны заняты).
 
 const SHADOW := Color8(8, 8, 18, 150)
-const LIGHT := Color8(78, 86, 128)
-const MID := Color8(52, 56, 88)
-const DARK := Color8(32, 33, 56)
-const DEEP := Color8(20, 20, 38)
-const JOINT := Color8(24, 24, 44)
-const CAP := Color8(66, 72, 110)
-const CAP_HI := Color8(104, 116, 164)
+var LIGHT := Color8(78, 86, 128)
+var MID := Color8(52, 56, 88)
+var DARK := Color8(32, 33, 56)
+var DEEP := Color8(20, 20, 38)
+var JOINT := Color8(24, 24, 44)
+var CAP := Color8(66, 72, 110)
+var CAP_HI := Color8(104, 116, 164)
+
+
+## Камень колонны под цвет биома (base — основной тон ствола).
+func set_palette(base: Color) -> void:
+	MID = base
+	LIGHT = base.lightened(0.35)
+	DARK = base.darkened(0.4)
+	DEEP = base.darkened(0.62)
+	JOINT = base.darkened(0.55)
+	CAP = base.lightened(0.2)
+	CAP_HI = base.lightened(0.55)
 const CYAN := Color8(90, 200, 240)
 const CYAN_HI := Color8(200, 245, 255)
 const MOSS := Color8(46, 92, 96)
