@@ -13,8 +13,10 @@ const CAVE_TEX := preload("res://assets/cave_tiles.png")
 # цвет света кристаллов, сумрак, цвета краёв скал и колонн. Остальные биомы — старые плитки.
 # Картинки: tools/gen_cave.gd (биом 0) и tools/gen_biomes.gd (2, 3, 4, 8).
 const STYLES := {
-	0: {"floor": "res://assets/cave_floor.png", "decor": "res://assets/cave_decor.png", "light": Color(0.4, 0.85, 1.0),
-		"ambient": Color(0.3, 0.32, 0.5), "rock": Color8(15, 14, 29), "edge": Color8(30, 30, 54), "rim": Color8(74, 84, 130), "pillar": Color8(52, 56, 88)},
+	# "art" — новый утверждённый стиль (tools/gen_dungeon.gd, assets/dng/*<art>.png, 2 пикселя
+	# картинки на пиксель мира): пол и скалы рисует shaders/cave_art.gdshader, украшения 32 px.
+	0: {"art": "0", "floor": "res://assets/cave_floor.png", "decor": "res://assets/dng/decor0.png", "light": Color(0.55, 0.85, 0.85),
+		"ambient": Color(0.74, 0.74, 0.8), "rock": Color8(15, 14, 29), "edge": Color8(30, 30, 54), "rim": Color8(74, 84, 130), "pillar": Color8(52, 56, 88)},
 	2: {"floor": "res://assets/biome_floor_2.png", "decor": "res://assets/biome_decor_2.png", "light": Color(1.0, 0.55, 0.2),
 		"ambient": Color(0.42, 0.3, 0.3), "rock": Color8(26, 14, 14), "edge": Color8(56, 30, 26), "rim": Color8(200, 90, 40), "pillar": Color8(70, 46, 42)},
 	3: {"floor": "res://assets/biome_floor_3.png", "decor": "res://assets/biome_decor_3.png", "light": Color(0.6, 0.88, 1.0),
@@ -273,6 +275,7 @@ func net_scene() -> Dictionary:
 ## Клетка пола: в пещере — кусок большого бесшовного пола, иначе старая плитка.
 ## Стена, поставленная по ходу игры (ворота арены, ловушка): в пещере — тёмная скала.
 func _wall_cell(cell: Vector2i) -> void:
+	_grid_set(cell, true)
 	if _cave_style():
 		map.set_cell(cell, 1, Vector2i(posmod(cell.x, 4), 4 + posmod(cell.y, 4)))
 	else:
@@ -322,6 +325,7 @@ func _find_columns(map_rows: Array) -> void:
 
 
 func _floor_cell(cell: Vector2i) -> void:
+	_grid_set(cell, false)
 	if _cave_style():
 		map.set_cell(cell, 1, Vector2i(posmod(cell.x, 4), posmod(cell.y, 4)))
 	else:
@@ -335,6 +339,74 @@ func _cave_style() -> bool:
 
 func _style() -> Dictionary:
 	return STYLES.get(Roster.biome_of(Run.depth), STYLES[0])
+
+
+## Биом в новом утверждённом стиле (пол и скалы — шейдером по карте, 2x картинки).
+func _art() -> bool:
+	return _cave_style() and _style().has("art")
+
+
+var _grid_img: Image
+var _grid_tex: ImageTexture
+
+
+## Пол и скалы новым стилем: карта этажа — картинка 1 px на клетку (белый — скала), по ней
+## шейдер рисует всё на одном прямоугольнике под украшениями. Плитки карты остаются для
+## столкновений, но не видны.
+func _make_art_floor() -> void:
+	var h := rows.size()
+	var w: int = (rows[0] as String).length()
+	_grid_img = Image.create(w, h, false, Image.FORMAT_L8)
+	for y in h:
+		var row: String = rows[y]
+		for x in w:
+			var rock := row[x] == "#" and not _cols.has(Vector2i(x, y))
+			_grid_img.set_pixel(x, y, Color.WHITE if rock else Color.BLACK)
+	_grid_tex = ImageTexture.create_from_image(_grid_img)
+	var rect := ColorRect.new()
+	rect.name = "CaveArt"
+	rect.size = Vector2(w * TILE, h * TILE)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/cave_art.gdshader")
+	var art: String = _style()["art"]
+	mat.set_shader_parameter("grid", _grid_tex)
+	mat.set_shader_parameter("floor_tex", load("res://assets/dng/floor%s.png" % art))
+	mat.set_shader_parameter("rock_tex", load("res://assets/dng/rock%s.png" % art))
+	mat.set_shader_parameter("cells", Vector2(w, h))
+	rect.material = mat
+	add_child(rect)
+	move_child(rect, map.get_index() + 1)
+	map.self_modulate = Color(1, 1, 1, 0.0)
+	if "--showtiles" in OS.get_cmdline_user_args():  # проверка: клетки карты сквозь рисунок
+		map.self_modulate.a = 1.0
+		rect.modulate.a = 0.5
+
+
+func _grid_set(cell: Vector2i, rock: bool) -> void:
+	if _grid_img == null or cell.x < 0 or cell.y < 0 or cell.x >= _grid_img.get_width() or cell.y >= _grid_img.get_height():
+		return
+	_grid_img.set_pixel(cell.x, cell.y, Color.WHITE if rock else Color.BLACK)
+	_grid_tex.update(_grid_img)
+
+
+## Колонна новым стилем: готовая картинка по размеру (клетки), низ — нижний край колонны.
+func _art_pillar(r: Rect2i, layer: Node2D) -> void:
+	var art: String = _style()["art"]
+	var w := clampi(r.size.x, 1, 3)
+	var h := clampi(r.size.y, 1, 3)
+	var node := Node2D.new()
+	node.position = Vector2(r.position.x * TILE + r.size.x * TILE / 2.0, (r.position.y + r.size.y) * TILE)
+	var sp := Sprite2D.new()
+	sp.texture = load("res://assets/dng/pillar%s_%dx%d.png" % [art, w, h])
+	sp.centered = false
+	sp.scale = Vector2.ONE * 0.5
+	sp.offset = Vector2(-sp.texture.get_width() / 2.0, -sp.texture.get_height() + 4)
+	node.add_child(sp)
+	$Entities.add_child(node)
+	if w >= 2 or h >= 2:
+		var cp := node.position + Vector2(-1, -15)
+		_light(layer, cp, _lc, 0.8 + w * 0.3, 0.6)
 
 
 var _decor_tex: Texture2D
@@ -367,6 +439,8 @@ func _decorate() -> void:
 	layer.name = "Decor"
 	$Ground.add_child(layer)
 	$Ground.move_child(layer, 0)
+	if _art():
+		_make_art_floor()
 	# Неровные края скал — под украшениями, над плитками.
 	var edges: Node2D = preload("res://scripts/cave_edges.gd").new()
 	edges.name = "CaveEdges"
@@ -382,9 +456,15 @@ func _decorate() -> void:
 	edges.rock = st["rock"]
 	edges.rock_edge = st["edge"]
 	edges.rim_col = st["rim"]
-	$Ground.add_child(edges)
-	$Ground.move_child(edges, 0)
+	if _art():
+		edges.free()
+	else:
+		$Ground.add_child(edges)
+		$Ground.move_child(edges, 0)
 	for r: Rect2i in _col_rects:
+		if _art():
+			_art_pillar(r, layer)
+			continue
 		var pil: Node2D = preload("res://scripts/cave_pillar.gd").new()
 		pil.cells = r.size
 		pil.seed_v = hash(r.position)
@@ -413,6 +493,12 @@ func _decorate() -> void:
 				continue
 			if ch == "S":
 				_light(layer, pos, _lc, 2.0, 0.7)
+				if _art():
+					var stairs := Sprite2D.new()
+					stairs.texture = load("res://assets/dng/stairs%s.png" % _style()["art"])
+					stairs.scale = Vector2.ONE * 0.5
+					stairs.position = pos
+					layer.add_child(stairs)
 				continue
 			var under_wall := (open_rows[y - 1] as String)[x] == "#"
 			var r2 := rng.randf()
@@ -508,7 +594,11 @@ func _decor_sprite(layer: Node2D, frame: int, pos: Vector2) -> Sprite2D:
 	var s := Sprite2D.new()
 	s.texture = _decor_tex if _decor_tex else load(_style()["decor"])
 	s.region_enabled = true
-	s.region_rect = Rect2(frame * 16, 0, 16, 16)
+	if _art():
+		s.region_rect = Rect2(frame * 32, 0, 32, 32)
+		s.scale = Vector2.ONE * 0.5
+	else:
+		s.region_rect = Rect2(frame * 16, 0, 16, 16)
 	s.position = pos
 	layer.add_child(s)
 	return s

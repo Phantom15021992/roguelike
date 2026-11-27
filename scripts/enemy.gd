@@ -538,7 +538,11 @@ var _look_frames := {}
 
 
 func _art_key(sheet: Texture2D) -> String:
-	for key: String in [boss_art, scene_file_path.get_file().get_basename()]:
+	# Утверждённый стиль (tools/gen_dungeon.gd): лист в 2 раза плотнее — assets/mon2/<сцена>.png.
+	var scene := scene_file_path.get_file().get_basename()
+	if boss_art == "" and scene != "" and ResourceLoader.exists("res://assets/mon2/%s.png" % scene):
+		return "2:" + scene
+	for key: String in [boss_art, scene]:
 		if key != "" and ResourceLoader.exists("res://assets/mon/%s.png" % key):
 			return key
 	var base := sheet.resource_path.get_file().get_basename() if sheet else ""
@@ -614,13 +618,18 @@ func make_frames(sheet: Texture2D, anims: Dictionary, size := 16) -> SpriteFrame
 	var key := _art_key(sheet)
 	if key != "":
 		own_art = not key.begins_with("~")
-		var tex: Texture2D = load("res://assets/mon/%s.png" % key.trim_prefix("~"))
+		var dense := key.begins_with("2:")
+		var tex: Texture2D = load(("res://assets/mon2/%s.png" if dense else "res://assets/mon/%s.png") % key.trim_prefix("~").trim_prefix("2:"))
 		var fs := tex.get_height() / 3
 		_look_frames.clear()
 		for row in 3:
 			_look_frames[["down", "side", "up"][row]] = _frames_from(tex, anims, fs, row)
 		# Низ новой картинки — там же, где низ старой.
-		sprite.offset.y = -(fs - size) / 2.0
+		if dense:
+			sprite.scale = Vector2.ONE * 0.5
+			sprite.offset.y = size - fs / 2.0
+		else:
+			sprite.offset.y = -(fs - size) / 2.0
 		look_dir = "down"
 		return _look_frames["down"]
 	return _frames_from(sheet, anims, size, -1)
