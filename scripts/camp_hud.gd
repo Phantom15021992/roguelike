@@ -859,12 +859,29 @@ func _pick_class(cls: String) -> void:
 		return
 	_portal_cls = cls
 	_loadout = {}
+	_preselect_worn(cls)
 	_refill()
+
+
+## Что было надето на этом классе при прошлом выходе из подземелья — сразу выбрано.
+func _preselect_worn(cls: String) -> void:
+	for i in Meta.stash.size():
+		var it: Dictionary = Meta.stash[i]
+		if str(it.get("worn_by", "")) != cls or not Items.fits(it, cls, _hero_job(cls)):
+			continue
+		var slot: String = it["slot"]
+		if _loadout.has(slot):
+			continue
+		if slot == "offhand" and _loadout.has("weapon") and Items.is_two_hand(Meta.stash[_loadout["weapon"]]):
+			continue
+		_loadout[slot] = i
+		if Items.is_two_hand(it):
+			_loadout.erase("offhand")
 
 
 func _fill_loadout() -> void:
 	var cls_name: String = Skills.CLASSES[_portal_cls]["name"]
-	_panel_box.add_child(_rich(250, "[b]Снаряжение в забег — %s[/b]\nПо одному предмету на слот. [color=#%s]При смерти теряется всё: взятое снаряжение, найденные золото и материалы[/color] — вынести их можно только через портал у логова босса (до или после боя)." % [
+	_panel_box.add_child(_rich(250, "[b]Снаряжение в забег — %s[/b]\nПо одному предмету на слот; надетое в прошлый раз уже выбрано. [color=#%s]При смерти теряется всё: взятое снаряжение, найденные золото и материалы[/color] — вынести их можно только через портал у логова босса (до или после боя)." % [
 		cls_name, BAD.to_html(false)]))
 	var list := _scroll(90)
 	for i in Meta.stash.size():

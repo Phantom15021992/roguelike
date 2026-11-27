@@ -331,6 +331,24 @@ func _camptest() -> void:
 	for i in 6:
 		await get_tree().process_frame
 	_shot("camp_0f_built")
+	# Надетое при выходе из подземелья — выбрано у портала в следующий раз.
+	var Itm := preload("res://scripts/items.gd")
+	var sw: Dictionary = Itm.make("sword", 1, 3)
+	var bk: Dictionary = Itm.make("buckler", 1, 3)
+	var spare: Dictionary = Itm.make("sword", 0, 2)
+	var in_bag: Dictionary = Itm.make("buckler", 0, 2)
+	Meta.stash.append(spare)
+	Meta.mark_worn("warrior", {"weapon": spare}, [])
+	Meta.mark_worn("warrior", {"weapon": sw, "offhand": bk}, [in_bag])
+	Meta.stash.append_array([sw, bk, in_bag])
+	chud._preselect_worn("warrior")
+	var picked: Array = []
+	for slot: String in chud._loadout:
+		picked.append("%s=%s" % [slot, Meta.stash[chud._loadout[slot]] == sw or Meta.stash[chud._loadout[slot]] == bk])
+	print("GEARTEST picked=%s spare_tag=%s bag_tag=%s" % [picked, spare.has("worn_by"), in_bag.has("worn_by")])
+	chud._loadout = {}
+	for it in [spare, sw, bk, in_bag]:
+		Meta.stash.erase(it)
 	Meta.plots.erase("1")
 	Meta.plots.erase("2")
 	Meta.levels.erase("forge")
@@ -818,6 +836,9 @@ func return_to_camp(alive := false) -> void:
 		return  # в коопе забег заканчивает хозяин
 	Meta.run_save = {}  # забег окончен — продолжать нечего
 	var items: Array = []
+	if alive:
+		for st: Node in Net.all_states():
+			Meta.mark_worn(st.cls, st.equipment, st.bag)
 	# В коопе на склад хозяина уходит снаряжение всех героев.
 	for st: Node in Net.all_states():
 		var all_items: Array = st.equipment.values() + st.bag  # надетое и сумка

@@ -300,6 +300,25 @@ func bank_run(depth: int, run_gold: int, run_level: int, cls_name: String, mats:
 	changed.emit()
 
 
+## Вышли из подземелья живыми: надетые вещи помечаются классом героя ("worn_by"), чтобы у
+## портала в следующий раз они были уже выбраны (просьба владельца). У прежних вещей этого
+## класса в тех же слотах метка снимается; вещи из сумки — без метки.
+func mark_worn(cls: String, equipment: Dictionary, bag: Array) -> void:
+	if cls == "":
+		return
+	for slot: String in equipment:
+		var it: Variant = equipment[slot]
+		if it == null or (it as Dictionary).get("starter", false):
+			continue
+		for old: Dictionary in stash:
+			if str(old.get("worn_by", "")) == cls and old.get("slot") == (it as Dictionary).get("slot"):
+				old.erase("worn_by")
+		(it as Dictionary)["worn_by"] = cls
+	for it: Variant in bag:
+		if it != null:
+			(it as Dictionary).erase("worn_by")
+
+
 # ---------------- Настройки ----------------
 
 func setting(key: String) -> bool:
