@@ -14,7 +14,19 @@ var _tick := 0.0
 var _flakes := []
 
 
+var _whirl: Sprite2D
+
+
 func _ready() -> void:
+	# Вихрь (assets/fx/whirl.png, tools/gen_fx.gd): раскрутка, кружится, в конце тает.
+	_whirl = Sprite2D.new()
+	_whirl.texture = load("res://assets/fx/whirl.png")
+	_whirl.hframes = 6
+	_whirl.centered = false
+	_whirl.offset = -Vector2(24, 92)
+	_whirl.scale = Vector2.ONE * 0.5 * (radius / 34.0) * 1.4
+	_whirl.position = Vector2(0, 4)
+	add_child(_whirl)
 	for i in 26:
 		_flakes.append([Vector2.from_angle(randf() * TAU) * sqrt(randf()) * radius, randf() * 20.0, randf_range(18.0, 30.0)])
 
@@ -30,6 +42,13 @@ func _process(delta: float) -> void:
 		if f[1] < 0.0:
 			f[0] = Vector2.from_angle(randf() * TAU) * sqrt(randf()) * radius
 			f[1] = 20.0
+	if _whirl:
+		if _t < 0.2:
+			_whirl.frame = 0
+		elif _t > DURATION - 0.4:
+			_whirl.frame = 4 if _t < DURATION - 0.2 else 5
+		else:
+			_whirl.frame = 1 + int(_t * 9.0) % 3
 	queue_redraw()
 	if _t >= DURATION:
 		queue_free()

@@ -777,7 +777,7 @@ func _release_pro_fireball(lvl: int, target: Vector2, mult: float) -> void:
 
 func _frost(target: Vector2, mult: float) -> void:
 	Game.ring(target, FROST_RADIUS, ICE_COLOR, 0.35)
-	Game.burst(target + Vector2(0, -6), ICE_COLOR, 20)
+	Game.fx_anim("ice_hit", target + Vector2(0, -6), 1.6)
 	for e in hit_circle(target, FROST_RADIUS, mult):
 		if not e.dead:
 			e.apply_stun(3.0, "freeze")
@@ -800,8 +800,8 @@ func _release_pro_frost(_lvl: int, target: Vector2, mult: float) -> void:
 
 
 func _thunder_strike(target: Vector2, mult: float) -> void:
-	Game.lightning(PackedVector2Array([target + Vector2(randf_range(-10, 10), -90), target + Vector2(0, -4)]), Color(0.85, 0.9, 1.0))
-	Game.ring(target, THUNDER_RADIUS, Color(0.8, 0.85, 1.0), 0.25)
+	Game.fx_anim("lightning", target, 0.75)
+	Game.ring(target, THUNDER_RADIUS, Color(0.95, 0.7, 1.0), 0.25)
 	Game.shake(2.0, 0.1)
 	hit_circle(target, THUNDER_RADIUS, mult)
 
@@ -823,8 +823,7 @@ func _release_pro_thunder(lvl: int, target: Vector2, mult: float) -> void:
 func _release_meteor(_lvl: int, target: Vector2, mult: float) -> void:
 	Game.shake(5.0, 0.3)
 	Game.ring(target, METEOR_RADIUS, Color(1.0, 0.5, 0.15), 0.4)
-	Game.burst(target + Vector2(0, -6), Color(1.0, 0.55, 0.2), 30)
-	Game.burst(target + Vector2(0, -6), Color(1.0, 0.9, 0.5), 14)
+	Game.fx_meteor(target)
 	if not hit_circle(target, METEOR_RADIUS, mult).is_empty():
 		Game.hitstop(0.06)
 
@@ -845,7 +844,8 @@ func _release_chain_lightning(_lvl: int, _target: Vector2, mult: float) -> void:
 		return
 	var hit := [first]
 	var queue := [first]
-	Game.lightning(PackedVector2Array([center(), first.global_position + Vector2(0, -6)]))
+	Game.lightning(PackedVector2Array([center(), first.global_position + Vector2(0, -6)]), Color(1.0, 0.88, 0.45))
+	Game.fx_anim("bolt_hit", first.global_position + Vector2(0, -6), 0.8)
 	while not queue.is_empty():
 		var cur: Node2D = queue.pop_front()
 		for e: Node2D in enemies:
@@ -854,7 +854,8 @@ func _release_chain_lightning(_lvl: int, _target: Vector2, mult: float) -> void:
 			if e.global_position.distance_to(cur.global_position) <= CHAIN_JUMP:
 				hit.append(e)
 				queue.append(e)
-				Game.lightning(PackedVector2Array([cur.global_position + Vector2(0, -6), e.global_position + Vector2(0, -6)]))
+				Game.lightning(PackedVector2Array([cur.global_position + Vector2(0, -6), e.global_position + Vector2(0, -6)]), Color(1.0, 0.88, 0.45))
+				Game.fx_anim("bolt_hit", e.global_position + Vector2(0, -6), 0.8)
 	for e: Node2D in hit:
 		if is_instance_valid(e) and not e.dead:
 			var r := roll(mult)

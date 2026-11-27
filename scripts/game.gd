@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args or "--lineup" in args or _arg("--lineup", "") != "":
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args or "--lineup" in args or _arg("--lineup", "") != "" or "--fxtest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -85,6 +85,8 @@ func _ready() -> void:
 		_showcase()
 	elif "--lineup" in args or _arg("--lineup", "") != "":
 		_lineup()
+	elif "--fxtest" in args:
+		_fxtest()
 	elif "--traptest" in args:
 		_traptest()
 	elif "--runtest" in args:
@@ -1175,6 +1177,59 @@ func ring(pos: Vector2, radius: float, color: Color, duration := 0.3) -> void:
 		n.set_meta("t", t)
 		n.queue_redraw(), 0.0, duration, duration)
 	tw.tween_callback(n.queue_free)
+
+
+# Покадровые эффекты заклинаний (tools/gen_fx.gd → assets/fx/): [кадров, высота кадра,
+# точка привязки в пикселях листа, кадров в секунду]. Листы вдвое плотнее мира (масштаб 0.5).
+const FX_INFO := {
+	"arcane_hit": [6, 48, Vector2(24, 24), 16.0], "fire_hit": [6, 48, Vector2(24, 24), 14.0],
+	"ice_hit": [6, 48, Vector2(24, 24), 14.0], "bolt_hit": [6, 48, Vector2(24, 24), 18.0],
+	"flame": [6, 96, Vector2(24, 92), 9.0], "whirl": [6, 96, Vector2(24, 92), 10.0],
+	"lightning": [6, 96, Vector2(24, 92), 14.0],
+}
+
+
+## Покадровый эффект в точке pos (один раз, потом исчезает); k — размер; гостям — копия.
+func fx_anim(fname: String, pos: Vector2, k := 1.0) -> void:
+	Net.fx("fx_anim", [fname, pos, k])
+	_fx_anim_local(fname, pos, k)
+
+
+func _fx_anim_local(fname: String, pos: Vector2, k: float) -> Sprite2D:
+	var info: Array = FX_INFO[fname]
+	var s := Sprite2D.new()
+	s.texture = load("res://assets/fx/%s.png" % fname)
+	s.hframes = info[0]
+	s.centered = false
+	s.offset = -(info[2] as Vector2)
+	s.scale = Vector2.ONE * 0.5 * k
+	s.position = pos
+	fx().add_child(s)
+	var n: int = info[0]
+	var tw := s.create_tween()
+	tw.tween_method(func(t: float) -> void: s.frame = mini(n - 1, int(t)), 0.0, float(n), n / float(info[3]))
+	tw.tween_callback(s.queue_free)
+	return s
+
+
+## Метеорит: падает сверху-слева в точку, там взрыв и столб огня.
+func fx_meteor(target: Vector2) -> void:
+	Net.fx("fx_meteor", [target])
+	var s := Sprite2D.new()
+	s.texture = load("res://assets/fx/meteor.png")
+	s.hframes = 3
+	s.centered = false
+	s.offset = -Vector2(32, 32)
+	s.scale = Vector2.ONE * 0.8
+	s.position = target + Vector2(-70, -100)
+	fx().add_child(s)
+	var tw := s.create_tween()
+	tw.tween_property(s, "position", target + Vector2(0, -4), 0.22)
+	tw.parallel().tween_method(func(t: float) -> void: s.frame = int(t) % 3, 0.0, 6.0, 0.22)
+	tw.tween_callback(func() -> void:
+		_fx_anim_local("fire_hit", target + Vector2(0, -6), 1.9)
+		_fx_anim_local("flame", target, 0.7)
+		s.queue_free())
 
 
 ## Молния-зигзаг между точками.
@@ -2286,6 +2341,44 @@ func _lineup() -> void:
 		for x in get_tree().get_nodes_in_group("puddles"):
 			x.queue_free()
 		await _wait(0.3)
+	get_tree().quit()
+
+
+# --- Смотр эффектов заклинаний (`--fxtest`): все эффекты вокруг героя, замершие на кадре
+# --frame=N (по умолчанию 1), снимок fx_frameN. ---
+func _fxtest() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	await _wait(2.5)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		e.queue_free()
+	var dg := get_tree().current_scene
+	var c0: Vector2 = get_viewport().get_camera_2d().get_screen_center_position()
+	for fr in [1, 2, 3]:
+		var list := [["arcane_hit", Vector2(-110, -40), 0.7], ["fire_hit", Vector2(-70, -40), 1.2], ["ice_hit", Vector2(-20, -40), 1.6],
+			["bolt_hit", Vector2(25, -40), 0.8], ["fire_hit", Vector2(80, -40), 1.9],
+			["lightning", Vector2(-100, 60), 0.75], ["flame", Vector2(-45, 60), 0.7], ["whirl", Vector2(60, 60), 1.0], ["flame", Vector2(110, 60), 0.42]]
+		var made: Array = []
+		for e: Array in list:
+			var sp: Sprite2D = _fx_anim_local(e[0], dg.open_spot(c0 + (e[1] as Vector2)), e[2])
+			for tw in sp.get_tree().get_processed_tweens():
+				tw.kill()
+			sp.frame = mini(fr, sp.hframes - 1)
+			made.append(sp)
+		for st in [["bolt", Vector2(-60, 10)], ["fireball", Vector2(40, 10)]]:
+			var b: Area2D = preload("res://scripts/projectile.gd").new()
+			b.team = "player"
+			b.style = st[0]
+			b.speed = 0.0
+			b.lifetime = 99.0
+			b.position = c0 + (st[1] as Vector2)
+			fx().add_child(b)
+			made.append(b)
+		await _wait(0.3)
+		_shot("fx_frame%d" % fr)
+		for n: Node in made:
+			if is_instance_valid(n):
+				n.queue_free()
+		await _wait(0.2)
 	get_tree().quit()
 
 

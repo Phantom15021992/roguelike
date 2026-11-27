@@ -17,8 +17,24 @@ var _t := 0.0
 var _tick := 0.3
 
 
+var _flames: Array = []
+
+
 func _ready() -> void:
 	add_to_group("puddles" if team == "enemy" else "player_zones")
+	# Огненная земля героя (Профессор): языки пламени (assets/fx/flame.png).
+	if team == "player" and slow <= 0.0 and heal <= 0 and color.r > 0.8 and color.b < 0.4:
+		for i in 4:
+			var f := Sprite2D.new()
+			f.texture = load("res://assets/fx/flame.png")
+			f.hframes = 6
+			f.centered = false
+			f.offset = -Vector2(24, 92)
+			f.scale = Vector2.ONE * 0.5 * 0.42
+			var a := i * TAU / 4.0 + 0.4
+			f.position = Vector2(cos(a), sin(a) * 0.6) * radius * 0.5
+			add_child(f)
+			_flames.append(f)
 
 
 func net_props() -> Array:
@@ -52,6 +68,14 @@ func _process(delta: float) -> void:
 						var r: Array = caster.roll(mult)
 						Game.attacker = caster
 						e.take_damage(r[0], global_position, r[1], false)
+	for i in _flames.size():
+		var f: Sprite2D = _flames[i]
+		if _t < 0.3:
+			f.frame = 0
+		elif _t > lifetime - 0.6:
+			f.frame = 4 if _t < lifetime - 0.3 else 5
+		else:
+			f.frame = 1 + (int(_t * 8.0) + i) % 3
 	if _t >= lifetime:
 		queue_free()
 	queue_redraw()

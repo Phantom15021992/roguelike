@@ -26,6 +26,9 @@ var dot_pct := 0.0            # яд: ещё столько урона (доля
 var quiet := false            # взрыв без тряски экрана (обычная атака мага)
 var _t := 0.0
 var _hit := []
+# Новая графика снарядов мага (assets/fx/, tools/gen_fx.gd): стиль → [лист, вспышка, её размер].
+const ART := {"bolt": ["arcane_proj", "arcane_hit", 0.7], "fireball": ["fire_proj", "fire_hit", 1.2]}
+var _art: Sprite2D
 
 
 func net_props() -> Array:
@@ -53,11 +56,23 @@ func _ready() -> void:
 	add_child(shape)
 	body_entered.connect(_on_body_entered)
 	rotation = 0.0
+	if team == "player" and ART.has(style):
+		_art = Sprite2D.new()
+		_art.texture = load("res://assets/fx/%s.png" % ART[style][0])
+		_art.hframes = 3
+		_art.offset = Vector2(-6, 0)   # голова кометы — в точке снаряда
+		_art.scale = Vector2.ONE * 0.5
+		_art.position = Vector2(0, -HEIGHT)
+		_art.rotation = direction.angle()
+		add_child(_art)
 
 
 func _physics_process(delta: float) -> void:
 	position += direction * speed * delta
 	_t += delta
+	if _art:
+		_art.frame = int(_t * 12.0) % 3
+		_art.rotation = direction.angle()
 	queue_redraw()
 	if _t > lifetime:
 		if Net.is_guest():
@@ -145,7 +160,10 @@ func _explode() -> void:
 	if is_instance_valid(source):
 		Game.attacker = source
 	Game.ring(global_position, explode_radius, color)
-	Game.burst(global_position + Vector2(0, -6), color.lightened(0.2), 16)
+	if _art:
+		Game.fx_anim(ART[style][1], global_position + Vector2(0, -6), ART[style][2])
+	else:
+		Game.burst(global_position + Vector2(0, -6), color.lightened(0.2), 16)
 	if not quiet:
 		Game.shake(2.0, 0.15)
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -158,6 +176,8 @@ func _explode() -> void:
 
 func _draw() -> void:
 	draw_circle(Vector2.ZERO, 2.0, Color(0, 0, 0, 0.3))
+	if _art:
+		return
 	var top := Vector2(0, -HEIGHT)
 	var pulse := 0.5 + 0.5 * sin(_t * 20.0)
 	match style:
