@@ -398,9 +398,10 @@ func _wing_roof() -> void:
 
 ## Тень дома на траве справа (свет сверху-слева).
 func _house_shadow() -> void:
-	for y in range(27, BASE):
-		var w := 16 if y > 40 else clampi((y - 27) + 3, 0, 16)
-		for x in range(204, 204 + w):
+	# Только у земли: низкий клин справа от стены крыла (выше у стены, ниже к краю).
+	for x in range(204, 222):
+		var top := BASE - 26 + (x - 204)
+		for y in range(top, BASE):
 			put(x, y, Color(0.16, 0.08, 0.16, 0.3))
 
 
