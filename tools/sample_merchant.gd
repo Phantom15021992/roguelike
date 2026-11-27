@@ -1,0 +1,1382 @@
+extends SceneTree
+## Образец графики (не в игре): дом торговца «пиксель в пиксель» по референсу владельца (дом-бар).
+## Ракурс — сверху-спереди: виден фасад и крыша целиком (как у домика с фронтоном из референса).
+## Плотность как у референса: 2 пикселя картинки на пиксель мира (в референсе ~1,5).
+## Правила: у каждой детали тёмный контур, свет 1–2 px сверху-слева, тень 1–2 px снизу-справа,
+## приглушённая естественная палитра.
+##   godot --headless --path . --script res://tools/sample_merchant.gd
+## Выход: shots/sample_merchant.png (1:1), shots/sample_merchant_x4.png (увеличено).
+
+const OX := 70       # запас по бокам (бочки, деревья): всё рисуется со сдвигом вправо на OX
+const W := 232 + OX * 2
+const OY := 84       # запас сверху под крышу: всё рисуется со сдвигом вниз на OY
+const H := 204 + OY
+const BASE := 180    # линия земли у фасада
+
+# Палитра (снята с референса и приглушена).
+const OUT := Color8(52, 32, 40)
+const ROOF := [Color8(214, 150, 98), Color8(184, 110, 72), Color8(148, 82, 60), Color8(110, 58, 50), Color8(82, 44, 44)]
+const WOOD := [Color8(196, 136, 88), Color8(156, 98, 62), Color8(120, 72, 50), Color8(88, 52, 42)]
+const PLAST := [Color8(240, 230, 206), Color8(222, 208, 180), Color8(196, 180, 154), Color8(166, 148, 126)]
+const STONE := [Color8(170, 166, 156), Color8(140, 138, 130), Color8(112, 110, 106), Color8(84, 82, 82)]
+const MOSS := [Color8(150, 172, 92), Color8(112, 140, 72), Color8(82, 108, 60)]
+const GLASS := [Color8(132, 140, 172), Color8(74, 74, 108), Color8(50, 46, 76)]
+const IRON := [Color8(170, 170, 184), Color8(120, 120, 136), Color8(80, 80, 96)]
+const AWN_R := [Color8(196, 104, 84), Color8(160, 78, 66), Color8(122, 58, 54)]
+const AWN_W := [Color8(242, 232, 210), Color8(218, 204, 180), Color8(186, 170, 150)]
+const GROUND := [Color8(156, 158, 140), Color8(132, 134, 120), Color8(108, 110, 100), Color8(84, 86, 80)]
+const SIGN_TXT := Color8(244, 232, 206)
+const LEAVES := [Color8(172, 198, 104), Color8(126, 164, 80), Color8(88, 128, 64), Color8(58, 92, 54)]
+const LEAF_OUT := Color8(38, 58, 42)
+const BARK := [Color8(150, 104, 72), Color8(112, 76, 56), Color8(80, 54, 44)]
+const GRASS := [Color8(134, 166, 92), Color8(110, 146, 76), Color8(88, 124, 64), Color8(68, 100, 54)]
+
+var img: Image
+var nz := FastNoiseLite.new()
+
+
+func _init() -> void:
+	img = Image.create(W, H, false, Image.FORMAT_RGBA8)
+	nz.seed = 5
+	nz.frequency = 0.05
+	_ground()
+	_tree(-34, 126, 26, 3)
+	_tree(258, 112, 23, 8)
+	_house_shadow()
+	_wing_roof()
+	_chimney_slope(175, 6, 16)
+	_main_wall()
+	_main_roof()
+	_vent(70, 56)
+	_window(40, 132, 52, 28)
+	_awning(30, 116, 72)
+	_gable_wing()
+	_door(160, BASE, 22, 46)
+	_sign_board(140, 104, 46)
+	_hanging_sign(196, 124)
+	_crates()
+	# Бочки вокруг дома.
+	_keg(-24, 166, 16, 20)
+	_keg(-8, 172, 16, 20)
+	_keg_side(-34, 190, 22, 7)
+	_keg(14, BASE + 4, 16, 20)
+	_keg(224, 160, 16, 20, true)
+	_keg(241, 166, 16, 20)
+	_keg(230, 176, 12, 14)
+	_keg(206, BASE + 4, 16, 20)
+	_easel(118, BASE + 10)
+	_fence()
+	_ivy()
+	var out := ProjectSettings.globalize_path("res://shots/")
+	img.save_png(out + "sample_merchant.png")
+	var big := img.duplicate()
+	big.resize(W * 4, H * 4, Image.INTERPOLATE_NEAREST)
+	big.save_png(out + "sample_merchant_x4.png")
+	print("sample: done")
+	quit()
+
+
+# ------------------------------- кисточки -------------------------------
+
+## Осветлить (k < 0) или затемнить уже нарисованный пиксель.
+func tint(x0: int, y: int, k: float) -> void:
+	var x := x0 + OX
+	var py := y + OY
+	if x >= 0 and py >= 0 and x < W and py < H:
+		var c := img.get_pixel(x, py)
+		if c.a > 0.0:
+			img.set_pixel(x, py, c.darkened(k) if k > 0.0 else c.lightened(-k))
+
+
+func put(x0: int, y0: int, c: Color) -> void:
+	var x := x0 + OX
+	var y := y0 + OY
+	if x >= 0 and y >= 0 and x < W and y < H:
+		if c.a >= 1.0:
+			img.set_pixel(x, y, c)
+		elif c.a > 0.0:
+			var d := img.get_pixel(x, y)
+			img.set_pixel(x, y, c if d.a <= 0.0 else d.blend(c))
+
+
+func rect(x: int, y: int, w: int, h: int, c: Color) -> void:
+	for yy in h:
+		for xx in w:
+			put(x + xx, y + yy, c)
+
+
+func hh(x: int, y: int, i: int) -> int:
+	return hash(Vector3i(x, y, i)) & 1023
+
+
+## Объёмный брусок: контур, свет сверху/слева, тень снизу/справа (2 px).
+func bar(x: int, y: int, w: int, h: int, p: Array, outline := true) -> void:
+	if outline:
+		rect(x - 1, y - 1, w + 2, h + 2, OUT)
+	rect(x, y, w, h, p[1])
+	if h >= 3:
+		rect(x, y, w, 1, p[0])
+	if w >= 3:
+		rect(x, y, 1, h, p[0])
+	if h >= 4:
+		rect(x, y + h - 2, w, 2, p[2])
+	elif h >= 2:
+		rect(x, y + h - 1, w, 1, p[2])
+	if w >= 4:
+		rect(x + w - 1, y, 1, h, p[2])
+	# Волокна дерева — редкие тёмные чёрточки.
+	if p == WOOD and w > 6:
+		for i in range(2, w - 2, 5):
+			if hh(x + i, y, 1) % 3 == 0 and h > 4:
+				rect(x + i, y + 2 + hh(i, y, 2) % maxi(1, h - 4), 2, 1, p[2])
+
+
+## Неровная тень (полупрозрачная) — для теней на стене и земле.
+func shadow(x: int, y: int, w: int, h: int, a := 0.28) -> void:
+	for yy in h:
+		for xx in w:
+			var px := x + xx + OX
+			var py := y + yy + OY
+			if px >= 0 and py >= 0 and px < W and py < H and img.get_pixel(px, py).a > 0.5:
+				put(x + xx, y + yy, Color(0.16, 0.08, 0.16, a))
+
+
+# ------------------------------- земля и двор -------------------------------
+
+func _ground() -> void:
+	# Трава вокруг (чтобы были видны тени на земле).
+	for y in range(-OY, BASE - 6):
+		for x in range(-OX, W - OX):
+			# Спокойная трава: крупные пятна тона + редкие травинки (2 px: свет сверху, тень снизу).
+			var n := nz.get_noise_2d(x, y * 1.3)
+			var c: Color = GRASS[1]
+			if n > 0.25:
+				c = GRASS[1].lerp(GRASS[0], 0.35)
+			elif n < -0.3:
+				c = GRASS[1].lerp(GRASS[2], 0.6)
+			var tuft := hh(x / 2, y / 3, 20)
+			if tuft < 26:
+				c = GRASS[0] if posmod(y, 3) == 0 else GRASS[2]
+			if hh(x / 2, y / 2, 22) < 2:
+				c = [Color8(236, 214, 120), Color8(232, 140, 150), Color8(240, 236, 226)][hh(x, y, 23) % 3]
+			put(x, y, c)
+	# Мощёный дворик перед лавкой: плиты с объёмом, мох в швах.
+	for y in range(BASE - 6, H):
+		for x in range(-OX, W - OX):
+			var row := (y - BASE + 6) / 9
+			var off := (row % 2) * 9
+			var sx := posmod(x + off, 18)
+			var sy := (y - BASE + 6) % 9
+			var c: Color = GROUND[1]
+			var v := hh(int(floor((x + off) / 18.0)), row, 3) % 4
+			if v == 0:
+				c = GROUND[0].darkened(0.05)
+			elif v == 3:
+				c = GROUND[2]
+			if sy == 0 or sx == 0:
+				c = GROUND[3]
+				if hh(x, y, 4) % 5 == 0:
+					c = MOSS[2]
+			elif sy == 1 or sx == 1:
+				c = GROUND[0]
+			elif sy == 8 or sx == 17:
+				c = GROUND[2]
+			put(x, y, c)
+	# Пучки травы.
+	for i in 14:
+		var gx := hh(i, 0, 5) % W
+		var gy := BASE + 2 + hh(i, 1, 5) % (H - BASE - 4)
+		put(gx, gy, MOSS[0])
+		put(gx + 1, gy - 1, MOSS[1])
+		put(gx - 1, gy, MOSS[1])
+		put(gx, gy + 1, MOSS[2])
+	# Тень дома на дворе (у фасада и вправо).
+	shadow(10, BASE - 6, 196, 6, 0.3)
+	shadow(10, BASE, 196, 2, 0.18)
+
+
+# ------------------------------- крыша -------------------------------
+
+## Черепица в многоугольнике: ряды 6 px, черепицы 8 px со сдвигом; свет — верх ряда,
+## тень — 2 px внизу (на неё ложится следующий ряд), левая половина крыши светлее.
+func _shingles(poly: PackedVector2Array, row0: int, moss := 0.06, dark := 0.0) -> void:
+	var r := Rect2(poly[0], Vector2.ZERO)
+	for p in poly:
+		r = r.expand(p)
+	for y in range(int(r.position.y), int(r.end.y) + 1):
+		for x in range(int(r.position.x), int(r.end.x) + 1):
+			if not Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), poly):
+				continue
+			# Черепица 11 px шириной, ряд 6 px; у каждой — фаска: свет сверху и слева,
+			# тень снизу (2 px — тень от верхнего ряда) и справа, скруглённые нижние углы.
+			var row := (y - row0) / 6
+			var ry := posmod(y - row0, 6)
+			var off := (row % 2) * 5 + (hh(row, 0, 15) % 3)
+			var sx := posmod(x + off, 11)
+			var id := (x + off) / 11
+			var c: Color = ROOF[1]
+			var v := hh(id, row, 6) % 6
+			if v == 0:
+				c = ROOF[0].darkened(0.06)
+			elif v == 5:
+				c = ROOF[2].lightened(0.05)
+			if ry == 0:
+				c = ROOF[0]
+			elif ry == 1 and sx > 0 and sx < 10:
+				c = c.lightened(0.05)
+			if sx == 1 and ry < 4:
+				c = ROOF[0]
+			elif sx == 10 and ry < 4:
+				c = ROOF[2]
+			if ry == 4:
+				c = ROOF[2]
+			elif ry == 5:
+				c = ROOF[3]
+			# Шов между черепицами — только в нижней части ряда (черепица лежит внахлёст).
+			if sx == 0 and ry >= 2:
+				c = ROOF[3] if ry < 5 else ROOF[4]
+			elif sx == 0:
+				c = ROOF[0].darkened(0.04)
+			if ry >= 4 and (sx == 10 or sx == 1):
+				c = ROOF[4]
+			if hh(x / 3, y / 3, 7) < int(moss * 1023.0) and ry < 4:
+				c = MOSS[1] if hh(x, y, 8) % 2 == 0 else MOSS[0]
+			put(x, y, c.darkened(dark) if dark > 0.0 else c)
+	# Контур крыши.
+	for i in poly.size():
+		_line(poly[i], poly[(i + 1) % poly.size()], OUT)
+
+
+func _line(a: Vector2, b: Vector2, c: Color) -> void:
+	var n := int(ceil(maxf(absf(b.x - a.x), absf(b.y - a.y))))
+	for i in n + 1:
+		var p := a.lerp(b, float(i) / maxf(1, n))
+		put(int(round(p.x)), int(round(p.y)), c)
+
+
+## Крыша основного дома, вид сверху-спереди: большой передний скат, за коньком — полоска
+## заднего ската (он смотрит от света — темнее), слева торец с ветровой доской.
+## Крыша основного дома (правка владельца): виден только передний скат; правый край срезан
+## по диагонали и лежит поверх левого ската крыла; фасад под крышей выше.
+func _main_roof() -> void:
+	var poly := PackedVector2Array([Vector2(6, 35), Vector2(146, 35), Vector2(121, 60), Vector2(121, 99), Vector2(6, 99)])
+	_shingles(poly, 35, 0.07)
+	for y in range(35, 99):
+		for k in 12:
+			tint(7 + k, y, -(0.12 - k * 0.01))
+	# Конёк сверху — брус, под ним тень.
+	bar(5, 32, 142, 4, ROOF)
+	shadow(6, 37, 138, 1, 0.3)
+	# Срезанный край справа — ветровая доска по диагонали, за ней тень на скате крыла.
+	var n := 25
+	for i in n + 1:
+		var p := Vector2(147, 36).lerp(Vector2(122, 61), float(i) / n)
+		var x := int(round(p.x))
+		var y := int(round(p.y))
+		put(x - 1, y, WOOD[0])
+		put(x, y, WOOD[1])
+		put(x + 1, y, WOOD[2])
+		put(x + 2, y, OUT)
+		tint(x + 3, y, 0.25)
+		tint(x + 4, y, 0.15)
+	# Левый торец и карниз.
+	bar(3, 32, 4, 69, WOOD)
+	bar(4, 98, 118, 4, WOOD)
+	shadow(8, 103, 112, 3, 0.35)
+
+
+## Скат крыши-параллелограмм: p0 — угол у карниза спереди, e1 — от карниза к коньку,
+## e2 — вглубь (вверх по экрану). Черепица рядами вдоль карниза.
+func _slope(p0: Vector2, e1: Vector2, e2: Vector2, dark: float, mask := PackedVector2Array()) -> void:
+	var det := e1.x * e2.y - e1.y * e2.x
+	var r := Rect2(p0, Vector2.ZERO).expand(p0 + e1).expand(p0 + e2).expand(p0 + e1 + e2)
+	var l1 := e1.length()
+	var l2 := e2.length()
+	for iy in range(int(r.position.y) - 1, int(r.end.y) + 2):
+		for ix in range(int(r.position.x) - 1, int(r.end.x) + 2):
+			var dx := ix + 0.5 - p0.x
+			var dy := iy + 0.5 - p0.y
+			var sv := (dx * e2.y - dy * e2.x) / det
+			var tv := (e1.x * dy - e1.y * dx) / det
+			if sv < 0.0 or sv > 1.0 or tv < 0.0 or tv > 1.0:
+				continue
+			if mask.size() > 0 and not Geometry2D.is_point_in_polygon(Vector2(ix + 0.5, iy + 0.5), mask):
+				continue
+			var su := sv * l1
+			var tt := tv * l2
+			var row := int(su / 6.5)
+			var ru := fmod(su, 6.5)
+			var off := (row % 2) * 4.5
+			var tk := fposmod(tt + off, 9.0)
+			var id := int((tt + off) / 9.0)
+			var c: Color = ROOF[1]
+			var v := hh(id, row, 24) % 6
+			if v == 0:
+				c = ROOF[0].darkened(0.05)
+			elif v == 5:
+				c = ROOF[2].lightened(0.05)
+			if ru < 1.5:
+				c = ROOF[0]
+			elif ru > 5.0:
+				c = ROOF[3]
+			elif ru > 4.0:
+				c = ROOF[2]
+			if tk < 1.0 and ru <= 4.0:
+				c = ROOF[3]
+			elif tk < 2.0 and ru <= 4.0:
+				c = c.lightened(0.05)
+			if hh(ix / 3, iy / 3, 25) < 50 and ru < 4.0:
+				c = MOSS[1] if hh(ix, iy, 26) % 2 == 0 else MOSS[0]
+			put(ix, iy, c.darkened(dark) if dark > 0.0 else c)
+
+
+## Толстая доска вдоль линии a→b (ветровая доска фронтона): 3 px свет/середина/тень + контур.
+func _board(a: Vector2, b: Vector2) -> void:
+	var n := int(maxf(absf(b.x - a.x), absf(b.y - a.y)))
+	for i in n + 1:
+		var p := a.lerp(b, float(i) / maxf(1, n))
+		var x := int(round(p.x))
+		var y := int(round(p.y))
+		put(x, y - 1, OUT)
+		put(x, y, WOOD[0])
+		put(x, y + 1, WOOD[1])
+		put(x, y + 2, WOOD[2])
+		put(x, y + 3, OUT)
+
+
+## Крыша крыла с фронтоном к зрителю (стык — как в референсе с пабом): левый скат отделён от
+## основной крыши ендовой — диагональю от угла карниза крыла к коньку основного дома; выше
+## основного конька скаты крыла сходятся к верхней точке (вальма). Левый скат на свету, правый в тени.
+func _wing_roof() -> void:
+	var l := Vector2(121, 104)
+	var a := Vector2(162, 58)
+	var r := Vector2(203, 104)
+	var back := Vector2(0, -77)
+	var t := a + back
+	var v := l + back
+	var rv := r + back
+	_slope(l, a - l, back, 0.0)
+	_slope(r, a - r, back, 0.26)
+	# Левый карниз крыла (вертикальный край ската) — доска.
+	for y in range(int(v.y), int(l.y) + 1):
+		put(int(l.x) - 1, y, OUT)
+		put(int(l.x), y, WOOD[0])
+		put(int(l.x) + 1, y, WOOD[1])
+	# Задние края скатов (контур сзади): светлое слева, тёмное справа.
+	for pair: Array in [[v, t, true], [rv, t, false]]:
+		var p0: Vector2 = pair[0]
+		var p1: Vector2 = pair[1]
+		var lit: bool = pair[2]
+		var m := int(maxf(absf(p1.x - p0.x), absf(p1.y - p0.y)))
+		for i in m + 1:
+			var p := p0.lerp(p1, float(i) / m)
+			var x := int(round(p.x))
+			var y := int(round(p.y))
+			put(x + (-1 if lit else 1), y, OUT)
+			put(x, y, ROOF[0] if lit else ROOF[3])
+	# Правый карниз крыла (вертикальный край ската) — доска.
+	for y in range(int(rv.y), int(r.y) + 1):
+		put(int(r.x) + 1, y, OUT)
+		put(int(r.x), y, WOOD[2])
+		put(int(r.x) - 1, y, WOOD[1])
+	# Конёк крыла: свет слева, тень справа.
+	for y in range(int(t.y), int(a.y) + 1):
+		put(int(a.x) - 2, y, OUT)
+		put(int(a.x) - 1, y, ROOF[0])
+		put(int(a.x), y, ROOF[1])
+		put(int(a.x) + 1, y, ROOF[3])
+		put(int(a.x) + 2, y, OUT)
+	put(int(t.x) - 1, int(t.y) - 1, OUT)
+	put(int(t.x), int(t.y) - 1, OUT)
+	put(int(t.x) + 1, int(t.y) - 1, OUT)
+	_board(l, a)
+	_board(a, r)
+	rect(int(a.x) - 2, int(a.y) - 7, 4, 6, OUT)
+	rect(int(a.x) - 1, int(a.y) - 6, 2, 4, WOOD[1])
+	put(int(a.x) - 1, int(a.y) - 6, WOOD[0])
+
+
+## Тень дома на траве справа (свет сверху-слева).
+func _house_shadow() -> void:
+	for y in range(27, BASE):
+		var w := 16 if y > 40 else clampi((y - 27) + 3, 0, 16)
+		for x in range(204, 204 + w):
+			put(x, y, Color(0.16, 0.08, 0.16, 0.3))
+
+
+func _chimney(x: int, y: int) -> void:
+	var w := 14
+	var h := 24
+	rect(x - 1, y - 1, w + 2, h + 2, OUT)
+	for yy in h:
+		for xx in w:
+			var row := yy / 4
+			var sx := (xx + (row % 2) * 3) % 7
+			var c: Color = STONE[1]
+			if yy % 4 == 0 or sx == 0:
+				c = STONE[3]
+			elif yy % 4 == 1 or sx == 1:
+				c = STONE[0]
+			if xx >= w - 2:
+				c = c.darkened(0.18)
+			put(x + xx, y + yy, c)
+	bar(x - 2, y - 4, w + 4, 4, STONE)
+	rect(x + 2, y - 3, w - 4, 2, Color8(40, 30, 34))
+	# Дым.
+	for i in 4:
+		var cx := x + 7 + i * 3
+		var cy := y - 10 - i * 8
+		var r := 3 + i
+		for yy in range(-r, r + 1):
+			for xx in range(-r, r + 1):
+				if xx * xx + yy * yy <= r * r:
+					put(cx + xx, cy + yy, Color(0.9, 0.9, 0.92, 0.45 - i * 0.08))
+	# Тень трубы на крыше.
+	shadow(x + w + 1, y + 10, 4, h - 8, 0.3)
+
+
+## Кладка трубы: кирпичики 7x4 со светом сверху-слева и швами.
+func _brick(xx: int, yy: int, base: Color) -> Color:
+	var row := yy / 4
+	var sx := posmod(xx + (row % 2) * 3, 7)
+	var c := base
+	if posmod(yy, 4) == 0 or sx == 0:
+		c = base.darkened(0.42)
+	elif posmod(yy, 4) == 1 or sx == 1:
+		c = base.lightened(0.16)
+	return c
+
+
+## Труба на скате: лицевая стенка (на свету), боковая (в тени, уходит вглубь — верх и низ
+## поднимаются), шапка с отверстием, жестяной фартук на стыке с черепицей, тень на крышу.
+func _chimney3(x: int, y: int) -> void:
+	var w := 12
+	var h := 26
+	var sw := 6              # ширина боковой стенки
+	var rise := 4            # насколько боковая стенка уходит вверх (вглубь)
+	var base := y + h
+	# Тень трубы на скат справа и чуть ниже.
+	for yy in range(y + 4, base + 4):
+		for xx in 7:
+			put(x + w + sw + xx, yy - rise + xx / 3, Color(0.16, 0.08, 0.16, 0.3 - xx * 0.03))
+	# Боковая стенка (параллелограмм): тёмная кладка.
+	for k in sw:
+		var dy := int(round(float(k + 1) * rise / sw))
+		for yy in range(y - dy, base - dy):
+			put(x + w + k, yy, _brick(k + 40, yy - y + dy, STONE[2]))
+		put(x + w + k, y - dy - 1, OUT)
+		put(x + w + k, base - dy, OUT)
+	for yy in range(y - rise, base - rise):
+		put(x + w + sw, yy, OUT)
+	# Лицевая стенка: светлая кладка, у правого края темнее (угол).
+	for yy in h:
+		for xx in w:
+			var c := _brick(xx, yy, STONE[1])
+			if xx == w - 1:
+				c = c.darkened(0.12)
+			put(x + xx, y + yy, c)
+	for yy in range(y - 1, base + 1):
+		put(x - 1, yy, OUT)
+	# Стык с крышей: жестяной фартук (свет сверху, тень снизу) по низу лицевой и боковой стенок.
+	for xx in range(-2, w + 1):
+		put(x + xx, base - 2, IRON[0])
+		put(x + xx, base - 1, IRON[1])
+		put(x + xx, base, IRON[2])
+		put(x + xx, base + 1, OUT)
+	for k in sw + 1:
+		var dy := int(round(float(k + 1) * rise / sw))
+		put(x + w + k, base - dy - 2, IRON[1])
+		put(x + w + k, base - dy - 1, IRON[2])
+		put(x + w + k, base - dy, OUT)
+	put(x - 2, base - 2, OUT)
+	put(x - 3, base - 1, OUT)
+	put(x - 2, base - 1, IRON[0])
+	# Тень на черепице сразу под фартуком.
+	for xx in range(-2, w + sw + 2):
+		tint(x + xx, base + 2, 0.3)
+		tint(x + xx, base + 3, 0.15)
+	# Шапка: плита с лицевой кромкой, верх — параллелограмм с тёмным отверстием.
+	var cap := PackedVector2Array([Vector2(x - 2, y - 2), Vector2(x + w + 2, y - 2), Vector2(x + w + sw + 2, y - 2 - rise - 1), Vector2(x + sw - 2, y - 2 - rise - 1)])
+	var r := Rect2(cap[0], Vector2.ZERO)
+	for q in cap:
+		r = r.expand(q)
+	for yy in range(int(r.position.y) - 1, int(r.end.y) + 1):
+		for xx in range(int(r.position.x) - 1, int(r.end.x) + 2):
+			if Geometry2D.is_point_in_polygon(Vector2(xx + 0.5, yy + 0.5), cap):
+				put(xx, yy, STONE[0])
+	var hole := PackedVector2Array([Vector2(x + 1, y - 3), Vector2(x + w - 1, y - 3), Vector2(x + w + sw - 3, y - 5), Vector2(x + sw - 1, y - 5)])
+	for yy in range(y - 7, y - 1):
+		for xx in range(x, x + w + sw):
+			if Geometry2D.is_point_in_polygon(Vector2(xx + 0.5, yy + 0.5), hole):
+				put(xx, yy, Color8(36, 26, 30))
+	for xx in range(-3, w + 3):
+		put(x + xx, y - 1, STONE[1])
+		put(x + xx, y, STONE[2])
+		put(x + xx, y + 1, OUT)
+	for i in cap.size():
+		_line(cap[i], cap[(i + 1) % cap.size()], OUT)
+	for yy in range(y - 2, y + 1):
+		put(x - 3, yy, OUT)
+		put(x + w + 2, yy, STONE[3])
+	# Дым.
+	for i in 4:
+		var cx := x + 9 + i * 3
+		var cy := y - 12 - i * 8
+		var rr := 3 + i
+		for yy in range(-rr, rr + 1):
+			for xx in range(-rr, rr + 1):
+				if xx * xx + yy * yy <= rr * rr:
+					put(cx + xx, cy + yy, Color(0.9, 0.9, 0.92, 0.45 - i * 0.08))
+
+
+## Труба на правом скате: низ срезан под 45° по скату (справа длиннее), по срезу — жестяной
+## фартук и тень на черепице. h — высота трубы у левого края.
+func _chimney_slope(x: int, y: int, h: int) -> void:
+	var w := 14
+	# Тень трубы на скат справа.
+	for k in 5:
+		for yy in range(y + 6 + k, y + h + w + k):
+			put(x + w + 1 + k, yy, Color(0.16, 0.08, 0.16, 0.28 - k * 0.04))
+	# Кладка, низ каждого столбца — по линии ската.
+	for xx in w:
+		var hb := h + xx
+		for yy in hb:
+			var c := _brick(xx, yy, STONE[1])
+			if xx >= w - 2:
+				c = c.darkened(0.18)
+			put(x + xx, y + yy, c)
+	for yy in range(y - 1, y + h + 1):
+		put(x - 1, yy, OUT)
+	for yy in range(y - 1, y + h + w + 1):
+		put(x + w, yy, OUT)
+	# Фартук по срезу: 2 px света и тени, контур снизу; тень на черепице под ним.
+	for xx in range(-2, w + 2):
+		var by := y + h + xx
+		put(x + xx, by - 2, IRON[0])
+		put(x + xx, by - 1, IRON[1])
+		put(x + xx, by, IRON[2])
+		put(x + xx, by + 1, OUT)
+		tint(x + xx, by + 2, 0.3)
+		tint(x + xx, by + 3, 0.15)
+	# Шапка и дым.
+	bar(x - 2, y - 4, w + 4, 4, STONE)
+	rect(x + 2, y - 3, w - 4, 2, Color8(40, 30, 34))
+	for i in 4:
+		var cx := x + 7 + i * 3
+		var cy := y - 10 - i * 8
+		var r := 3 + i
+		for yy in range(-r, r + 1):
+			for xx in range(-r, r + 1):
+				if xx * xx + yy * yy <= r * r:
+					put(cx + xx, cy + yy, Color(0.9, 0.9, 0.92, 0.45 - i * 0.08))
+
+
+## Тень-эллипс на земле (вправо от предмета).
+func ground_shadow(cx: int, base: int, rx: int, ry: int, a := 0.3) -> void:
+	for yy in range(-ry, ry + 1):
+		for xx in range(-rx, rx + 1):
+			if float(xx * xx) / (rx * rx) + float(yy * yy) / (ry * ry) <= 1.0:
+				put(cx + xx, base + yy, Color(0.16, 0.08, 0.16, a))
+
+
+## Бочка стоя. Объём по горизонтали — 5 тонов дерева (блик на трети слева, рефлекс по
+## правому краю), клёпки шириной 3 px со швами и волокнами, бочка пузатая (силуэт выгнут),
+## обручи: светлая кромка, блик, тёмный низ, заклёпка; сверху обод из торцов клёпок и
+## утопленная крышка из досок (обод бросает на неё тень); вода — с бликом и рябью.
+const KEG := [Color8(220, 168, 110), Color8(190, 134, 84), Color8(156, 102, 64), Color8(122, 76, 50), Color8(88, 54, 42)]
+const HOOP := [Color8(214, 214, 222), Color8(170, 170, 184), Color8(120, 120, 136), Color8(78, 76, 92)]
+
+
+func _keg_tone(t: float) -> int:
+	# t — положение поперёк бочки 0..1 (слева направо).
+	if t < 0.08:
+		return 2
+	if t < 0.18:
+		return 1
+	if t < 0.34:
+		return 0
+	if t < 0.6:
+		return 1
+	if t < 0.8:
+		return 2
+	if t < 0.93:
+		return 3
+	return 2   # рефлекс у самого края
+
+
+## Нарисовать набор пикселей и обвести его контуром по силуэту.
+func _blit_outlined(pix: Dictionary) -> void:
+	for k: Vector2i in pix:
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if not pix.has(k + d):
+				put(k.x + d.x, k.y + d.y, OUT)
+	for k: Vector2i in pix:
+		put(k.x, k.y, pix[k])
+
+
+## Бочка стоя — цилиндр: верх-эллипс (обод из торцов клёпок, утопленная крышка), по переднему
+## краю верха — яркая кромка, сразу под ней — тень под ободом: чёткий переход «верх → бок».
+## Бок пузатый, клёпки сужаются к краям, обручи и низ изогнуты по дуге.
+func _keg(cx: int, base: int, w: int, h: int, water := false) -> void:
+	ground_shadow(cx + w / 2, base, w * 3 / 4 + 1, 3, 0.34)
+	var r := w / 2.0
+	var ry := 4.0
+	var yb := float(base) - ry
+	var yt := yb - h
+	var pix := {}
+	for py in range(int(yt - ry) - 2, base + 2):
+		for px in range(int(cx - r) - 3, int(cx + r) + 3):
+			var fx := px + 0.5 - cx
+			var fy := py + 0.5
+			# Радиус бока с пузом.
+			var k := clampf((fy - yt) / (yb - yt), 0.0, 1.0)
+			var rr := r + 1.6 * sin(PI * k)
+			# Верх.
+			var dxt := fx / r
+			if absf(dxt) <= 1.0:
+				var arc_t := ry * sqrt(1.0 - dxt * dxt)
+				if fy >= yt - arc_t and fy <= yt + arc_t:
+					var dyt := (fy - yt) / ry
+					var d := dxt * dxt + dyt * dyt
+					var c: Color
+					if fy > yt + arc_t - 1.2 and dyt > 0.0:
+						c = KEG[0].lightened(0.18)          # передняя кромка обода — свет
+					elif d > 0.5:
+						c = KEG[0] if dyt < 0.2 else KEG[1]   # обод: торцы клёпок
+						if posmod(int(floor(fx)), 3) == 0:
+							c = c.darkened(0.2)
+					elif water:
+						c = Color8(66, 100, 140) if dyt < 0.0 else Color8(92, 132, 168)
+						if (absf(dyt) < 0.25 and posmod(px, 4) == 1) or (int(floor(fx)) == -2 and dyt < 0.0 and dyt > -0.5):
+							c = Color8(214, 232, 242)
+					else:
+						c = KEG[2] if posmod(py, 3) != 0 else KEG[3]   # доски крышки
+						if dyt < -0.2 or dxt < -0.45:
+							c = KEG[3]                                  # тень от обода внутри
+						if int(floor(fx)) == 1 and absf(dyt) < 0.3:
+							c = KEG[4]
+					pix[Vector2i(px, py)] = c
+					continue
+			# Бок.
+			var dx := fx / rr
+			if absf(dx) > 1.0:
+				continue
+			var arc := ry * sqrt(1.0 - dx * dx)
+			var y0 := yt + arc
+			var y1 := yb + arc
+			if fy <= y0 or fy > y1:
+				continue
+			var t := (dx + 1.0) * 0.5
+			var ti := _keg_tone(t)
+			var v := fy - y0
+			if v < 2.0:
+				ti = mini(ti + 2, 4)        # тень под ободом
+			elif y1 - fy < 1.5:
+				ti = mini(ti + 1, 4)
+			var c: Color = KEG[ti]
+			# Клёпки: шаг по углу — у краёв уже.
+			var ang := asin(clampf(dx, -1.0, 1.0)) / PI * 9.0
+			if fposmod(ang + 0.5, 1.0) < 0.14 and v >= 2.0:
+				c = KEG[mini(ti + 1, 4)]
+			elif hh(int(ang * 3.0), int(fy) / 2, 40) < 60 and v >= 2.0:
+				c = KEG[mini(ti + 1, 4)]
+			# Обручи по дуге.
+			for hk: float in [3.0, float(h) - 4.0]:
+				if v >= hk and v < hk + 1.0:
+					c = HOOP[0] if t > 0.2 and t < 0.33 else (HOOP[1] if t < 0.72 else HOOP[2])
+				elif v >= hk + 1.0 and v < hk + 2.0:
+					c = HOOP[3]
+				elif v >= hk + 2.0 and v < hk + 3.0:
+					c = c.darkened(0.15)
+			pix[Vector2i(px, py)] = c
+	_blit_outlined(pix)
+
+
+## Бочка лёжа — тот же цилиндр вдоль x: днище-эллипс слева (обод, утопленные доски), по его
+## правой кромке — свет, сразу за ней — тень; бок светлый сверху, обручи изогнуты.
+func _keg_side(x: int, base: int, length: int, r: int) -> void:
+	ground_shadow(x + length / 2 + 4, base + 1, length * 2 / 3 + 2, 3, 0.34)
+	var ex := 3.5
+	var cy := float(base) - r - 1.0
+	var xl := float(x) + ex
+	var xr := xl + length
+	var pix := {}
+	for py in range(int(cy - r) - 3, int(cy + r) + 3):
+		for px in range(x - 1, int(xr + ex) + 2):
+			var fx := px + 0.5
+			var fy := py + 0.5 - cy
+			var k := clampf((fx - xl) / length, 0.0, 1.0)
+			var rr := r + 1.3 * sin(PI * k)
+			var dye := fy / r
+			if absf(dye) <= 1.0:
+				var arc_e := ex * sqrt(1.0 - dye * dye)
+				if fx >= xl - arc_e and fx <= xl + arc_e:
+					var dxe := (fx - xl) / ex
+					var d := dxe * dxe + dye * dye
+					var c: Color
+					if fx > xl + arc_e - 1.2 and dxe > 0.0:
+						c = KEG[0].lightened(0.18)
+					elif d > 0.5:
+						c = KEG[1] if dye < 0.2 else KEG[2]
+						if posmod(int(floor(fy)), 3) == 0:
+							c = c.darkened(0.2)
+					else:
+						c = KEG[2] if posmod(int(floor(fy)), 3) != 0 else KEG[3]
+						if dye < -0.3:
+							c = KEG[3]
+					pix[Vector2i(px, py)] = c
+					continue
+			var dy := fy / rr
+			if absf(dy) > 1.0:
+				continue
+			var arc := ex * sqrt(1.0 - dy * dy)
+			var x0 := xl + arc
+			var x1 := xr + arc
+			if fx <= x0 or fx > x1:
+				continue
+			var t := (dy + 1.0) * 0.5
+			var ti := _keg_tone(t)
+			var u := fx - x0
+			if u < 2.0:
+				ti = mini(ti + 2, 4)
+			elif x1 - fx < 1.5:
+				ti = mini(ti + 1, 4)
+			var c: Color = KEG[ti]
+			var ang := asin(clampf(dy, -1.0, 1.0)) / PI * 7.0
+			if fposmod(ang + 0.5, 1.0) < 0.16 and u >= 2.0:
+				c = KEG[mini(ti + 1, 4)]
+			for hk: float in [3.0, float(length) - 5.0]:
+				if u >= hk and u < hk + 1.0:
+					c = HOOP[0] if t > 0.2 and t < 0.33 else (HOOP[1] if t < 0.72 else HOOP[2])
+				elif u >= hk + 1.0 and u < hk + 2.0:
+					c = HOOP[3]
+			pix[Vector2i(px, py)] = c
+	_blit_outlined(pix)
+	put(int(xl + length * 0.5), int(cy - r) - 1, KEG[4])
+
+
+const LEAF5 := [Color8(198, 222, 112), Color8(150, 192, 80), Color8(100, 154, 62), Color8(62, 112, 58), Color8(38, 72, 50)]
+
+
+## Дерево. Ствол — толстый, изогнутый, кора полосами (свет слева, тень справа), корни, ветки
+## уходят в крону, под кроной ствол в тени. Крона — пучки листвы ярусами: у каждого пучка
+## свой свет сверху-слева и тень снизу-справа, край из кончиков листьев, мазки листьев внутри;
+## передний пучок отбрасывает тень на задние. Контур — по силуэту. Тень на траву вправо.
+func _tree(cx: int, base: int, s: int, sd: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	ground_shadow(cx + s / 2 + 4, base, s + 8, s / 3 + 3, 0.34)
+	var pix := {}
+	# Ствол.
+	var th := int(s * 1.25)
+	for yy in th + 1:
+		var k := float(yy) / th
+		var bend := sin(k * 2.4 + sd) * 2.0
+		var half := 4.5 - k * 1.5 + (2.0 if yy < 3 else 0.0)
+		for xx in range(int(floor(-half)), int(ceil(half)) + 1):
+			var t := (xx + half) / (half * 2.0)
+			var c: Color = BARK[1]
+			if t < 0.28:
+				c = BARK[0]
+			elif t > 0.72:
+				c = BARK[2]
+			if hh(xx + 31, int((yy + sd) / 3.0), 60) < 180:
+				c = (c as Color).darkened(0.14)
+			if k > 0.6:
+				c = (c as Color).darkened(0.25)   # тень от кроны
+			pix[Vector2i(cx + xx + int(round(bend)), base - yy)] = c
+	# Корни.
+	for side: int in [-1, 1]:
+		for i in 6:
+			var rx := cx + side * (4 + i)
+			var ry := base - 2 + i / 2
+			pix[Vector2i(rx, ry)] = BARK[0] if side < 0 else BARK[2]
+			pix[Vector2i(rx, ry - 1)] = BARK[1] if side < 0 else BARK[2]
+	# Ветки в крону.
+	var top := base - th
+	for side: int in [-1, 1]:
+		for i in 9:
+			var bx := cx + side * (2 + i)
+			var by := top + 6 - i
+			pix[Vector2i(bx, by)] = BARK[1]
+			pix[Vector2i(bx, by + 1)] = BARK[2]
+	_blit_outlined(pix)
+	# Крона: пучки ярусами (задние — выше и темнее).
+	var cy := top - s / 3
+	var clumps: Array = []
+	clumps.append([0, -s * 0.35, s * 0.55, 1])
+	for i in 3:
+		var ang := PI + 0.35 + i * 1.2 + rng.randf_range(-0.2, 0.2)
+		clumps.append([cos(ang) * s * 0.6, -s * 0.2 + sin(ang) * s * 0.25, s * rng.randf_range(0.42, 0.5), 1])
+	for i in 4:
+		var px := lerpf(-s * 0.75, s * 0.75, i / 3.0) + rng.randf_range(-3, 3)
+		clumps.append([px, s * 0.12 + (i % 2) * 4 - 2 + rng.randf_range(-1, 2), s * rng.randf_range(0.36, 0.44), 0])
+	for i in 3:
+		var px := lerpf(-s * 0.45, s * 0.45, i / 2.0) + rng.randf_range(-2, 2)
+		clumps.append([px, s * 0.44 + rng.randf_range(-1, 2), s * rng.randf_range(0.32, 0.4), 0])
+	var leaves := {}
+	for cl: Array in clumps:
+		var ccx: float = cx + float(cl[0])
+		var ccy: float = cy + float(cl[1])
+		var rr: float = cl[2]
+		var back: bool = int(cl[3]) == 1
+		var spikes := 7 + int(rr / 3)
+		var ph := rng.randf() * TAU
+		# Тень от этого пучка на уже нарисованные (вниз-вправо, по краю).
+		for yy in range(int(ccy - rr) - 2, int(ccy + rr) + 4):
+			for xx in range(int(ccx - rr) - 2, int(ccx + rr) + 4):
+				var k := Vector2i(xx, yy)
+				if not leaves.has(k):
+					continue
+				var d := Vector2(xx + 0.5 - ccx - 1.5, yy + 0.5 - ccy - 2.0).length()
+				if d < rr + 2.0:
+					leaves[k] = (leaves[k] as Color).darkened(0.32)
+		for yy in range(int(ccy - rr) - 3, int(ccy + rr) + 3):
+			for xx in range(int(ccx - rr) - 3, int(ccx + rr) + 3):
+				var dx := xx + 0.5 - ccx
+				var dy := yy + 0.5 - ccy
+				var ang := atan2(dy, dx)
+				var edge := rr * (1.0 + 0.2 * pow(absf(sin(ang * spikes * 0.5 + ph)), 3.0)) + (hh(xx, yy, 61 + sd) % 100) * 0.01
+				var d := sqrt(dx * dx + dy * dy)
+				if d > edge:
+					continue
+				# Тон сверху вниз (свет сверху-слева): у каждого пучка светлый верх и тёмный низ.
+				var g := (dy + dx * 0.35) / edge
+				var ti := 2
+				if g < -0.5:
+					ti = 0
+				elif g < -0.12:
+					ti = 1
+				elif g < 0.28:
+					ti = 2
+				elif g < 0.6:
+					ti = 3
+				else:
+					ti = 4
+				# Кромки пучка: светлая по всему верху, тёмная полоса по всему низу — так
+				# пучки ярусов отделяются друг от друга.
+				var rim := edge - d
+				if rim < 1.4 and dy < -rr * 0.2:
+					ti = 0 if dx < rr * 0.3 else 1
+				elif rim < 2.6 and dy > rr * 0.15:
+					ti = 4
+				elif rim < 2.2 and dx > rr * 0.45:
+					ti = maxi(ti, 3)        # правый бок пучка темнее — граница с соседом
+				elif rim < 1.4 and dx < -rr * 0.5:
+					ti = mini(ti, 1)        # левый бок — светлая кромка
+				if back:
+					ti = mini(ti + 1, 4)
+				# Мазки листьев: короткие косые штрихи светлее/темнее.
+				var stroke := posmod(xx * 2 + yy * 3 + sd, 7)
+				if stroke == 0 and hh(xx / 2, yy / 2, 62) < 520:
+					ti = clampi(ti - 1 if g < 0.0 else ti + 1, 0, 4)
+				leaves[Vector2i(xx, yy)] = LEAF5[ti]
+	# Контур кроны по силуэту.
+	for k: Vector2i in leaves:
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if not leaves.has(k + d):
+				put(k.x + d.x, k.y + d.y, LEAF_OUT)
+	for k: Vector2i in leaves:
+		put(k.x, k.y, leaves[k])
+
+
+## Стык трубы с черепицей: жестяной фартук (свет сверху, тень снизу) и тень на скате под ним.
+func _flashing(x: int, base: int, w: int) -> void:
+	for xx in range(-2, w + 2):
+		put(x + xx, base - 2, IRON[0])
+		put(x + xx, base - 1, IRON[1])
+		put(x + xx, base, IRON[2])
+		put(x + xx, base + 1, OUT)
+		tint(x + xx, base + 2, 0.3)
+		tint(x + xx, base + 3, 0.15)
+	put(x - 3, base - 1, OUT)
+	put(x - 3, base, OUT)
+	put(x + w + 2, base - 1, OUT)
+	put(x + w + 2, base, OUT)
+
+
+## Решётка-вентиляция на крыше: каждая планка — 2 px (свет и тень), как в референсе.
+func _vent(x: int, y: int) -> void:
+	rect(x - 1, y - 1, 20, 17, OUT)
+	rect(x, y, 18, 15, Color8(46, 36, 52))
+	for i in 4:
+		var yy := y + 1 + i * 4
+		rect(x + 1, yy, 16, 1, IRON[0])
+		rect(x + 1, yy + 1, 16, 1, IRON[2])
+	rect(x, y, 1, 15, IRON[1])
+	rect(x + 17, y, 1, 15, IRON[2])
+	shadow(x + 18, y + 2, 2, 14, 0.3)
+
+
+# ------------------------------- стены -------------------------------
+
+func _plaster(x: int, y: int, w: int, h: int) -> void:
+	for yy in h:
+		for xx in w:
+			var c: Color = PLAST[1]
+			var s := hh((x + xx) / 2, (y + yy) / 2, 9)
+			if s < 80:
+				c = PLAST[2]
+			elif s > 980:
+				c = PLAST[0]
+			put(x + xx, y + yy, c)
+	# Пятно отвалившейся штукатурки — кирпичики.
+	for k in 2:
+		var bx := x + 6 + hh(k, x, 10) % maxi(1, w - 20)
+		var by := y + 8 + hh(k, y, 10) % maxi(1, h - 20)
+		rect(bx - 1, by - 1, 12, 8, PLAST[3])
+		for r in 2:
+			for c in 2:
+				bar(bx + c * 5 + r * 2, by + r * 3, 4, 2, [Color8(200, 128, 100), Color8(170, 96, 78), Color8(130, 70, 60)], false)
+
+
+func _main_wall() -> void:
+	# Стена основного дома: фахверк.
+	var x0 := 12
+	var x1 := 128
+	var top := 102
+	_plaster(x0, top, x1 - x0, BASE - top)
+	# Цоколь из камня.
+	for yy in 8:
+		for xx in range(x0, x1):
+			var c: Color = STONE[1]
+			var sx := (xx + (yy / 4) * 4) % 10
+			if yy % 4 == 0 or sx == 0:
+				c = STONE[3]
+			elif yy % 4 == 1 or sx == 1:
+				c = STONE[0]
+			put(xx, BASE - 8 + yy, c)
+	rect(x0 - 1, BASE - 9, x1 - x0 + 2, 1, OUT)
+	# Балки: рамка, стойки, раскосы — каждая с объёмом и тенью на штукатурке.
+	bar(x0, top, x1 - x0, 4, WOOD)
+	bar(x0, BASE - 13, x1 - x0, 4, WOOD)
+	for px: int in [x0, 30, 98, x1 - 5]:
+		bar(px, top + 4, 5, BASE - 13 - top - 4, WOOD)
+		shadow(px + 5, top + 4, 1, BASE - 17 - top, 0.22)
+	# Тень под верхней балкой.
+	shadow(x0, top + 4, x1 - x0, 1, 0.25)
+	# Раскос справа от окна.
+	for i in 26:
+		var bx := 104 + int(i * 0.75)
+		var by := BASE - 14 - i
+		rect(bx, by, 4, 1, WOOD[1])
+		put(bx, by, WOOD[0])
+		put(bx + 3, by, WOOD[2])
+		put(bx - 1, by, OUT)
+		put(bx + 4, by, OUT)
+
+
+func _window(x: int, y: int, w: int, h: int) -> void:
+	# Витрина: рама, стекло с бликами, переплёт; подоконник с тенью.
+	rect(x - 3, y - 3, w + 6, h + 6, OUT)
+	bar(x - 2, y - 2, w + 4, h + 4, WOOD, false)
+	rect(x, y, w, h, GLASS[1])
+	for yy in h:
+		for xx in w:
+			if yy < 3:
+				put(x + xx, y + yy, GLASS[2])
+			elif (xx + yy) % 13 == 0 or (xx + yy) % 13 == 1:
+				put(x + xx, y + yy, GLASS[0])
+	# Товар за стеклом: бутылочки.
+	for i in 6:
+		var bx := x + 4 + i * 8
+		var col: Color = [Color8(176, 84, 84), Color8(96, 140, 110), Color8(196, 160, 84)][i % 3]
+		rect(bx, y + h - 11, 4, 9, col)
+		put(bx, y + h - 11, col.lightened(0.3))
+		rect(bx + 1, y + h - 14, 2, 3, Color8(200, 190, 170))
+	for k in [w / 3, 2 * w / 3]:
+		rect(x + k, y, 2, h, WOOD[2])
+		put(x + k, y, WOOD[1])
+	rect(x, y + h / 2, w, 1, WOOD[2])
+	bar(x - 4, y + h + 2, w + 8, 3, WOOD)
+	shadow(x - 3, y + h + 6, w + 6, 2, 0.3)
+
+
+func _awning(x: int, y: int, w: int) -> void:
+	# Полосатый навес: наклон, полосы 2 тона + тень, фестоны снизу, тень на стене.
+	var h := 13
+	for yy in h:
+		var lx := x - yy / 3
+		var rx := x + w + yy / 3
+		for xx in range(lx, rx):
+			var stripe := ((xx - x + yy / 3) / 6) % 2 == 0
+			var p: Array = AWN_R if stripe else AWN_W
+			var c: Color = p[1]
+			if yy < 2:
+				c = p[0]
+			elif yy > h - 3:
+				c = p[2]
+			put(xx, y + yy, c)
+		put(lx - 1, y + yy, OUT)
+		put(rx, y + yy, OUT)
+	rect(x, y - 1, w, 1, OUT)
+	# Фестоны.
+	var bx := x - h / 3
+	var bw := w + 2 * (h / 3)
+	for i in range(0, bw, 6):
+		var stripe := (i / 6) % 2 == 0
+		var p: Array = AWN_R if stripe else AWN_W
+		rect(bx + i + 1, y + h, 4, 2, p[2])
+		rect(bx + i + 2, y + h + 2, 2, 1, p[2])
+		put(bx + i, y + h, OUT)
+		put(bx + i + 1, y + h + 2, OUT)
+		put(bx + i + 4, y + h + 2, OUT)
+		put(bx + i + 2, y + h + 3, OUT)
+		put(bx + i + 3, y + h + 3, OUT)
+	rect(bx, y + h, bw, 1, OUT)
+	shadow(x - 2, y + h + 4, w + 4, 5, 0.3)
+	# Кронштейны.
+	for sx: int in [x + 2, x + w - 4]:
+		bar(sx, y + h, 2, 8, IRON)
+
+
+# ------------------------------- фронтон-крыло с дверью -------------------------------
+
+func _gable_wing() -> void:
+	var x0 := 128
+	var x1 := 196
+	var top := 104
+	var cx := (x0 + x1) / 2
+	_plaster(x0, top, x1 - x0, BASE - top)
+	for yy in 8:
+		for xx in range(x0, x1):
+			var c: Color = STONE[1]
+			var sx := (xx + (yy / 4) * 4) % 10
+			if yy % 4 == 0 or sx == 0:
+				c = STONE[3]
+			elif yy % 4 == 1 or sx == 1:
+				c = STONE[0]
+			put(xx, BASE - 8 + yy, c)
+	rect(x0 - 1, BASE - 9, x1 - x0 + 2, 1, OUT)
+	# Фронтон: треугольник штукатурки под досками крыши.
+	var apex := 62
+	for y in range(apex, top):
+		var half := int(float(y - apex) / float(top - apex) * (x1 - x0 + 10) / 2.0)
+		for xx in range(cx - half, cx + half):
+			var c: Color = PLAST[1]
+			if hh(xx / 2, y / 2, 11) < 80:
+				c = PLAST[2]
+			put(xx, y, c)
+	# Тень под ветровыми досками.
+	for y in range(apex + 4, top):
+		var half := int(float(y - apex) / float(top - apex) * (x1 - x0 + 10) / 2.0)
+		tint(cx - half + 1, y, 0.25)
+		tint(cx - half + 2, y, 0.15)
+		tint(cx + half - 2, y, 0.25)
+		tint(cx + half - 3, y, 0.15)
+	# Окошко во фронтоне.
+	rect(cx - 7, 74, 14, 15, OUT)
+	bar(cx - 6, 75, 12, 13, WOOD, false)
+	rect(cx - 4, 77, 8, 9, GLASS[1])
+	rect(cx - 4, 77, 8, 2, GLASS[2])
+	put(cx - 3, 80, GLASS[0])
+	put(cx - 2, 79, GLASS[0])
+	rect(cx - 1, 77, 2, 9, WOOD[2])
+	bar(cx - 8, 89, 16, 2, WOOD)
+	shadow(cx - 7, 92, 14, 1, 0.3)
+	# Балки: перекладина под фронтоном, угловые стойки.
+	bar(x0 - 2, top - 4, x1 - x0 + 4, 4, WOOD)
+	shadow(x0, top, x1 - x0, 2, 0.25)
+	bar(x0, top, 5, BASE - 9 - top, WOOD)
+	bar(x1 - 5, top, 5, BASE - 9 - top, WOOD)
+	shadow(x0 + 5, top + 2, 1, BASE - 12 - top, 0.22)
+
+
+func _door(cx: int, base: int, w: int, h: int) -> void:
+	var x := cx - w / 2
+	var y := base - h
+	# Каменный наличник с аркой.
+	for yy in range(-4, h + 1):
+		for xx in range(-4, w + 4):
+			var inside := xx >= 0 and xx < w and yy >= 0
+			var dx := xx - w / 2.0 + 0.5
+			var r := w / 2.0 + 4
+			if yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > r * r:
+				continue
+			if inside and not (yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > (w / 2.0) * (w / 2.0)):
+				continue
+			var c: Color = STONE[1] if (xx / 4 + yy / 5) % 2 == 0 else STONE[2]
+			if (yy + 4) % 5 == 0:
+				c = STONE[3]
+			put(x + xx, y + yy, c)
+	# Полотно двери из досок.
+	for yy in h:
+		for xx in w:
+			var dx := xx - w / 2.0 + 0.5
+			if yy < w / 2 and dx * dx + (w / 2.0 - yy) * (w / 2.0 - yy) > (w / 2.0) * (w / 2.0):
+				continue
+			var pl := xx / 5
+			var px := xx % 5
+			var c: Color = Color8(108, 126, 98) if pl % 2 == 0 else Color8(96, 114, 88)
+			if px == 0:
+				c = Color8(54, 62, 54)
+			elif px == 1:
+				c = Color8(136, 152, 120)
+			elif px == 4:
+				c = Color8(78, 92, 74)
+			put(x + xx, y + yy, c)
+	# Петли (2 px: свет и тень) и ручка.
+	for hy: int in [y + 14, y + h - 12]:
+		rect(x + 1, hy, w - 6, 1, IRON[0])
+		rect(x + 1, hy + 1, w - 6, 1, IRON[2])
+		put(x + w - 5, hy, OUT)
+		put(x + w - 5, hy + 1, OUT)
+	rect(x + w - 6, y + h / 2, 2, 3, Color8(220, 184, 96))
+	put(x + w - 6, y + h / 2, Color8(255, 236, 170))
+	put(x + w - 5, y + h / 2 + 2, Color8(150, 110, 50))
+	# Контур арки.
+	for yy in range(-1, h):
+		for xx in range(-1, w + 1):
+			var dx := xx - w / 2.0 + 0.5
+			var dy := w / 2.0 - yy
+			var d := sqrt(dx * dx + dy * dy) if yy < w / 2 else absf(dx)
+			if absf(d - w / 2.0) < 0.6:
+				put(x + xx, y + yy, OUT)
+	# Ступенька.
+	bar(x - 5, base, w + 10, 3, STONE)
+
+
+## Вывеска «ЛАВКА» на фронтоне — как «BAR» у референса: доска со светлой кромкой, светлые буквы.
+func _sign_board(x: int, y: int, w: int) -> void:
+	var h := 14
+	rect(x - 1, y - 1, w + 2, h + 2, OUT)
+	for yy in h:
+		for xx in w:
+			var c: Color = WOOD[1]
+			if hh(x + xx, (y + yy) / 2, 12) < 160:
+				c = WOOD[2]
+			elif hh(x + xx, y + yy, 13) < 60:
+				c = WOOD[0]
+			put(x + xx, y + yy, c)
+	rect(x, y, w, 1, WOOD[0].lightened(0.15))
+	rect(x, y + 1, 1, h - 1, WOOD[0])
+	rect(x, y + h - 1, w, 1, WOOD[3])
+	rect(x + w - 1, y, 1, h, WOOD[3])
+	var glyphs := {
+		"Л": ["..###", "..#.#", "..#.#", "..#.#", ".#..#", ".#..#", "#...#"],
+		"А": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+		"В": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+		"К": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+	}
+	var gx := x + 4
+	for ch: String in ["Л", "А", "В", "К", "А"]:
+		var g: Array = glyphs[ch]
+		for gy in 7:
+			var row: String = g[gy]
+			for i in 5:
+				if row[i] == "#":
+					put(gx + i, y + 4 + gy, WOOD[3])
+					put(gx + i - 1, y + 3 + gy, SIGN_TXT)
+		gx += 8
+	# Крепления-кронштейны.
+	bar(x + 4, y + h, 2, 4, IRON)
+	bar(x + w - 6, y + h, 2, 4, IRON)
+	shadow(x + 2, y + h + 1, w, 3, 0.3)
+	# Мох на углу доски (как в референсе).
+	put(x - 1, y - 2, MOSS[0])
+	put(x, y - 2, MOSS[1])
+	put(x - 1, y - 1, MOSS[1])
+	put(x - 2, y - 1, MOSS[2])
+
+
+## Подвесная вывеска с монетой на кронштейне.
+func _hanging_sign(x: int, y: int) -> void:
+	bar(x - 2, y - 2, 18, 2, IRON)
+	put(x + 14, y - 1, IRON[2])
+	put(x + 2, y, IRON[1])
+	put(x + 12, y, IRON[1])
+	rect(x, y + 2, 16, 14, OUT)
+	bar(x + 1, y + 3, 14, 12, WOOD, false)
+	# Монета.
+	for yy in range(-4, 5):
+		for xx in range(-4, 5):
+			if xx * xx + yy * yy <= 17:
+				var c := Color8(222, 178, 82)
+				if xx + yy < -3:
+					c = Color8(250, 222, 140)
+				elif xx + yy > 3:
+					c = Color8(170, 124, 52)
+				put(x + 8 + xx, y + 9 + yy, c)
+	rect(x + 7, y + 7, 2, 5, Color8(170, 124, 52))
+
+
+# ------------------------------- мелочи -------------------------------
+
+const CRATE := [Color8(224, 178, 120), Color8(196, 146, 92), Color8(160, 112, 70), Color8(124, 82, 54), Color8(90, 58, 44)]
+
+
+## Ящик-коробка, вид сверху-спереди: верх — обод из досок (дальний край и левый на свету),
+## внутри тёмная полость с горкой фруктов; передняя кромка — свет, сразу под ней тень (чёткий
+## переход «верх → стенка»); стенка из двух досок со швами, угловые планки с гвоздями, справа темнее.
+func _crate(x: int, y: int, s: int, fruit: Color) -> void:
+	var fh := 10
+	var td := 6
+	ground_shadow(x + s / 2 + 4, y + fh, s * 3 / 4, 3, 0.34)
+	var pix := {}
+	for yy in range(y - td, y):
+		for xx in range(x, x + s):
+			var inner := xx > x and xx < x + s - 1 and yy > y - td and yy < y
+			var c: Color
+			if not inner:
+				c = CRATE[0] if (yy == y - td or xx == x) else CRATE[2]
+			else:
+				c = CRATE[4] if yy < y - td + 2 or xx < x + 2 else CRATE[3]
+			pix[Vector2i(xx, yy)] = c
+	for yy in range(y, y + fh):
+		for xx in range(x, x + s):
+			var v := yy - y
+			var u := xx - x
+			var t := float(u) / s
+			var ti := 1
+			if t > 0.68:
+				ti = 2
+			if t > 0.9:
+				ti = 3
+			var c: Color = CRATE[ti]
+			var bv := posmod(v - 1, 5)
+			if v == 0:
+				c = CRATE[0].lightened(0.14)
+			elif v == 1:
+				c = CRATE[3]
+			elif bv == 0:
+				c = CRATE[4]
+			elif bv == 1:
+				c = (CRATE[ti] as Color).lightened(0.07)
+			elif bv == 4:
+				c = CRATE[mini(ti + 1, 4)]
+			elif hh(xx, yy, 50) < 90:
+				c = CRATE[mini(ti + 1, 4)]
+			if (u <= 2 or u >= s - 3) and v >= 1:
+				var pu := u if u <= 2 else u - (s - 3)
+				c = [CRATE[0], CRATE[1], CRATE[2]][pu]
+				if u >= s - 3:
+					c = c.darkened(0.16)
+				if pu == 1 and (v == 3 or v == fh - 2):
+					c = OUT
+			pix[Vector2i(xx, yy)] = c
+	_blit_outlined(pix)
+	# Горка фруктов: задний ряд, потом передний — каждый фрукт 5x5: блик, тень, тёмный край.
+	var shape := [".###.", "#####", "#####", "#####", ".###."]
+	var spots: Array = []
+	for i in 2:
+		spots.append(Vector2i(x + 3 + i * 5, y - td - 2))
+	for i in 3:
+		spots.append(Vector2i(x + 1 + i * 4, y - 5))
+	for sp: Vector2i in spots:
+		for fy in 5:
+			var row: String = shape[fy]
+			for fx in 5:
+				if row[fx] != "#":
+					continue
+				var c := fruit
+				if (fx == 1 and fy <= 2) or (fx == 2 and fy == 1):
+					c = fruit.lightened(0.32)
+				elif fx + fy >= 6:
+					c = fruit.darkened(0.42)
+				elif fx + fy >= 5:
+					c = fruit.darkened(0.22)
+				put(sp.x + fx, sp.y + fy, c)
+		put(sp.x + 2, sp.y - 1, Color8(92, 120, 60))
+		put(sp.x + 3, sp.y - 1, Color8(70, 96, 52))
+	# Передняя кромка поверх низа фруктов.
+	for xx in range(x, x + s):
+		put(xx, y, CRATE[0].lightened(0.14))
+		put(xx, y + 1, CRATE[3])
+	put(x - 1, y, OUT)
+	put(x + s, y, OUT)
+
+
+func _crates() -> void:
+	_crate(30, BASE - 4, 16, Color8(196, 70, 66))
+	_crate(48, BASE - 2, 16, Color8(222, 150, 66))
+	_crate(66, BASE - 4, 16, Color8(130, 170, 80))
+
+
+func _barrel(cx: int, base: int) -> void:
+	var w := 16
+	var h := 22
+	var x := cx - w / 2
+	var y := base - h
+	rect(x - 1, y, w + 2, h + 1, OUT)
+	for yy in h:
+		var bul := 1 if yy > 3 and yy < h - 4 else 0
+		for xx in range(-bul, w + bul):
+			var c: Color = WOOD[1]
+			if xx < 3:
+				c = WOOD[0]
+			elif xx > w - 4:
+				c = WOOD[2]
+			if (xx + 1) % 4 == 0:
+				c = c.darkened(0.15)
+			put(x + xx, y + yy, c)
+		put(x - 1 - bul, y + yy, OUT)
+		put(x + w + bul, y + yy, OUT)
+	for hy: int in [y + 4, y + h - 6]:
+		rect(x - 1, hy, w + 2, 1, IRON[0])
+		rect(x - 1, hy + 1, w + 2, 1, IRON[2])
+	rect(x, y, w, 3, WOOD[3])
+	rect(x + 1, y, w - 2, 1, WOOD[2])
+	shadow(x + w + 1, base - 4, 5, 4, 0.3)
+
+
+func _bottles(x: int, base: int) -> void:
+	for i in 2:
+		var bx := x + i * 5
+		rect(bx - 1, base - 11, 6, 11, OUT)
+		rect(bx, base - 10, 4, 9, Color8(196, 150, 110))
+		rect(bx, base - 10, 1, 9, Color8(236, 200, 160))
+		rect(bx + 3, base - 10, 1, 9, Color8(150, 108, 80))
+		rect(bx + 1, base - 14, 2, 4, Color8(170, 126, 92))
+		put(bx + 1, base - 15, OUT)
+		put(bx + 2, base - 15, OUT)
+
+
+## Грифельная доска-стойка с ценой.
+func _easel(x: int, base: int) -> void:
+	for s: int in [0, 13]:
+		for i in 20:
+			put(x + s + (i / 8 if s == 0 else -i / 8), base - i, WOOD[1])
+			put(x + s + 1 + (i / 8 if s == 0 else -i / 8), base - i, WOOD[2])
+	rect(x - 1, base - 22, 17, 14, OUT)
+	rect(x, base - 21, 15, 12, Color8(56, 60, 70))
+	rect(x, base - 21, 15, 1, Color8(90, 94, 104))
+	rect(x + 3, base - 18, 6, 1, Color8(210, 210, 200))
+	rect(x + 3, base - 15, 9, 1, Color8(210, 210, 200))
+	rect(x + 3, base - 12, 4, 1, Color8(222, 190, 96))
+	bar(x - 1, base - 23, 17, 2, WOOD)
+
+
+## Забор: каждый столбик и перекладина — 2 px света и тени.
+func _fence() -> void:
+	for seg: Array in [[0, 26], [200, 232]]:
+		var a: int = seg[0]
+		var b: int = seg[1]
+		for px in range(a + 2, b, 12):
+			rect(px - 1, BASE + 2, 6, 20, OUT)
+			rect(px, BASE + 3, 4, 18, WOOD[1])
+			rect(px, BASE + 3, 1, 18, WOOD[0])
+			rect(px + 1, BASE + 3, 1, 18, WOOD[0].darkened(0.05))
+			rect(px + 3, BASE + 3, 1, 18, WOOD[2])
+			rect(px, BASE + 3, 4, 1, WOOD[0].lightened(0.1))
+			shadow(px + 4, BASE + 18, 4, 3, 0.3)
+		for ry: int in [BASE + 7, BASE + 14]:
+			rect(a, ry - 1, b - a, 5, OUT)
+			rect(a, ry, b - a, 3, WOOD[1])
+			rect(a, ry, b - a, 1, WOOD[0])
+			rect(a, ry + 2, b - a, 1, WOOD[2])
+		# Столбики поверх перекладин спереди.
+		for px in range(a + 2, b, 12):
+			rect(px, BASE + 6, 4, 2, WOOD[1])
+			put(px, BASE + 6, WOOD[0])
+
+
+## Плющ и мох, свисающие с карнизов (как в референсе).
+func _ivy() -> void:
+	for x: int in [16, 22, 60, 118, 132, 190]:
+		var l := 4 + hh(x, 0, 14) % 9
+		for i in l:
+			var xx := x + (i / 3) % 2
+			put(xx, 117 + i, MOSS[1] if i % 3 != 2 else MOSS[2])
+			if i % 3 == 0:
+				put(xx + 1, 117 + i, MOSS[0])
+				put(xx - 1, 118 + i, MOSS[2])
