@@ -1,7 +1,7 @@
 extends RefCounted
 ## Раскладка лагеря-деревни (прямой 2D-вид сверху-спереди; общая для игры и генератора
-## графики tools/gen_camp.gd). Клетка 16 px. Картинки нарисованы с детализацией ART = 4
-## пикселя на пиксель мира.
+## графики tools/gen_camp.gd). Клетка 16 px. Картинки нарисованы в утверждённом стиле
+## (tools/camp_art.gd) с детализацией ART = 2 пикселя на пиксель мира.
 ##
 ## Три «улицы»: ряд A (основание y = 9), ряд B (y = 20), ряд C (y = 30). Двери смотрят вниз.
 ## Постоянные постройки — портал, торговец, шахта; остальное игрок строит сам на участках LOTS
@@ -10,7 +10,7 @@ extends RefCounted
 const W := 44
 const H := 34
 const TILE := 16
-const ART := 4
+const ART := 2
 const WIDTH := W * TILE
 const HEIGHT := H * TILE
 
@@ -33,29 +33,29 @@ const LOT_DEPTH := 3.0
 # Что можно построить на участке.
 const BUILDABLE := ["training", "library", "forge", "infirmary", "treasury", "storage", "workshop", "exchange", "mentor"]
 
-# Мелочи: [картинка, клетка (середина основания), твёрдая?]
+# Мелочи: [картинка (assets/camp/p_<имя>.png), клетка (середина основания), твёрдая?]
 const PROPS := [
-	["fountain", Vector2(22, 15.6), true],
+	["fountain", Vector2(22, 15.5), true],
 	["lamp", Vector2(18.6, 9.6), true], ["lamp", Vector2(25.6, 9.6), true],
 	["lamp", Vector2(19.8, 22.6), true], ["lamp", Vector2(24.2, 22.6), true],
 	["lamp", Vector2(19.8, 29.6), true], ["lamp", Vector2(24.2, 29.6), true],
 	["lamp", Vector2(3.6, 13.2), true], ["lamp", Vector2(40.4, 13.2), true],
 	["bench", Vector2(18.4, 17.2), true], ["bench", Vector2(25.6, 17.2), true],
-	["barrels", Vector2(25.8, 8.6), true],
-	["crates", Vector2(18.6, 29.6), true], ["barrels", Vector2(10.6, 29.4), true],
-	["cart", Vector2(34.2, 30.8), true],
-	["crates", Vector2(16.6, 19.4), true], ["barrels", Vector2(10.2, 19.6), true],
-	["sign", Vector2(24.6, 12.6), true],
-	["tree", Vector2(26.6, 26.2), true], ["tree2", Vector2(17.5, 25.0), true],
-	["tree3", Vector2(27.8, 29.0), true], ["tree", Vector2(3.4, 25.6), true],
-	["tree2", Vector2(40.6, 25.0), true], ["tree3", Vector2(3.0, 17.8), true],
-	["tree", Vector2(34.2, 14.6), true], ["tree2", Vector2(9.6, 14.8), true],
-	["bush", Vector2(25.4, 24.0), true], ["bush", Vector2(18.6, 22.9), true],
-	["bush", Vector2(21.0, 27.6), false], ["bush", Vector2(5.0, 14.6), false],
-	["bush", Vector2(39.6, 21.6), false], ["bush", Vector2(12.8, 26.0), false],
-	["flowers", Vector2(23.2, 26.4), false], ["flowers", Vector2(19.6, 27.0), false],
-	["flowers", Vector2(27.6, 23.2), false], ["flowers", Vector2(15.8, 15.6), false],
-	["flowers", Vector2(29.2, 16.4), false], ["flowers", Vector2(8.6, 26.2), false],
+	["signpost", Vector2(24.6, 12.6), true],
+	["tree_oak_1", Vector2(26.6, 26.2), true], ["tree_fruit_1", Vector2(17.5, 25.0), true],
+	["tree_birch_1", Vector2(27.8, 29.0), true], ["tree_pine_1", Vector2(3.4, 25.6), true],
+	["tree_autumn_1", Vector2(40.6, 25.0), true], ["tree_birch_0", Vector2(3.0, 17.8), true],
+	["tree_oak_0", Vector2(34.2, 14.6), true], ["tree_fruit_0", Vector2(9.6, 14.8), true],
+	["bush_flower", Vector2(25.4, 24.0), true], ["bush_green", Vector2(18.6, 22.9), true],
+	["bush_berry", Vector2(21.0, 27.6), true], ["bush_green", Vector2(5.0, 14.6), true],
+	["bush_flower", Vector2(39.6, 21.6), true], ["bush_dark", Vector2(12.8, 26.0), true],
+	["bush_flower", Vector2(10.0, 23.4), true], ["bush_green", Vector2(35.0, 23.4), true],
+	["rock_l", Vector2(16.0, 26.6), true], ["rock_m", Vector2(33.0, 26.5), true],
+	["rock_m", Vector2(36.6, 21.6), true], ["rock_s", Vector2(6.2, 23.0), true],
+	["rock_m", Vector2(41.0, 19.6), true], ["rock_s", Vector2(23.4, 26.0), true],
+	["flowers_0", Vector2(23.2, 26.3), false], ["flowers_1", Vector2(19.6, 26.9), false],
+	["flowers_2", Vector2(27.6, 23.1), false], ["flowers_0", Vector2(15.8, 15.5), false],
+	["flowers_1", Vector2(29.2, 16.3), false], ["flowers_2", Vector2(8.6, 26.1), false],
 ]
 
 const START := Vector2(22, 17.6)

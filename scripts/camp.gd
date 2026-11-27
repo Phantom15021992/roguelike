@@ -10,12 +10,13 @@ const TILE := LAY.TILE
 const W := LAY.W
 const H := LAY.H
 const TITLES := {"exchange": "Обменник", "merchant": "Торговец", "mentor": "Наставник"}  # постройки без улучшений
-# Радиус твёрдого основания мелочей (пиксели мира).
-const PROP_BODY := {"fountain": 26.0, "lamp": 2.5, "bench": 8.0, "barrels": 9.0, "crates": 9.0, "cart": 10.0, "sign": 2.5,
-	"tree": 4.0, "tree2": 4.0, "tree3": 4.0, "bush": 7.0}
+# Радиус твёрдого основания мелочей (пиксели мира), по началу имени.
+const PROP_BODY := {"fountain": 26.0, "lamp": 2.5, "bench": 9.0, "signpost": 2.5, "tree_": 4.0, "bush_": 6.0,
+	"rock_l": 9.0, "rock_m": 7.0, "rock_s": 5.0}
 
 var art := {}
 var _lots := {}   # номер участка -> узел (пустырь или постройка)
+var _mine_dirt: Sprite2D
 
 @onready var ground: Node2D = $Ground
 @onready var entities: Node2D = $Entities
@@ -43,8 +44,16 @@ func _ready() -> void:
 	Meta.changed.connect(_refresh_lots)
 	for p: Array in LAY.PROPS:
 		_prop(p[0], (p[1] as Vector2) * TILE, p[2])
-	for t: Array in art["trees"]:
+	for t: Array in art["forest"]:
 		_prop(t[2], Vector2(t[0], t[1]), false)
+	# Утоптанная земля у шахты, пока она не построена.
+	_mine_dirt = Sprite2D.new()
+	_mine_dirt.texture = load("res://assets/camp/p_minedirt.png")
+	_mine_dirt.centered = false
+	_mine_dirt.scale = Vector2.ONE / LAY.ART
+	_mine_dirt.position = Vector2(34, 27) * TILE
+	ground.add_child(_mine_dirt)
+	_refresh_lots()
 	if not Net.is_guest():
 		player.position = LAY.START * TILE
 		setup_camera(player.get_node("Camera"))
@@ -54,6 +63,8 @@ func _ready() -> void:
 
 ## Участки: пустырь или постройка, которую там построили.
 func _refresh_lots() -> void:
+	if _mine_dirt:
+		_mine_dirt.visible = Meta.level("mine") == 0
 	for i in LAY.LOTS.size():
 		var want: String = Meta.plots.get(str(i), "")
 		var cur: Node = _lots.get(i)
@@ -112,7 +123,10 @@ func _prop(name: String, pos: Vector2, solid: bool) -> void:
 		(node as StaticBody2D).collision_layer = 1
 		var shape := CollisionShape2D.new()
 		var r := CircleShape2D.new()
-		r.radius = PROP_BODY.get(name, 5.0)
+		r.radius = 5.0
+		for key: String in PROP_BODY:
+			if name.begins_with(key):
+				r.radius = PROP_BODY[key]
 		shape.shape = r
 		shape.scale = Vector2(1, 0.5)
 		node.add_child(shape)

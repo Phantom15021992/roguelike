@@ -4,7 +4,7 @@ extends StaticBody2D
 
 const LAY := preload("res://scripts/camp_layout.gd")
 # Свечение: [смещение в мире, цвет, размер]
-const GLOWS := {"portal": [Vector2(0, -50), Color(0.55, 0.35, 1.0), 1.7]}
+const GLOWS := {"portal": [Vector2(0, -32), Color(0.55, 0.35, 1.0), 1.4]}
 
 var id := "training"
 var title := ""
@@ -57,14 +57,14 @@ func _ready() -> void:
 		_glow.material = mat
 		add_child(_glow)
 	# Твёрдое основание: ширина постройки, глубина — почти до верха картинки (за дом не зайти).
-	var fp: Array = art.get("foot", [60, 30])
+	var fp: Array = art.get("foot", [60, 30, 0])
 	var top: float = art.get("top", -60.0)
-	var depth := clampf(maxf(float(fp[1]), -top - 26.0), 10.0, 70.0)
+	var depth := clampf(maxf(float(fp[1]), -top - 34.0), 10.0, 60.0)
 	var shape := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()
 	rect.size = Vector2(float(fp[0]) - 6.0, depth)
 	shape.shape = rect
-	shape.position = Vector2(0, -depth / 2.0)
+	shape.position = Vector2(float(fp[2]) if fp.size() > 2 else 0.0, -depth / 2.0)
 	add_child(shape)
 	_label = Label.new()
 	_label.add_theme_font_size_override("font_size", 5)
@@ -72,7 +72,7 @@ func _ready() -> void:
 	_label.add_theme_color_override("font_outline_color", Color(0.06, 0.04, 0.08))
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.size = Vector2(80, 8)
-	_label.position = Vector2(-40, top - 10.0)
+	_label.position = Vector2(-40, top + 4.0)
 	_label.z_index = 5
 	add_child(_label)
 	refresh()
