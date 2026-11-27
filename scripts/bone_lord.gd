@@ -198,6 +198,7 @@ func _ring(gap_angle: float) -> void:
 
 
 func _shoot(dir: Vector2, style: String, dmg: int, speed: float, col: Color) -> void:
+	_attack_pose()
 	var b: Area2D = PROJECTILE.new()
 	b.direction = dir
 	b.style = style
@@ -218,6 +219,7 @@ func _graves() -> void:
 	for i in count:
 		var pos := p.global_position if i == 0 else p.global_position + Vector2.from_angle(randf() * TAU) * randf_range(20.0, 55.0)
 		pos = pos.clamp(arena.position + Vector2(12, 12), arena.end - Vector2(12, 12))
+		_attack_pose()
 		var t: Node2D = TELEGRAPH.new()
 		t.radius = 16.0
 		t.position = pos

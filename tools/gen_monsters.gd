@@ -34,14 +34,33 @@ func _init() -> void:
 	quit()
 
 
+## Лист: cols кадров семейства + 5 общих: урон, замах, удар, смерть-1, смерть-2
+## (делаются из первого кадра сжатием/вытягиванием и подкраской — EXTRA).
+const EXTRA := 5
+
+
 func make(name: String, cols: int, size: int, f: Callable) -> void:
-	var sheet := Image.create(cols * size, size * 3, false, Image.FORMAT_RGBA8)
+	var sheet := Image.create((cols + EXTRA) * size, size * 3, false, Image.FORMAT_RGBA8)
 	for row in 3:
+		var first: Image
 		for col in cols:
 			d.begin(size)
 			f.call(row, col)
 			d.outline()
+			if col == 0:
+				first = d.img.duplicate()
 			sheet.blit_rect(d.img, Rect2i(0, 0, size, size), Vector2i(col * size, row * size))
+		# Куда «вперёд» для этого ряда: вниз / вправо / вверх.
+		var fw: Vector2 = [Vector2(0, 0.5), Vector2(1, 0), Vector2(0, -0.8)][row] * (size / 24.0)
+		var poses: Array = [
+			_xf(first, 1.08, 0.9, -fw * 1.5, Color(1.0, 0.25, 0.2), 0.3, 1.0),   # урон: отпрянул, покраснел
+			_xf(first, 1.12, 0.86, -fw * 1.0, Color.WHITE, 0.0, 1.0),            # замах: присел
+			_xf(first, 0.94, 1.06, fw * 2.0, Color(1, 1, 0.9), 0.15, 1.0),        # удар: выпад вперёд
+			_xf(first, 1.2, 0.62, Vector2.ZERO, Color(0.1, 0.05, 0.12), 0.35, 1.0),  # смерть: оседает
+			_xf(first, 1.35, 0.32, Vector2.ZERO, Color(0.1, 0.05, 0.12), 0.55, 0.75),
+		]
+		for i in EXTRA:
+			sheet.blit_rect(poses[i], Rect2i(0, 0, size, size), Vector2i((cols + i) * size, row * size))
 	sheet.save_png(ProjectSettings.globalize_path("res://assets/mon/%s.png" % name))
 	gallery.append([name, sheet, size])
 
@@ -112,6 +131,31 @@ func _all() -> void:
 	make("hellhound", 2, 24, _beast.bind({"kind": "hound", "c": Color8(110, 36, 36), "eye": YEL}))
 	make("sea_serpent", 2, 24, _beast.bind({"kind": "serpent", "c": Color8(60, 140, 190), "eye": YEL}))
 	make("bomber_imp", 2, 24, _imp.bind({"c": Color8(240, 90, 60), "eye": YEL, "bomb": true}))
+
+
+## Кадр-поза из готового кадра: масштаб от низа фигуры, сдвиг, подкраска.
+func _xf(src: Image, sx: float, sy: float, off: Vector2, tint: Color, ta: float, alpha: float) -> Image:
+	var size := src.get_width()
+	var out := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var used := src.get_used_rect()
+	if used.size == Vector2i.ZERO:
+		return out
+	var cx := used.position.x + used.size.x / 2.0
+	var by := float(used.end.y)
+	for y in size:
+		for x in size:
+			var u := int(floor((x + 0.5 - cx - off.x) / sx + cx))
+			var v := int(floor((y + 0.5 - by - off.y) / sy + by))
+			if u < 0 or v < 0 or u >= size or v >= size:
+				continue
+			var c := src.get_pixel(u, v)
+			if c.a <= 0.0:
+				continue
+			var a := c.a * alpha
+			c = c.lerp(tint, ta)
+			c.a = a
+			out.set_pixel(x, y, c)
+	return out
 
 
 # ======================= СЛИЗНИ =======================

@@ -90,10 +90,10 @@ func _draw() -> void:
 		return
 	if kind == "mat":
 		var icon: int = Crafting.MATERIALS[mat]["icon"]
-		draw_texture_rect_region(MATS_TEX, Rect2(-4, -9 - _z, 8, 8), Rect2(icon * 8, 0, 8, 8), Crafting.MATERIALS[mat].get("tint", Color.WHITE))
+		draw_texture_rect_region(MATS_TEX, Rect2(-5, -11 - _z, 10, 10), Rect2(icon * 12, 0, 12, 12), Crafting.MATERIALS[mat].get("tint", Color.WHITE))
 		return
 	var c: Color = Items.color(item)
 	var bob := roundf(sin(_t * 3.0)) - _z
 	# Свечение цветом редкости.
 	draw_circle(Vector2(0, -2), 7.0, Color(c, 0.18 + 0.08 * sin(_t * 4.0)))
-	draw_texture_rect_region(ITEMS_TEX, Rect2(-6, -13 + bob, 12, 12), Rect2(item["icon"] * 12, 0, 12, 12))
+	draw_texture_rect_region(ITEMS_TEX, Rect2(-7, -15 + bob, 14, 14), Rect2(item["icon"] * 16, 0, 16, 16))

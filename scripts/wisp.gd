@@ -65,6 +65,7 @@ var shot_color := Color(0, 0, 0, 0)
 
 
 func _fire(dir: Vector2) -> void:
+	_attack_pose()
 	var b: Area2D = PROJECTILE.new()
 	b.direction = dir
 	b.chill = shot_chill

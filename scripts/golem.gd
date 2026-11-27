@@ -44,6 +44,7 @@ func _think(delta: float) -> Vector2:
 				state = "windup"
 				_t = 0.9
 				sprite.play("idle")
+				_attack_pose()
 				_telegraph = TELEGRAPH.new()
 				_telegraph.radius = SLAM_RADIUS
 				_telegraph.position = global_position

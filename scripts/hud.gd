@@ -605,7 +605,7 @@ func _refresh_inv_panel() -> void:
 			if _player:
 				_player.inv("unequip", s)))
 		var t := _rich(250)
-		t.text = "%s: [color=#%s]%s[/color] [color=#a8a0b8]%s[/color]" % [Items.SLOT_NAMES[slot], Items.color(it).to_html(false), Items.display_name(it), _short_item(it)]
+		t.text = "%s: %s[color=#%s]%s[/color] [color=#a8a0b8]%s[/color]" % [Items.SLOT_NAMES[slot], Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it), _short_item(it)]
 		row.add_child(t)
 		eq_list.add_child(row)
 	var sub := _rich(280)
@@ -633,7 +633,7 @@ func _refresh_inv_panel() -> void:
 			better = " [color=#%s]+[/color]" % GOOD.to_html(false) if gain > 0.5 else (" [color=#%s]−[/color]" % BAD.to_html(false) if gain < -0.5 else "")
 		else:
 			better = " [color=#%s](%s)[/color]" % [BAD.to_html(false), reason]
-		t.text = "[color=#%s]%s[/color]%s [color=#a8a0b8]%s — %s[/color]" % [Items.color(it).to_html(false), Items.display_name(it), better, Items.SLOT_NAMES[it["slot"]], _short_item(it)]
+		t.text = "%s[color=#%s]%s[/color]%s [color=#a8a0b8]%s — %s[/color]" % [Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it), better, Items.SLOT_NAMES[it["slot"]], _short_item(it)]
 		row.add_child(t)
 		bag_list.add_child(row)
 	var hint := _label(4)

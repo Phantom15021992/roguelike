@@ -80,6 +80,7 @@ func _blink(dir: Vector2) -> void:
 
 
 func _throw(at: Vector2) -> void:
+	_attack_pose()
 	var t: Node2D = TELEGRAPH.new()
 	t.radius = 14.0
 	t.color = FIRE

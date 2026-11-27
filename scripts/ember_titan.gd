@@ -149,6 +149,7 @@ func _choose_action() -> void:
 		"breath":
 			_t = 0.8
 			var p := nearest_player()
+			_attack_pose()
 			_telegraph = TELEGRAPH.new()
 			_telegraph.radius = 80.0
 			_telegraph.arc_half = 0.5
@@ -186,6 +187,7 @@ func _meteors() -> void:
 		var pos := Vector2(randf_range(inner.position.x, inner.end.x), randf_range(inner.position.y, inner.end.y))
 		if i == 0 and p:
 			pos = p.global_position
+		_attack_pose()
 		var t: Node2D = TELEGRAPH.new()
 		t.radius = 16.0
 		t.color = FIRE
@@ -236,6 +238,7 @@ func _wave() -> void:
 		Rect2(arena.position + Vector2(0, arena.size.y / 2.0), Vector2(arena.size.x, arena.size.y / 2.0)),
 	]
 	var r: Rect2 = halves.pick_random()
+	_attack_pose()
 	var t: Node2D = TELEGRAPH.new()
 	t.rect_size = r.size
 	t.color = Color(1.0, 0.3, 0.1)

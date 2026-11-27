@@ -337,7 +337,7 @@ func _fill_merchant() -> void:
 		var price: int = e["price"]
 		var row := _hc()
 		row.add_child(_button("%d зол." % price, func() -> void: _buy(i), Meta.gold >= price and Meta.stash.size() < Meta.stash_max(), 5))
-		row.add_child(_rich(200, "[color=#%s]%s[/color] (%s) — %s" % [Items.color(it).to_html(false), Items.display_name(it), Items.SLOT_NAMES[it["slot"]], _short_stats(it)]))
+		row.add_child(_rich(200, "%s[color=#%s]%s[/color] (%s) — %s" % [Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it), Items.SLOT_NAMES[it["slot"]], _short_stats(it)]))
 		list.add_child(row)
 	if Meta.shop.is_empty():
 		list.add_child(_rich(200, "[color=#a8a0b8]Всё раскупили — новый товар после следующего забега.[/color]"))
@@ -533,8 +533,11 @@ func _materials_bar(mats: Dictionary, gold: int) -> Control:
 		var icon := TextureRect.new()
 		var at := AtlasTexture.new()
 		at.atlas = MATS_TEX
-		at.region = Rect2(Crafting.MATERIALS[id]["icon"] * 8, 0, 8, 8)
+		at.region = Rect2(Crafting.MATERIALS[id]["icon"] * 12, 0, 12, 12)
 		icon.texture = at
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(8, 8)
 		icon.modulate = Crafting.MATERIALS[id].get("tint", Color.WHITE)
 		icon.tooltip_text = Crafting.mat_name(id)
 		h.add_child(icon)
@@ -633,8 +636,8 @@ func _fill_stash() -> void:
 			ref_text = "максимум"
 		row.add_child(_button("Заточить", func() -> void: _refine_stash(item, bonus), can_ref, 5))
 		row.add_child(_button("Разобрать", func() -> void: _salvage(i), true, 5))
-		row.add_child(_rich(170, "[color=#%s]%s[/color] — %s\n[color=#a8a0b8]%s[/color]" % [
-			Items.color(item).to_html(false), Items.display_name(item), _short_stats(item), ref_text]))
+		row.add_child(_rich(170, "%s[color=#%s]%s[/color] — %s\n[color=#a8a0b8]%s[/color]" % [
+			Items.icon_bb(item), Items.color(item).to_html(false), Items.display_name(item), _short_stats(item), ref_text]))
 		list.add_child(row)
 
 
@@ -848,8 +851,8 @@ func _fill_loadout() -> void:
 				if Items.is_two_hand(item):
 					_loadout.erase("offhand")  # двуручное занимает вторую руку
 			_refill(), not blocked, 5))
-		row.add_child(_rich(200, "%s[color=#%s]%s[/color] (%s) — %s" % [
-			"» " if taken else "", Items.color(item).to_html(false), Items.display_name(item),
+		row.add_child(_rich(200, "%s%s[color=#%s]%s[/color] (%s) — %s" % [
+			"» " if taken else "", Items.icon_bb(item), Items.color(item).to_html(false), Items.display_name(item),
 			Items.SLOT_NAMES[slot], _short_stats(item)]))
 		list.add_child(row)
 	var h := _hc(4)

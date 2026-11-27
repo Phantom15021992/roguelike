@@ -287,6 +287,11 @@ static func make_set_piece(set_id: String, base_key: String, depth: int) -> Dict
 	return item
 
 
+## Иконка предмета для RichTextLabel (items.png, 16x16).
+static func icon_bb(item: Dictionary, px := 9) -> String:
+	return "[img width=%d height=%d region=%d,0,16,16]res://assets/items.png[/img] " % [px, px, int(item.get("icon", 0)) * 16]
+
+
 static func color(item: Dictionary) -> Color:
 	return RARITY[item["rarity"]]["color"]
 

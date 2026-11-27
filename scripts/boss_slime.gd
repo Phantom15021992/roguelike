@@ -168,6 +168,7 @@ func _begin_slam() -> void:
 		return
 	var inner := arena.grow(-20.0)
 	_target = p.global_position.clamp(inner.position, inner.end)
+	_attack_pose()
 	_telegraph = TELEGRAPH.new()
 	_telegraph.radius = slam_radius
 	_telegraph.position = _target
@@ -232,6 +233,7 @@ func _spit() -> void:
 	var spread := deg_to_rad(70.0)
 	var base_dir := (p.global_position - global_position).normalized()
 	for i in n:
+		_attack_pose()
 		var b: Area2D = PROJECTILE.new()
 		b.direction = base_dir.rotated(-spread / 2.0 + spread * i / (n - 1))
 		b.damage = spit_damage

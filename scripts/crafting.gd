@@ -21,22 +21,22 @@ const MATERIALS := {
 	"obsidian": {"name": "Обсидиан", "icon": 9},
 	"scale": {"name": "Чешуя", "icon": 10},
 	"ember_heart": {"name": "Сердце пламени", "icon": 11, "rare": true},
-	# Глубины (10–50). Иконки пока перекрашенные старые (tint).
-	"ice": {"name": "Лёд", "icon": 1, "tint": Color(0.6, 0.9, 1.4)},
-	"venom": {"name": "Яд", "icon": 4, "tint": Color(0.6, 1.3, 0.4)},
-	"soul": {"name": "Душа", "icon": 1, "tint": Color(0.8, 0.6, 1.4)},
-	"horn": {"name": "Рог", "icon": 3, "tint": Color(1.3, 0.55, 0.45)},
-	"frost_heart": {"name": "Сердце льда", "icon": 11, "rare": true, "tint": Color(0.55, 0.9, 1.5)},
-	"swamp_pearl": {"name": "Болотная жемчужина", "icon": 6, "rare": true, "tint": Color(0.7, 1.3, 0.6)},
-	"shadow_gem": {"name": "Теневой камень", "icon": 7, "rare": true, "tint": Color(0.75, 0.5, 1.4)},
-	"abyss_eye": {"name": "Око бездны", "icon": 11, "rare": true, "tint": Color(1.4, 0.4, 0.8)},
+	# Глубины (10–50).
+	"ice": {"name": "Лёд", "icon": 12},
+	"venom": {"name": "Яд", "icon": 13},
+	"soul": {"name": "Душа", "icon": 14},
+	"horn": {"name": "Рог", "icon": 15},
+	"frost_heart": {"name": "Сердце льда", "icon": 16, "rare": true},
+	"swamp_pearl": {"name": "Болотная жемчужина", "icon": 17, "rare": true},
+	"shadow_gem": {"name": "Теневой камень", "icon": 18, "rare": true},
+	"abyss_eye": {"name": "Око бездны", "icon": 19, "rare": true},
 	# Этажи 71–100
-	"coral": {"name": "Коралл", "icon": 4, "tint": Color(1.4, 0.7, 0.7)},
-	"gear": {"name": "Шестерня", "icon": 5, "tint": Color(1.2, 1.0, 0.7)},
-	"crystal": {"name": "Кристалл", "icon": 1, "tint": Color(1.3, 0.8, 1.4)},
-	"kraken_ink": {"name": "Чернила кракена", "icon": 6, "rare": true, "tint": Color(0.4, 0.6, 1.2)},
-	"machine_core": {"name": "Ядро машины", "icon": 11, "rare": true, "tint": Color(1.3, 1.1, 0.5)},
-	"prism": {"name": "Призма", "icon": 7, "rare": true, "tint": Color(1.4, 0.9, 1.5)},
+	"coral": {"name": "Коралл", "icon": 20},
+	"gear": {"name": "Шестерня", "icon": 21},
+	"crystal": {"name": "Кристалл", "icon": 22},
+	"kraken_ink": {"name": "Чернила кракена", "icon": 23, "rare": true},
+	"machine_core": {"name": "Ядро машины", "icon": 24, "rare": true},
+	"prism": {"name": "Призма", "icon": 25, "rare": true},
 }
 
 # Обычные материалы (не редкие) — ими платят за заточку.
@@ -124,6 +124,11 @@ const REFINE_MAX := 10
 const REFINE_STEP := 0.10
 # Шанс успеха при заточке ДО уровня N (индекс = текущий уровень): +1..+4 — 100%.
 const REFINE_CHANCE := [100, 100, 100, 100, 80, 65, 50, 35, 25, 15]
+
+
+## Иконка материала для RichTextLabel (mats.png, 12x12).
+static func mat_bb(id: String, px := 8) -> String:
+	return "[img width=%d height=%d region=%d,0,12,12]res://assets/mats.png[/img]" % [px, px, int(MATERIALS.get(id, {}).get("icon", 0)) * 12]
 
 
 static func mat_name(id: String) -> String:

@@ -56,6 +56,7 @@ func _start_windup(dir: Vector2) -> void:
 	_t = WINDUP
 	_dir = dir
 	sprite.play("idle")
+	_attack_pose()
 	_telegraph = TELEGRAPH.new()
 	_telegraph.radius = REACH
 	_telegraph.arc_half = HALF_ARC

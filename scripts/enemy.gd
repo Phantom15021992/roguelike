@@ -207,6 +207,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_check_contact()
 	_update_look()
+	_update_pose(delta)
 
 
 # --- Обход препятствий ---
@@ -300,6 +301,8 @@ func _check_contact() -> void:
 	for p in get_tree().get_nodes_in_group("player"):
 		if not p.dead and global_position.distance_to(p.global_position) < contact_radius:
 			p.take_damage(contact_damage, global_position)
+			if _pose != "attack":
+				pose("attack", 0.3)
 
 
 ## missable — удар оружием может промахнуться (уклонение монстра против точности героя).
@@ -334,6 +337,8 @@ func take_damage(amount: int, from: Vector2, crit := false, missable := true) ->
 	_flash = 1.0
 	_reset_stuck_window()  # отлёт от удара не считаем за движение
 	_knockback =(global_position - from).normalized() * knockback_power * (1.5 if crit else 1.0)
+	if hp > 0 and not is_in_group("boss"):
+		pose("hurt", 0.16)
 	Game.damage_number(global_position + Vector2(0, -18), amount, Color(1.0, 0.85, 0.2) if crit else Color.WHITE)
 	if hp <= 0:
 		_die()
@@ -373,8 +378,15 @@ func _die() -> void:
 		st.add_xp(xp_reward)
 	_drop_loot()
 	var tw := create_tween()
-	tw.tween_property(sprite, "scale", Vector2(1.5, 0.2), 0.15)
-	tw.parallel().tween_property(sprite, "modulate:a", 0.0, 0.2)
+	if not _look_frames.is_empty() and sprite.sprite_frames.has_animation("die"):
+		# Новая графика: оседает (кадры смерти), потом тает.
+		_pose = ""
+		sprite.play("die")
+		tw.tween_interval(0.3)
+		tw.tween_property(sprite, "modulate:a", 0.0, 0.25)
+	else:
+		tw.tween_property(sprite, "scale", Vector2(1.5, 0.2), 0.15)
+		tw.parallel().tween_property(sprite, "modulate:a", 0.0, 0.2)
 	tw.tween_callback(queue_free)
 
 
@@ -471,8 +483,15 @@ func spawn_puddle(pos: Vector2, radius: float, lifetime: float, damage: int, col
 	return f
 
 
+## Поза атаки (новая графика): выстрел, предупреждение, удар по площади.
+func _attack_pose() -> void:
+	if _pose != "attack":
+		pose("attack", 0.35)
+
+
 ## Снаряд монстра в сторону dir.
 func spawn_shot(dir: Vector2, damage: int, speed := 75.0, col := Color(0.6, 0.35, 0.95), style := "orb", chill := 0.0) -> Area2D:
+	_attack_pose()
 	var b: Area2D = _E_SHOT.new()
 	b.direction = dir.normalized()
 	b.damage = damage
@@ -489,6 +508,7 @@ func spawn_shot(dir: Vector2, damage: int, speed := 75.0, col := Color(0.6, 0.35
 
 ## Красный круг-предупреждение (заполняется за time секунд; убирает владелец).
 func spawn_warning(pos: Vector2, radius: float, col := Color(1.0, 0.25, 0.2)) -> Node2D:
+	_attack_pose()
 	var t: Node2D = _E_WARN.new()
 	t.radius = radius
 	t.color = col
@@ -499,6 +519,7 @@ func spawn_warning(pos: Vector2, radius: float, col := Color(1.0, 0.25, 0.2)) ->
 
 ## Ранить героев в радиусе.
 func hurt_players_in(pos: Vector2, radius: float, damage: int) -> void:
+	_attack_pose()
 	for pl in get_tree().get_nodes_in_group("player"):
 		if not pl.dead and pl.global_position.distance_to(pos) < radius:
 			pl.take_damage(damage, pos)
@@ -544,6 +565,43 @@ func _update_look() -> void:
 		sprite.flip_h = v.x < 0.0
 
 
+# Позы поверх анимаций скрипта: урон, атака (на время), смерть. Скрипт может каждый кадр
+# включать свою анимацию — поза возвращается и идёт по своему времени.
+var _pose := ""
+var _pose_t := 0.0
+var _pose_len := 0.0
+var _pose_prev := ""
+
+
+func pose(anim: String, seconds: float) -> void:
+	if _look_frames.is_empty() or dead or not sprite.sprite_frames.has_animation(anim):
+		return
+	if _pose == "":
+		_pose_prev = String(sprite.animation)
+	elif _pose == "attack" and anim == "hurt":
+		return  # удар не прерывается
+	_pose = anim
+	_pose_t = seconds
+	_pose_len = seconds
+	sprite.play(anim)
+
+
+func _update_pose(delta: float) -> void:
+	if _pose == "":
+		return
+	_pose_t -= delta
+	if _pose_t <= 0.0:
+		_pose = ""
+		if sprite.sprite_frames.has_animation(_pose_prev):
+			sprite.play(_pose_prev)
+		return
+	var n := sprite.sprite_frames.get_frame_count(_pose)
+	var f := mini(n - 1, int((_pose_len - _pose_t) / _pose_len * n))
+	if sprite.animation != _pose:
+		sprite.play(_pose)
+	sprite.frame = f
+
+
 func _set_look(d: String) -> void:
 	if d == look_dir or not _look_frames.has(d):
 		return
@@ -565,12 +623,22 @@ func make_frames(sheet: Texture2D, anims: Dictionary, size := 16) -> SpriteFrame
 		sprite.offset.y = -(fs - size) / 2.0
 		look_dir = "down"
 		return _look_frames["down"]
-	return _frames_from(sheet, anims, size, 0)
+	return _frames_from(sheet, anims, size, -1)
 
 
 func _frames_from(sheet: Texture2D, anims: Dictionary, size: int, row: int) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
+	# Новые листы: после кадров семейства — урон, замах+удар, смерть (tools/gen_monsters.gd).
+	var nb := 0
+	for anim_name: String in anims:
+		for i: int in (anims[anim_name] as Array)[0]:
+			nb = maxi(nb, i + 1)
+	if row >= 0 and sheet.get_width() / size >= nb + 5:
+		anims = anims.duplicate()
+		anims["hurt"] = [[nb], 1.0]
+		anims["attack"] = [[nb + 1, nb + 2], 6.0]
+		anims["die"] = [[nb + 3, nb + 4], 8.0]
 	for anim_name: String in anims:
 		var spec: Array = anims[anim_name]
 		frames.add_animation(anim_name)
@@ -579,7 +647,7 @@ func _frames_from(sheet: Texture2D, anims: Dictionary, size: int, row: int) -> S
 		for i: int in spec[0]:
 			var t := AtlasTexture.new()
 			t.atlas = sheet
-			t.region = Rect2(i * size, row * size, size, size)
+			t.region = Rect2(i * size, maxi(row, 0) * size, size, size)
 			frames.add_frame(anim_name, t)
 	return frames
 
