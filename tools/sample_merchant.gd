@@ -400,8 +400,8 @@ func _wing_roof() -> void:
 func _house_shadow() -> void:
 	# Полоса справа от крыла, как раньше, но короче: от уровня карниза крыла вниз до земли
 	# (проходит и позади подвесной вывески).
-	for y in range(46, BASE):
-		var w := 28 if y > 70 else clampi((y - 46) + 4, 0, 28)
+	for y in range(62, BASE):
+		var w := 16 if y > 75 else clampi((y - 62) + 3, 0, 16)
 		for x in range(204, 204 + w):
 			put(x, y, Color(0.16, 0.08, 0.16, 0.3))
 
