@@ -44,10 +44,11 @@ func _place_buildings() -> void:
 		var sx := int(p.x * C)
 		var sy := int(p.y * C)
 		add(sy, func() -> void:
-			RP = ROOF
-			call("_b_" + id, sx, sy)
-			at(0, 0)
-			RP = ROOF)
+			building_outlined(func() -> void:
+				RP = ROOF
+				call("_b_" + id, sx, sy)
+				at(0, 0)
+				RP = ROOF))
 
 func _place_props() -> void:
 	at(0, 0)

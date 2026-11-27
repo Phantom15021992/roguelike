@@ -78,6 +78,8 @@ func _sprite(name: String, cw: int, ch: int, anchor: Vector2i, f: Callable, buil
 	f.call(anchor.x, anchor.y)
 	at(0, 0)
 	RP = ROOF
+	if building:
+		thick_outline(img)
 	var used := img.get_used_rect()
 	if used.size.x <= 0:
 		push_error("empty sprite " + name)
