@@ -1,5 +1,6 @@
 .godot/
 /shots/
 /build/
-/.claude/
+/.claude/*
+!/.claude/skills/
 /concepts/refs/
