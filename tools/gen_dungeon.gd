@@ -107,19 +107,26 @@ func _pillars() -> void:
 # ---------------- Монстры ----------------
 
 func _monsters() -> void:
-	var fsz := 48
 	for kind: String in MONSTERS:
-		var frames: int = MONSTERS[kind]
+		_sheet(kind, MONSTERS[kind], 48, func(x: int, b: int, d: int, f: int) -> void: monster(kind, x, b, d, f))
+	for kind: String in BOSSES:
+		_sheet(kind, BOSSES[kind], 96, func(x: int, b: int, d: int, f: int) -> void: boss(kind, x, b, d, f))
+	_gallery()
+
+
+## Лист: ряды вниз/вбок/вверх, кадры семейства + 5 поз. draw(cx, base, dir, fr).
+func _sheet(kind: String, frames: int, fsz: int, draw: Callable) -> void:
+		var k := fsz / 48.0
 		var sheet := Image.create((frames + 5) * fsz, fsz * 3, false, Image.FORMAT_RGBA8)
 		for row in 3:
 			var first: Image
 			for col in frames:
 				setup(fsz, fsz)
-				monster(kind, fsz / 2, fsz - 3, row, col)
+				draw.call(fsz / 2, fsz - 3, row, col)
 				if col == 0:
 					first = img.duplicate()
 				sheet.blit_rect(img, Rect2i(0, 0, fsz, fsz), Vector2i(col * fsz, row * fsz))
-			var fw: Vector2 = [Vector2(0, 1.0), Vector2(2.0, 0), Vector2(0, -1.6)][row]
+			var fw: Vector2 = [Vector2(0, 1.0), Vector2(2.0, 0), Vector2(0, -1.6)][row] * k
 			var poses: Array = [
 				_xf(first, 1.08, 0.9, -fw * 1.5, Color(1.0, 0.25, 0.2), 0.3, 1.0),
 				_xf(first, 1.12, 0.86, -fw * 1.0, Color.WHITE, 0.0, 1.0),
@@ -131,6 +138,9 @@ func _monsters() -> void:
 				sheet.blit_rect(poses[i], Rect2i(0, 0, fsz, fsz), Vector2i((frames + i) * fsz, row * fsz))
 		sheet.save_png(ProjectSettings.globalize_path(MONDIR + kind + ".png"))
 		gallery.append(sheet)
+
+
+func _gallery() -> void:
 	# Галерея для просмотра: все листы друг под другом, ×2.
 	var gw := 0
 	var gh := 0

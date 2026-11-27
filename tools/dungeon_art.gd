@@ -485,6 +485,10 @@ func pillar(cx: int, base: int, r: int, hgt: int, cap := 8, crys := true) -> voi
 		crystals(cx - 3, base - h + int(h * 0.3), 6.0, 4, true)
 
 
+var CRAG_P: Array = ROCKD   # палитра глыбы crag
+var CRAG_MOSS := true
+
+
 ## Угловатая глыба (перенесено из camp_art._rock, палитра скал подземелья).
 func crag(cx: int, cy: int, w: int, h: int, sd: int) -> void:
 	var rng := RandomNumberGenerator.new()
@@ -512,28 +516,28 @@ func crag(cx: int, cy: int, w: int, h: int, sd: int) -> void:
 			var sxl := split_x + (py - cy) * 0.35
 			var c: Color
 			if py < ty:
-				c = ROCKD[0]
+				c = CRAG_P[0]
 				# Мох — цельные шапки по шуму, светлый верх и тёмный край.
 				var mn := nz.get_noise_2d(px * 2.2 + sd, py * 2.2)
-				if mn > 0.05 and py < ty - 1:
+				if CRAG_MOSS and mn > 0.05 and py < ty - 1:
 					c = MOSS[0] if mn > 0.2 else MOSS[1]
-				elif mn > -0.02 and py < ty - 1:
+				elif CRAG_MOSS and mn > -0.02 and py < ty - 1:
 					c = MOSS[2]
 			elif py < ty + 1.5:
-				c = ROCKD[3]                         # тень под ребром верхней грани
+				c = CRAG_P[3]                         # тень под ребром верхней грани
 			elif px > sxl:
-				c = ROCKD[2] if px < sxl + 1.5 or hh(px / 3, py / 3, sd + 2) > 200 else ROCKD[3]
+				c = CRAG_P[2] if px < sxl + 1.5 or hh(px / 3, py / 3, sd + 2) > 200 else CRAG_P[3]
 				if px < sxl + 1.0:
-					c = ROCKD[4]                     # ребро между гранями
+					c = CRAG_P[4]                     # ребро между гранями
 			else:
-				c = ROCKD[1]
+				c = CRAG_P[1]
 				if px < r.position.x + 3:
-					c = ROCKD[0]                     # освещённая левая кромка
+					c = CRAG_P[0]                     # освещённая левая кромка
 			if py > r.end.y - 3:
-				c = ROCKD[3]
+				c = CRAG_P[3]
 			# Трещины — редкие короткие линии.
 			if py > ty + 4 and absf(px - (cx - w * 0.2 + (py - ty) * 0.5 + (sd % 7))) < 0.6 and py < ty + 12:
-				c = ROCKD[4]
+				c = CRAG_P[4]
 			pix[Vector2i(px, py)] = c
 	blit(pix)
 
@@ -822,3 +826,320 @@ func mushroom(cx: int, base: int, dir: int, fr: int, cap: Array, spot: Color, bo
 			var pf := {}
 			ball(pf, cx + v.x, cy + v.y, 3.2, 2.6, [Color8(236, 222, 246), Color8(214, 194, 230), Color8(190, 166, 212), Color8(164, 140, 192), Color8(140, 116, 170)])
 			blit(pf, Color8(120, 96, 140))
+
+
+# ===================================================================================
+#                              БОССЫ ПЕРВОГО БИОМА
+#  Кадр 96x96 пикселей картинки (48 мира), от середины основания (cx, base).
+#  boss_0_0 Король слизней (3 кадра: покой, приплюснут, вытянут), boss_0_1 Повелитель костей,
+#  boss_0_2 Владыка пламени, boss_0_3 Древний страж (по 1 кадру).
+# ===================================================================================
+
+const GOLDP := [Color8(250, 224, 136), Color8(228, 186, 86), Color8(186, 138, 60), Color8(138, 96, 48), Color8(96, 64, 40)]
+const ROBE := [Color8(150, 120, 180), Color8(118, 90, 152), Color8(90, 66, 124), Color8(66, 48, 98), Color8(46, 34, 72)]
+const ORB := [Color8(244, 222, 255), Color8(210, 166, 244), Color8(170, 116, 218), Color8(126, 78, 182), Color8(90, 52, 140)]
+const BONEP := [Color8(242, 234, 212), Color8(216, 206, 182), Color8(182, 170, 148), Color8(142, 130, 114), Color8(102, 92, 84)]
+const WOODP := [Color8(176, 124, 84), Color8(140, 96, 64), Color8(108, 72, 52), Color8(78, 52, 42), Color8(56, 38, 34)]
+const LROCK := [Color8(118, 102, 100), Color8(90, 76, 78), Color8(68, 56, 60), Color8(50, 40, 46), Color8(34, 28, 34)]
+const LAVA := [Color8(255, 240, 170), Color8(252, 184, 84), Color8(228, 112, 52), Color8(160, 64, 40)]
+const GSTONE := [Color8(178, 182, 196), Color8(142, 148, 168), Color8(110, 116, 138), Color8(82, 88, 110), Color8(58, 62, 84)]
+const RUNE := [Color8(226, 252, 250), Color8(140, 224, 228), Color8(76, 164, 184), Color8(48, 104, 128)]
+
+const BOSSES := {"boss_0_0": 3, "boss_0_1": 1, "boss_0_2": 1, "boss_0_3": 1}
+
+
+func boss(kind: String, cx: int, base: int, dir: int, fr: int) -> void:
+	match kind:
+		"boss_0_0":
+			king(cx, base, dir, fr)
+		"boss_0_1":
+			lich(cx, base, dir)
+		"boss_0_2":
+			golem(cx, base, dir, LROCK, LAVA, "horns")
+		"boss_0_3":
+			golem(cx, base, dir, GSTONE, RUNE, "crown")
+
+
+## Король слизней: большой прозрачный купол с пузырями и тёмным ядром, блик-окно, корона
+## с зубцами и камнями (свет слева, тень справа), сердитые брови.
+func king(cx: int, base: int, dir: int, fr: int) -> void:
+	var rx: float = [36.0, 40.0, 29.0][fr]
+	var ry: float = [30.0, 24.0, 36.0][fr]
+	ground_shadow(cx + 6, base - 2, int(rx) + 4, 5, 0.34)
+	var bottom := base - 1
+	var cy := bottom - ry * 0.85
+	var pix := {}
+	ball(pix, cx, cy, rx, ry, SLIME_G, bottom)
+	# Пузыри и проглоченные мелочи внутри.
+	for b: Vector3 in [Vector3(-16, 8, 4), Vector3(14, 4, 3), Vector3(4, 14, 2.5), Vector3(-6, -2, 2), Vector3(20, 14, 2), Vector3(-22, -6, 1.5)]:
+		var bx := cx + int(b.x * rx / 36.0)
+		var by := int(cy + b.y * ry / 30.0)
+		for yy in range(-5, 6):
+			for xx in range(-5, 6):
+				if xx * xx + yy * yy <= b.z * b.z + 0.5:
+					var k := Vector2i(bx + xx, by + yy)
+					if pix.has(k):
+						pix[k] = SLIME_G[0] if yy < 0 else SLIME_G[1]
+	# Кость внутри — проглочена.
+	for i in 9:
+		var k := Vector2i(cx - 6 + i, int(cy) + 12 + i / 3)
+		if pix.has(k):
+			pix[k] = BONEP[1]
+			pix[k + Vector2i(0, 1)] = BONEP[3]
+	# Блик-окно.
+	var hx := cx - int(rx * 0.5)
+	var hy := int(cy - ry * 0.55)
+	for k: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(0, 2), Vector2i(0, 3), Vector2i(0, 4), Vector2i(6, -1), Vector2i(7, -1)]:
+		if pix.has(Vector2i(hx, hy) + k):
+			pix[Vector2i(hx, hy) + k] = Color8(246, 250, 232)
+	blit(pix, (SLIME_G[4] as Color).darkened(0.45))
+	# Корона.
+	var top := int(cy - ry) + 4
+	var crown_x := cx + (6 if dir == 1 else 0)
+	var cw := 30
+	var cr := {}
+	var pts := PackedVector2Array([Vector2(crown_x - cw / 2, top + 4), Vector2(crown_x - cw / 2, top - 10), Vector2(crown_x - cw / 4, top - 3),
+		Vector2(crown_x, top - 14), Vector2(crown_x + cw / 4, top - 3), Vector2(crown_x + cw / 2, top - 10), Vector2(crown_x + cw / 2, top + 4)])
+	poly(cr, pts, GOLDP, 1)
+	for x in range(crown_x - cw / 2, crown_x + cw / 2):
+		cr[Vector2i(x, top + 1)] = GOLDP[0] if x < crown_x else GOLDP[1]
+		cr[Vector2i(x, top + 3)] = GOLDP[3]
+	blit(cr)
+	for g: Vector2i in [Vector2i(-cw / 2, -10), Vector2i(0, -14), Vector2i(cw / 2, -10)]:
+		var gp := {}
+		ball(gp, crown_x + g.x, top + g.y, 2.5, 2.5, [Color8(250, 170, 160), Color8(226, 90, 80), Color8(190, 60, 60), Color8(140, 40, 50), Color8(100, 30, 40)])
+		blit(gp)
+	var gem := {}
+	ball(gem, crown_x, top - 3, 3, 2.5, [Color8(200, 240, 250), Color8(120, 200, 230), Color8(80, 150, 200), Color8(56, 104, 160), Color8(40, 70, 120)])
+	blit(gem)
+	if dir == 2:
+		return
+	var ex := cx + (10 if dir == 1 else 0)
+	var ey := int(cy) - 2
+	var eyes: Array = [ex - 12, ex + 8] if dir == 0 else [ex + 6, ex + 18]
+	for x: int in eyes:
+		for i in 7:
+			put(x, ey + i, EYE)
+			put(x + 1, ey + i, EYE)
+			put(x + 2, ey + i, EYE)
+		put(x, ey + 1, Color8(250, 246, 236))
+		put(x + 1, ey + 1, Color8(250, 246, 236))
+	# Сердитые брови.
+	for i in 6:
+		if dir == 0:
+			put(ex - 14 + i, ey - 5 + i / 2, EYE)
+			put(ex + 15 - i, ey - 5 + i / 2, EYE)
+		else:
+			put(ex + 4 + i, ey - 5 + i / 2, EYE)
+			put(ex + 23 - i, ey - 5 + i / 2, EYE)
+	if dir == 0:
+		for i in 8:
+			put(ex - 4 + i, ey + 12 + (1 if i == 0 or i == 7 else 0), EYE)
+
+
+## Повелитель костей: лич в мантии — складки (тёмные полосы, светлая кромка), капюшон-ворот,
+## череп со светящимися глазницами и костяной короной, костлявые кисти, посох с шаром.
+func lich(cx: int, base: int, dir: int) -> void:
+	ground_shadow(cx + 6, base - 2, 26, 5, 0.34)
+	var sx := 1 if dir != 2 else -1
+	var staff_x := cx + (28 if dir == 0 else (16 if dir == 1 else -26))
+	var staff := func() -> void:
+		var st := {}
+		for y in range(base - 84, base - 1):
+			st[Vector2i(staff_x, y)] = WOODP[0]
+			st[Vector2i(staff_x + 1, y)] = WOODP[1]
+			st[Vector2i(staff_x + 2, y)] = WOODP[3]
+		# Навершие — когти вокруг шара.
+		for s: int in [-1, 1]:
+			for i in 6:
+				st[Vector2i(staff_x + 1 + s * (2 + i / 2), base - 84 - i)] = BONEP[2]
+		blit(st)
+		glow(staff_x + 1, base - 92, 14, ORB[1], 0.3)
+		var orb := {}
+		ball(orb, staff_x + 1.5, base - 92, 6, 6, ORB)
+		blit(orb, ORB[4].darkened(0.4))
+	# Посох сзади (вид сзади) — до мантии.
+	if dir == 2:
+		staff.call()
+	# Мантия.
+	var hw := 13 if dir != 1 else 10
+	var bw := 26 if dir != 1 else 20
+	var robe := {}
+	var pts := PackedVector2Array([Vector2(cx - hw, base - 58), Vector2(cx + hw, base - 58), Vector2(cx + bw, base - 2),
+		Vector2(cx + bw / 2, base - 5), Vector2(cx, base - 1), Vector2(cx - bw / 2, base - 5), Vector2(cx - bw, base - 2)])
+	poly(robe, pts, ROBE, 1)
+	for k: Vector2i in robe.keys():
+		var t := float(k.y - (base - 58)) / 56.0
+		var u := float(k.x - cx) / (hw + (bw - hw) * t)
+		var c: Color = robe[k]
+		if c == ROBE[1]:
+			c = ROBE[1] if u < 0.1 else (ROBE[2] if u < 0.6 else ROBE[3])
+			if u < -0.6:
+				c = ROBE[0]
+		# Складки.
+		for f: float in [-0.55, -0.1, 0.35, 0.75]:
+			var fx := cx + f * (hw + (bw - hw) * t)
+			if absf(k.x - fx) < 0.8 and t > 0.25:
+				c = ROBE[4]
+			elif k.x - fx > 0.8 and k.x - fx < 1.8 and t > 0.25:
+				c = ROBE[0] if u < 0.3 else ROBE[1]
+		robe[k] = c
+	# Пояс из позвонков.
+	if dir != 2:
+		for x in range(cx - hw - 3, cx + hw + 4):
+			var k := Vector2i(x, base - 40)
+			if robe.has(k):
+				robe[k] = BONEP[1] if posmod(x, 3) != 0 else BONEP[3]
+				robe[k + Vector2i(0, 1)] = BONEP[3]
+	blit(robe)
+	# Рукава и кисти.
+	for s: int in ([-1, 1] if dir != 1 else [1]):
+		var sl := {}
+		var sh := Vector2(cx + s * hw, base - 56)
+		var hand := Vector2(cx + s * (hw + 12), base - 34) if dir != 1 else Vector2(cx + 14, base - 38)
+		poly(sl, PackedVector2Array([sh + Vector2(-s * 4, 0), sh + Vector2(s * 5, 2), hand + Vector2(s * 5, 2), hand + Vector2(-s * 6, 3)]), ROBE, 2 if s > 0 else 1)
+		blit(sl)
+		var hd := {}
+		ball(hd, hand.x, hand.y + 5, 4, 3.5, BONEP)
+		blit(hd)
+	# Воротник-капюшон.
+	var col := {}
+	poly(col, PackedVector2Array([Vector2(cx - 19, base - 54), Vector2(cx - 14, base - 72), Vector2(cx, base - 76), Vector2(cx + 14, base - 72), Vector2(cx + 19, base - 54), Vector2(cx, base - 50)]), ROBE, 3 if dir == 2 else 2)
+	blit(col)
+	# Череп.
+	var hx := cx + (4 if dir == 1 else 0)
+	var sk := {}
+	ball(sk, hx, base - 68, 11, 11, BONEP)
+	if dir != 2:
+		for x in range(hx - 7, hx + 8):
+			for y in range(base - 60, base - 55):
+				sk[Vector2i(x + (2 if dir == 1 else 0), y)] = BONEP[1] if y < base - 57 else BONEP[3]
+	blit(sk)
+	if dir != 2:
+		for x in range(hx - 6, hx + 7, 2):
+			put(x + (2 if dir == 1 else 0), base - 58, OUT)
+		var socks: Array = [hx - 5, hx + 4] if dir == 0 else [hx + 5]
+		for ex: int in socks:
+			for yy in range(-2, 3):
+				for xx in range(-2, 3):
+					if xx * xx + yy * yy <= 5:
+						put(ex + xx, base - 69 + yy, CREV)
+			glow(ex, base - 69, 6, ORB[1], 0.35)
+			put(ex, base - 69, ORB[0])
+			put(ex - 1, base - 69, ORB[1])
+		put(hx + (5 if dir == 1 else 0), base - 63, CREV)
+		put(hx + (6 if dir == 1 else 1), base - 63, CREV)
+	# Костяная корона.
+	var cr := {}
+	for i in 5:
+		var x := hx - 10 + i * 5
+		var h := 6 + (4 if i == 2 else (2 if i % 2 == 1 else 0))
+		poly(cr, PackedVector2Array([Vector2(x - 2, base - 76), Vector2(x, base - 76 - h), Vector2(x + 2, base - 76)]), BONEP, 1)
+	for x in range(hx - 12, hx + 13):
+		cr[Vector2i(x, base - 77)] = BONEP[1]
+		cr[Vector2i(x, base - 76)] = BONEP[3]
+	blit(cr)
+	if dir != 2:
+		staff.call()
+
+
+## Голем-титан из угловатых глыб (crag): ноги, туловище, голова, плечи, кулаки; у каждой глыбы
+## светлая верхняя грань, передняя средняя, правый бок в тени, контур. Трещины светятся (лава у
+## Владыки пламени, руны у Древнего стража). extra: "horns" — рога, "crown" — каменные зубцы и мох.
+func golem(cx: int, base: int, dir: int, pal: Array, glowp: Array, extra: String) -> void:
+	ground_shadow(cx + 8, base - 2, 34, 6, 0.36)
+	CRAG_P = pal
+	CRAG_MOSS = false
+	var side := dir == 1
+	var back := dir == 2
+	var hx := cx + (8 if side else 0)
+	var head_y := base - 66
+	var far := func(f: Callable) -> void:
+		CRAG_P = [pal[1], pal[2], pal[3], pal[4], pal[4]]
+		f.call()
+		CRAG_P = pal
+	if side:
+		far.call(func() -> void: crag(cx - 12, base - 34, 18, 30, 71))   # дальний кулак
+		far.call(func() -> void: crag(cx - 6, base - 11, 20, 22, 72))
+		crag(cx + 7, base - 11, 20, 22, 73)
+		crag(cx, base - 38, 44, 46, 74)
+	else:
+		crag(cx - 15, base - 11, 22, 22, 75)
+		crag(cx + 15, base - 11, 22, 22, 76)
+		crag(cx, base - 38, 56, 46, 77)
+	_cracks(cx - 10, base - 54, 26, 5, glowp)
+	if not side:
+		_cracks(cx + 8, base - 50, 20, 9, glowp)
+	if not back:
+		glow(cx, base - 40, 26, glowp[1], 0.1)
+	var draw_head := func() -> void:
+		CRAG_MOSS = false
+		crag(hx, head_y, 26, 24, 78)
+		if extra == "horns":
+			for s: int in ([-1, 1] if not side else [1]):
+				var hn := {}
+				var b0 := Vector2(hx + s * 8, head_y - 6)
+				poly(hn, PackedVector2Array([b0 + Vector2(-s * 3, 3), b0 + Vector2(s * 10, -8), b0 + Vector2(s * 8, -20), b0 + Vector2(s * 14, -10), b0 + Vector2(s * 4, 4)]), [Color8(120, 100, 96), Color8(86, 70, 70), Color8(60, 48, 52), Color8(42, 34, 40), Color8(30, 24, 30)], 1)
+				blit(hn)
+		elif extra == "crown":
+			var cr := {}
+			for i in 4:
+				var x := hx - 12 + i * 7
+				for y in range(head_y - 15, head_y - 7):
+					for xx in 5:
+						cr[Vector2i(x + xx, y)] = pal[0] if xx == 0 or y == head_y - 15 else (pal[1] if xx < 3 else pal[2])
+			for x in range(hx - 13, hx + 14):
+				for y in range(head_y - 8, head_y - 4):
+					cr[Vector2i(x, y)] = pal[1] if y == head_y - 8 else (pal[2] if y < head_y - 5 else pal[3])
+			blit(cr)
+		if not back:
+			var eyes: Array = [hx - 8, hx + 3] if not side else [hx + 4]
+			for ex: int in eyes:
+				for xx in 5:
+					put(ex + xx, head_y + 1, glowp[0] if xx > 0 and xx < 4 else glowp[1])
+					put(ex + xx, head_y + 2, glowp[2])
+				glow(ex + 2, head_y + 2, 8, glowp[1], 0.3)
+
+	var draw_arms := func() -> void:
+		# Плечи и кулаки — поверх туловища (у Стража на плечах мох).
+		CRAG_MOSS = extra == "crown"
+		if side:
+			crag(cx + 6, base - 54, 28, 22, 79)
+			crag(cx + 14, base - 28, 20, 28, 80)
+			_cracks(cx + 12, base - 38, 14, 3, glowp)
+		else:
+			for s: int in [-1, 1]:
+				crag(cx + s * 29, base - 54, 28, 22, 81 + s)
+				crag(cx + s * 33, base - 27, 20, 28, 84 + s)
+			_cracks(cx - 34, base - 36, 14, 4, glowp)
+
+	# Сбоку плечо ближе к нам, чем голова только снизу: голову рисуем поверх.
+	if side:
+		draw_arms.call()
+		draw_head.call()
+	else:
+		draw_head.call()
+		draw_arms.call()
+	CRAG_P = ROCKD
+	CRAG_MOSS = true
+
+
+## Светящиеся трещины-молнии по уже нарисованному камню (только поверх непрозрачного).
+func _cracks(x0: int, y0: int, n: int, sd: int, glowp: Array) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	var q := Vector2(x0, y0)
+	for i in n:
+		q += Vector2(rng.randf_range(-1.3, 1.3), 1.0)
+		var k := Vector2i(int(q.x), int(q.y))
+		if img.get_pixel(k.x + OX, k.y + OY).a < 0.9:
+			continue
+		put(k.x - 1, k.y, glowp[3] if glowp.size() > 3 else glowp[2])
+		put(k.x, k.y, glowp[1] if i % 4 != 0 else glowp[0])
+		put(k.x + 1, k.y, glowp[2])
+		if i == n / 2:
+			var b := q
+			for j in 6:
+				b += Vector2(1.0, 0.6)
+				put(int(b.x), int(b.y), glowp[1])
+				put(int(b.x), int(b.y) + 1, glowp[2])

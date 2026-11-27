@@ -540,8 +540,9 @@ var _look_frames := {}
 func _art_key(sheet: Texture2D) -> String:
 	# Утверждённый стиль (tools/gen_dungeon.gd): лист в 2 раза плотнее — assets/mon2/<сцена>.png.
 	var scene := scene_file_path.get_file().get_basename()
-	if boss_art == "" and scene != "" and ResourceLoader.exists("res://assets/mon2/%s.png" % scene):
-		return "2:" + scene
+	var dense := boss_art if boss_art != "" else scene
+	if dense != "" and ResourceLoader.exists("res://assets/mon2/%s.png" % dense):
+		return "2:" + dense
 	for key: String in [boss_art, scene]:
 		if key != "" and ResourceLoader.exists("res://assets/mon/%s.png" % key):
 			return key

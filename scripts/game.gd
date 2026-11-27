@@ -2202,6 +2202,32 @@ func _lineup() -> void:
 		e.queue_free()
 	var names: Array = []
 	var only := _arg("--lineup", "")
+	if only.begins_with("bosses:"):
+		# Боссы одного биома (--lineup=bosses:0): 4 штуки крупно, потом идут к герою (стороны).
+		var Rs := preload("res://scripts/boss_roster.gd")
+		var bi := int(only.get_slice(":", 1))
+		var list: Array = []
+		for i in 4:
+			var e: Node2D = Rs.make(Rs.ROSTER[bi][i], bi * 10 + 3)
+			e.position = dg.open_spot(c0 + Vector2(-90 + i * 60, -45 + (i % 2) * 20))
+			dg.get_node("Entities").add_child(e)
+			e.set_physics_process(false)
+			e.set_process(false)
+			list.append(e)
+		await _wait(0.6)
+		_shot("lineup_biome%d_bosses" % bi)
+		for e: Node2D in list:
+			if is_instance_valid(e) and e.has_method("_set_look"):
+				e._set_look("side")
+		await _wait(0.2)
+		_shot("lineup_biome%d_side" % bi)
+		for e: Node2D in list:
+			if is_instance_valid(e) and e.has_method("_set_look"):
+				e._set_look("up")
+		await _wait(0.2)
+		_shot("lineup_biome%d_up" % bi)
+		get_tree().quit()
+		return
 	if only == "bosses":
 		# Боссы: по 2 биома на снимок (8 штук), стоят, лицом вниз.
 		var Roster := preload("res://scripts/boss_roster.gd")
