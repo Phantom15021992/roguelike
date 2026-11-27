@@ -23,6 +23,7 @@
 ## Команды
 - Перегенерировать графику: `godot --headless --path . --script res://tools/generate_art.gd`, затем `godot --headless --path . --import`
 - Проверка на ошибки: `godot --headless --path . --quit-after 60`
+- Замер скорости: `godot --path . res://scenes/main.tscn -- --class=warrior --depth=1 --perftest` (`--noart` — без нового пола). Камера героя без сглаживания (решение владельца 2026-11-28: экран запаздывал).
 - Автотест со скриншотами в `shots/`: `godot --path . -- --autotest` — бот идёт по A* к монстрам, бьёт, надевает всё подряд, раскидывает статы, спускается по лестнице; цель — 3-й этаж. `--god` — бессмертие.
 - Проверка интерфейса: `godot --path . -- --uitest` (подсказка предмета, новый уровень, окно статов).
 - Бот должен «нажимать» через `Input.parse_input_event`, а не `Input.action_press` — иначе `is_action_just_pressed` не срабатывает.

@@ -59,7 +59,7 @@ func _ready() -> void:
 	if "--autotest" in OS.get_cmdline_user_args():
 		print("class: " + Run.cls)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args or "--lineup" in args or _arg("--lineup", "") != "" or "--fxtest" in args:
+	if "--autotest" in args or "--uitest" in args or "--camptest" in args or "--skilltest" in args or "--zootest" in args or "--touchtest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args or "--lineup" in args or _arg("--lineup", "") != "" or "--fxtest" in args or "--perftest" in args:
 		# Тесты бота и интерфейса подземелья начинаются сразу в подземелье, не в лагере.
 		if not "--camptest" in args:
 			get_tree().change_scene_to_file.call_deferred(DUNGEON_SCENE)
@@ -87,6 +87,8 @@ func _ready() -> void:
 		_lineup()
 	elif "--fxtest" in args:
 		_fxtest()
+	elif "--perftest" in args:
+		_perftest()
 	elif "--traptest" in args:
 		_traptest()
 	elif "--runtest" in args:
@@ -338,7 +340,7 @@ func _camptest() -> void:
 	cam.top_level = false
 	cam.position = Vector2.ZERO
 	cam.zoom = Vector2.ONE
-	cam.position_smoothing_enabled = true
+	cam.position_smoothing_enabled = false
 	get_tree().current_scene.setup_camera(cam)
 	var hud: Node = get_tree().current_scene.get_node("CampHUD")
 	Meta.gold = 300
@@ -2344,6 +2346,44 @@ func _lineup() -> void:
 		for x in get_tree().get_nodes_in_group("puddles"):
 			x.queue_free()
 		await _wait(0.3)
+	get_tree().quit()
+
+
+# --- Замер скорости (`--perftest`, `--noart` — без нового пола): без vsync герой ходит 6 с,
+# печатает средний FPS и худший кадр. ---
+func _perftest() -> void:
+	await _wait_for(func() -> bool: return _scene_name() == "Main" and local_hero() != null, 15.0)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	await _wait(2.5)
+	local_hero().god = true
+	if "--noart" in OS.get_cmdline_user_args():
+		var art := get_tree().current_scene.get_node_or_null("CaveArt")
+		if art:
+			art.visible = false
+	var frames := 0
+	var worst := 0.0
+	var t0 := Time.get_ticks_usec()
+	var last := t0
+	var keys := ["move_right", "move_down", "move_left", "move_up"]
+	var k := 0
+	while Time.get_ticks_usec() - t0 < 6000000:
+		var ev := InputEventAction.new()
+		ev.action = keys[k % 4]
+		ev.pressed = true
+		Input.parse_input_event(ev)
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		worst = maxf(worst, (now - last) / 1000.0)
+		last = now
+		frames += 1
+		if frames % 90 == 0:
+			var up := InputEventAction.new()
+			up.action = keys[k % 4]
+			up.pressed = false
+			Input.parse_input_event(up)
+			k += 1
+	var secs := (Time.get_ticks_usec() - t0) / 1000000.0
+	print("PERF fps=%.1f worst_ms=%.1f art=%s" % [frames / secs, worst, not ("--noart" in OS.get_cmdline_user_args())])
 	get_tree().quit()
 
 
