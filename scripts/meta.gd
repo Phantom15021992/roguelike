@@ -80,9 +80,20 @@ var uid := ""              # номер этого игрока (кооп: по 
 var _last_slot := ""
 
 
+const TEST_FLAGS := ["--autotest", "--uitest", "--camptest", "--clicktest", "--skilltest", "--cooptest", "--herotest",
+	"--zootest", "--savetest", "--coopsave", "--touchtest", "--forgetest", "--runtest", "--traptest", "--showcase",
+	"--lineup", "--fxtest", "--perftest", "--geartest", "--mapdump"]
+
+
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
-	persist = not ("--autotest" in args or "--uitest" in args or "--camptest" in args or "--clicktest" in args or "--skilltest" in args or "--cooptest" in args or "--herotest" in args or "--zootest" in args or "--savetest" in args or "--coopsave" in args or "--touchtest" in args or "--forgetest" in args or "--runtest" in args or "--traptest" in args or "--showcase" in args)
+	# Любой тест или смотр (в т.ч. --lineup=..., --fxtest, --perftest, --geartest, --mapdump) сохранение
+	# владельца не трогает. Новый тестовый флаг — добавить сюда.
+	persist = true
+	for a: String in args:
+		for t: String in TEST_FLAGS:
+			if a == t or a.begins_with(t + "="):
+				persist = false
 	# Проверочные запуски без окна (--headless) ничего не пишут — сохранения владельца не трогаем.
 	if DisplayServer.get_name() == "headless":
 		persist = false

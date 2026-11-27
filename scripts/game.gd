@@ -75,6 +75,8 @@ func _ready() -> void:
 		_camptest()
 	elif "--clicktest" in args:
 		_clicktest()
+	elif "--geartest" in args:
+		_geartest()
 	elif "--skilltest" in args:
 		_skilltest()
 	elif "--zootest" in args:
@@ -231,6 +233,11 @@ func _clicktest() -> void:
 	await _frames_idle(3)
 	print("click class: %s" % _click(hud, "Выбрать (2)"))
 	await _frames_idle(5)
+	if not is_instance_valid(hud):
+		# На складе нет вещей под класс — забег начался сразу (тест рассчитан на --loadsave).
+		print("CLICKTEST: склад пуст, окна сборов нет — запускайте с --loadsave")
+		get_tree().quit()
+		return
 	_shot("click_1_loadout")
 	print("click take: %s" % _click(hud, "Взять"))
 	await _frames_idle(3)
@@ -258,6 +265,48 @@ func _clicktest() -> void:
 	await _frames_idle(3)
 	_shot("click_3_stats")
 	print("CLICKTEST DONE: skills=%s stats=%s" % [Run.skill_levels, Run.stats])
+	get_tree().quit()
+
+
+## Снаряжение помнится между забегами (`--geartest`, бессмертие включено): на складе меч и баклер →
+## портал, мечник, «Взять» обе → «В путь» → в подземелье сразу выход через портал → снова портал:
+## вещи должны быть уже выбраны, на экране табличка «Надето». Сам закрывается.
+func _geartest() -> void:
+	await _frames_idle(20)
+	var Itm := preload("res://scripts/items.gd")
+	var sw: Dictionary = Itm.make("sword", 1, 3)
+	var bk: Dictionary = Itm.make("buckler", 1, 3)
+	Meta.stash.append_array([sw, bk])
+	var hud: Node = get_tree().current_scene.get_node("CampHUD")
+	hud.open_building("portal")
+	await _frames_idle(3)
+	hud._pick_class("warrior")
+	await _frames_idle(3)
+	print("GEAR first visit preselected=%d" % hud._loadout.size())
+	_click(hud, "Взять")
+	await _frames_idle(3)
+	_click(hud, "Взять")
+	await _frames_idle(3)
+	_click(hud, "В путь")
+	while get_tree().current_scene == null or not get_tree().current_scene.has_method("find_path"):
+		await get_tree().process_frame
+	await _frames_idle(20)
+	local_hero().god = true
+	print("GEAR in dungeon weapon=%s offhand=%s" % [Items_display(Run.equipment["weapon"]), Items_display(Run.equipment.get("offhand"))])
+	return_to_camp(true)   # как выход через портал
+	while get_tree().current_scene == null or get_tree().current_scene.get_node_or_null("CampHUD") == null:
+		await get_tree().process_frame
+	await _frames_idle(20)
+	hud = get_tree().current_scene.get_node("CampHUD")
+	hud.open_building("portal")
+	await _frames_idle(3)
+	hud._pick_class("warrior")
+	await _frames_idle(6)
+	var names: Array = []
+	for slot: String in hud._loadout:
+		names.append(Items_display(Meta.stash[hud._loadout[slot]]))
+	_shot("gear_portal_again")
+	print("GEARTEST %s: preselected=%s" % ["OK" if names.size() == 2 else "FAIL", names])
 	get_tree().quit()
 
 
@@ -346,6 +395,14 @@ func _camptest() -> void:
 	for slot: String in chud._loadout:
 		picked.append("%s=%s" % [slot, Meta.stash[chud._loadout[slot]] == sw or Meta.stash[chud._loadout[slot]] == bk])
 	print("GEARTEST picked=%s spare_tag=%s bag_tag=%s" % [picked, spare.has("worn_by"), in_bag.has("worn_by")])
+	# Окно сборов у портала с табличкой «Надето».
+	chud.open_building("portal")
+	chud._pick_class("warrior")
+	for i in 6:
+		await get_tree().process_frame
+	_shot("camp_0g_loadout")
+	chud.close()
+	chud._portal_cls = ""
 	chud._loadout = {}
 	for it in [spare, sw, bk, in_bag]:
 		Meta.stash.erase(it)

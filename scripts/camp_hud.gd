@@ -880,10 +880,14 @@ func _preselect_worn(cls: String) -> void:
 
 
 func _fill_loadout() -> void:
+	for slot: String in _loadout.keys():
+		if int(_loadout[slot]) >= Meta.stash.size():
+			_loadout.erase(slot)
 	var cls_name: String = Skills.CLASSES[_portal_cls]["name"]
 	_panel_box.add_child(_rich(250, "[b]Снаряжение в забег — %s[/b]\nПо одному предмету на слот; надетое в прошлый раз уже выбрано. [color=#%s]При смерти теряется всё: взятое снаряжение, найденные золото и материалы[/color] — вынести их можно только через портал у логова босса (до или после боя)." % [
 		cls_name, BAD.to_html(false)]))
-	var list := _scroll(90)
+	_panel_box.add_child(_rich(250, _worn_table()))
+	var list := _scroll(64)
 	for i in Meta.stash.size():
 		var item: Dictionary = Meta.stash[i]
 		# Оружие профессии — только если у сохранённого героя уже есть эта профессия.
@@ -914,6 +918,23 @@ func _fill_loadout() -> void:
 	_panel_box.add_child(h)
 
 
+## Табличка «что надето сейчас»: 8 слотов в две колонки (просьба владельца).
+func _worn_table() -> String:
+	var t := "[b]Надето:[/b]
+[table=4]"
+	for slot: String in Items.SLOTS:
+		var txt := "[color=#7a7088]—[/color]"
+		if _loadout.has(slot):
+			var it: Dictionary = Meta.stash[_loadout[slot]]
+			txt = "%s[color=#%s]%s[/color]" % [Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it)]
+		elif slot == "weapon":
+			txt = "[color=#a8a0b8]стартовое[/color]"
+		elif slot == "offhand" and _loadout.has("weapon") and Items.is_two_hand(Meta.stash[_loadout["weapon"]]):
+			txt = "[color=#a8a0b8]занята двуручным[/color]"
+		t += "[cell][color=#c8c0d8]%s:[/color] [/cell][cell]%s  [/cell]" % [Items.SLOT_NAMES[slot], txt]
+	return t + "[/table]"
+
+
 func _go() -> void:
 	if Net.is_host():
 		# Кооп: хозяин готов; снаряжение со склада заберётся, когда будут готовы все.
@@ -934,6 +955,7 @@ func _go() -> void:
 	for i: int in idx:
 		items.append(Meta.stash[i])
 		Meta.stash.remove_at(i)
+	_loadout = {}  # номера на складе после изъятия уже не те
 	Game.start_run(_portal_cls, items, _start_depth)
 
 
