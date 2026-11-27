@@ -122,23 +122,50 @@ func _ready() -> void:
 	st.changed.connect(_on_run_changed)
 	st.leveled_up.connect(_on_level_up)
 	st.class_chosen.connect(_on_class_chosen)
+	# В лагере сменили класс у плаца — сменить и вид.
+	Meta.changed.connect(func() -> void:
+		if is_instance_valid(self) and st.cls == "":
+			_load_sprite())
 	st.job_chosen.connect(func(_j: String) -> void:
 		_load_sprite()
 		Game.burst(center(), Color(1.0, 0.9, 0.5), 30))
 	_load_sprite()
 
 
-## Спрайт профессии, если выбрана, иначе — базового класса.
+## Спрайт профессии, если выбрана, иначе — базового класса. В лагере (класс забега ещё не
+## выбран) — сохранённый герой игрока: тот же вид, что и в подземелье.
+var _loaded_look := ""
+
+
+func _hero_look() -> String:
+	if st.cls != "":
+		return st.job if st.job != "" else st.cls
+	var h: Dictionary = Meta.own_hero() if is_local() else (Net.players.get(peer_id, {}) as Dictionary).get("hero", {})
+	if str(h.get("job", "")) != "":
+		return str(h["job"])
+	return str(h.get("cls", "")) if str(h.get("cls", "")) != "" else "warrior"
+
+
 func _load_sprite() -> void:
 	if not Net.is_guest():
-		look = st.job if st.job != "" else (st.cls if st.cls != "" else "warrior")
+		look = _hero_look()
 	var l := look if look != "" else "warrior"
-	# Новая графика (8 сторон, кадр 24x24) — если для этого героя она уже нарисована.
+	if l == _loaded_look and sprite.sprite_frames != null:
+		return
+	_loaded_look = l
+	# Утверждённый стиль (tools/gen_heroes.gd): кадр 48, 5 сторон, масштаб 0.5.
+	var p2 := "res://assets/hero2/%s.png" % l
 	var p8 := "res://assets/hero8_%s.png" % l
-	if ResourceLoader.exists(p8):
+	if ResourceLoader.exists(p2):
+		sprite.sprite_frames = _build_frames8(load(p2), 48)
+		sprite.scale = Vector2.ONE * 0.5
+		sprite.position.y = -11.0
+	elif ResourceLoader.exists(p8):
+		sprite.scale = Vector2.ONE
 		sprite.sprite_frames = _build_frames8(load(p8))
 		sprite.position.y = -11.0
 	else:
+		sprite.scale = Vector2.ONE
 		sprite.sprite_frames = _build_frames(load("res://assets/hero_%s.png" % l))
 		sprite.position.y = -8.0
 	sprite.play("idle_" + facing)
@@ -1579,7 +1606,7 @@ func _play(anim: String) -> void:
 
 
 ## Лист 8 сторон: кадр 24x24, строки — down, down_side, side, up_side, up; 4 кадра шага.
-func _build_frames8(sheet: Texture2D) -> SpriteFrames:
+func _build_frames8(sheet: Texture2D, fsz := 24) -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	var rows := ["down", "down_side", "side", "up_side", "up"]
@@ -1592,7 +1619,7 @@ func _build_frames8(sheet: Texture2D) -> SpriteFrames:
 		for col in 4:
 			var t := AtlasTexture.new()
 			t.atlas = sheet
-			t.region = Rect2(col * 24, r * 24, 24, 24)
+			t.region = Rect2(col * fsz, r * fsz, fsz, fsz)
 			frames.add_frame(walk, t)
 		var idle := "idle_" + dir
 		frames.add_animation(idle)

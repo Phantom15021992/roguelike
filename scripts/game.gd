@@ -277,6 +277,14 @@ func _camptest() -> void:
 	for i in 20:
 		await get_tree().process_frame
 	_shot("camp_1_start")
+	# Выбранный герой виден и в лагере: сохранённый визард вместо мечника по умолчанию.
+	Meta.heroes["mage"] = {"cls": "mage", "job": "wizard", "level": 6}
+	Meta.hero_cls = "mage"
+	Meta.changed.emit()
+	for i in 4:
+		await get_tree().process_frame
+	_shot("camp_1b_hero")
+	print("CAMP HERO look=%s" % Game.local_hero().look)
 	# Вид на весь лагерь.
 	var cam: Camera2D = Game.local_hero().get_node("Camera")
 	cam.position_smoothing_enabled = false
