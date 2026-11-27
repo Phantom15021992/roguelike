@@ -13,6 +13,7 @@ func _init() -> void:
 	_ground()
 	_place_buildings()
 	_place_props()
+	_place_extras()
 	_place_forest()
 	objects.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) < float(q[0]))
 	for o: Array in objects:
@@ -62,7 +63,7 @@ func _place_props() -> void:
 	add(sp.y, func() -> void: _signpost(int(sp.x), int(sp.y)))
 	# Деревья и кусты внутри лагеря.
 	var inner := [[26.6, 26.2, "oak"], [17.5, 25.0, "fruit"], [27.8, 29.0, "birch"], [3.4, 25.6, "pine"],
-		[40.6, 25.0, "autumn"], [3.0, 17.8, "birch"], [34.2, 14.6, "oak"], [9.6, 14.8, "fruit"]]
+		[40.6, 25.0, "autumn"], [3.0, 17.8, "birch"], [9.6, 14.8, "fruit"]]
 	for t: Array in inner:
 		var q := Vector2(t[0], t[1]) * C
 		var kind: String = t[2]
@@ -81,6 +82,68 @@ func _place_props() -> void:
 	for f: Vector2 in [Vector2(23.2, 26.4), Vector2(19.6, 27.0), Vector2(27.6, 23.2), Vector2(15.8, 15.6), Vector2(29.2, 16.4), Vector2(8.6, 26.2)]:
 		var q := f * C
 		add(q.y - 4, func() -> void: _flowers(int(q.x), int(q.y), int(q.x)))
+
+## Мелочи по референсам владельца: заборы, калитка, пергола, камни с мхом, папоротники, трава,
+## клумбы, брёвна, пни, поленница, старое дерево.
+func _place_extras() -> void:
+	at(0, 0)
+	var P := func(c: Vector2) -> Vector2i: return Vector2i(int(c.x * C), int(c.y * C))
+	var q: Vector2i = P.call(Vector2(34.2, 14.6))
+	add(q.y, func() -> void: _old_tree(q.x, q.y, 26, 5, "green"))
+	q = P.call(Vector2(13.4, 13.2))
+	add(q.y, func() -> void: _pergola(q.x, q.y, 70, 3))
+	# Забор за прудом и калитка, штакетник у лазарета.
+	q = P.call(Vector2(35.2, 15.0))
+	add(q.y, func() -> void: _fence_rail(q.x, q.x + 170, q.y, 4))
+	# Садик со штакетником и калиткой (справа от центральной улицы).
+	q = P.call(Vector2(24.3, 23.3))
+	add(q.y, func() -> void:
+		_fence_picket(q.x, q.x + 30, q.y, 2)
+		_gate(q.x + 54, q.y)
+		_fence_picket(q.x + 80, q.x + 112, q.y, 3))
+	# Хозяйство у кузни: поленница, пень с топором.
+	q = P.call(Vector2(33.8, 8.9))
+	add(q.y, func() -> void: _woodpile(q.x, q.y))
+	q = P.call(Vector2(26.4, 8.9))
+	add(q.y, func() -> void: _stump(q.x, q.y, 9, true))
+	# Брёвна, пни.
+	q = P.call(Vector2(10.0, 29.7))
+	add(q.y, func() -> void: _log(q.x, q.y, 40, 6))
+	q = P.call(Vector2(17.8, 28.6))
+	add(q.y, func() -> void: _stump(q.x, q.y, 8))
+	# Камни с мхом и зеленью.
+	for r: Array in [[29.6, 13.8, 34], [6.4, 14.0, 28], [25.4, 27.8, 26], [13.8, 23.8, 22]]:
+		var rq: Vector2i = P.call(Vector2(r[0], r[1]))
+		var rs: int = r[2]
+		add(rq.y, func() -> void: _rock_group(rq.x, rq.y, rs, rq.x))
+	# Клумбы у площади и пруда.
+	var beds := [[11.2, 13.6, "daisy"], [27.6, 14.2, "tulip"], [36.0, 19.9, "lavender"], [20.4, 26.2, "mix"], [25.0, 24.7, "tulip"], [26.9, 24.5, "daisy"], [24.8, 26.4, "lavender"]]
+	for b: Array in beds:
+		var bq: Vector2i = P.call(Vector2(b[0], b[1]))
+		var kind: String = b[2]
+		add(bq.y, func() -> void: _flower_bed(bq.x, bq.y, bq.x, kind))
+	# Папоротники и трава у кромки леса.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	for cy in range(3, LAY.H - 2):
+		for cx in range(2, LAY.W - 2):
+			if LAY.kind_at(cx + 0.5, cy + 0.5) != LAY.GRASS:
+				continue
+			var near := false
+			for d: Vector2i in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				if LAY.kind_at(cx + d.x + 0.5, cy + d.y + 0.5) == LAY.FOREST:
+					near = true
+			if not near or rng.randf() > 0.4:
+				continue
+			var fx := cx * C + rng.randi_range(4, 28)
+			var fy := cy * C + rng.randi_range(8, 28)
+			var sd := fx + fy
+			if rng.randf() < 0.55:
+				var fs := rng.randi_range(14, 22)
+				add(fy, func() -> void: _fern(fx, fy, sd, fs))
+			else:
+				add(fy, func() -> void: _tuft(fx, fy, sd))
+
 
 ## Лес по краям: дубы, ели, берёзы вперемешку; внизу — кусты (чтобы не закрывать улицу).
 func _place_forest() -> void:

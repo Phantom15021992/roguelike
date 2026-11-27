@@ -1118,3 +1118,497 @@ func _flowers(cx: int, base: int, sd: int) -> void:
 # ===================================================================================
 #                              РАССТАНОВКА МЕЛОЧЕЙ И ЛЕСА
 # ===================================================================================
+
+
+# ===================================================================================
+#        МЕЛОЧИ ДЛЯ ЛАГЕРЯ (референсы владельца: заборы, камни с травой, плющ, растения)
+# ===================================================================================
+
+const LEAF_OUT_C := Color8(30, 52, 40)
+const WOOD_PALE := [Color8(206, 186, 150), Color8(170, 150, 118), Color8(130, 112, 90), Color8(96, 82, 70)]
+const ROPE := [Color8(214, 188, 132), Color8(160, 130, 86)]
+
+
+## Набор пикселей + контур заданного цвета по силуэту.
+func _blit_c(pix: Dictionary, outline: Color) -> void:
+	for k: Vector2i in pix:
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if not pix.has(k + d):
+				put(k.x + d.x, k.y + d.y, outline)
+	for k: Vector2i in pix:
+		put(k.x, k.y, pix[k])
+
+
+## Жердевой забор: столбы с затёсанным верхом, две жерди (свет сверху, тень снизу, лёгкий
+## провис), верёвочные обвязки; broken — одна жердь сломана и свисает.
+func _fence_rail(x0: int, x1: int, base: int, sd := 1, broken := false) -> void:
+	var step := 22
+	var posts: Array[int] = []
+	var x := x0
+	while x <= x1:
+		posts.append(x)
+		x += step
+	for p: int in posts:
+		ground_shadow(p + 6, base, 6, 2, 0.28)
+	for i in posts.size() - 1:
+		var a: int = posts[i]
+		var b: int = posts[i + 1]
+		for k: int in [0, 1]:
+			var ry := base - 22 + k * 10
+			var sag := (hh(i, k, sd) % 3) - 1
+			var xe := b + 2
+			if broken and i == 1 and k == 0:
+				xe = (a + b) / 2
+			for xx in range(a + 3, xe):
+				var t := float(xx - a) / float(b - a)
+				var y := ry + int(round(lerpf(0.0, float(sag), t)))
+				if broken and i == 1 and k == 0:
+					y += int(t * 16.0)
+				put(xx, y - 1, OUT)
+				put(xx, y, WOOD[0])
+				put(xx, y + 1, WOOD[1] if hh(xx / 4, k, sd + 3) % 5 != 0 else WOOD[2])
+				put(xx, y + 2, WOOD[2])
+				put(xx, y + 3, OUT)
+	for p: int in posts:
+		var h := 28 + hh(p, 0, sd) % 5
+		bar(p, base - h, 5, h, WOOD)
+		# Затёсанный верх: светлая левая грань, тёмная правая.
+		put(p, base - h - 1, OUT)
+		put(p + 1, base - h - 1, WOOD[0])
+		put(p + 2, base - h - 2, WOOD[0])
+		put(p + 3, base - h - 1, WOOD[2])
+		put(p + 4, base - h - 1, OUT)
+		put(p + 1, base - h - 2, OUT)
+		put(p + 3, base - h - 2, OUT)
+		put(p + 2, base - h - 3, OUT)
+		for k: int in [0, 1]:
+			var ry := base - 22 + k * 10
+			rect(p - 1, ry, 7, 1, ROPE[0])
+			rect(p - 1, ry + 1, 7, 1, ROPE[1])
+			put(p - 2, ry, OUT)
+			put(p - 2, ry + 1, OUT)
+
+
+## Штакетник: две жерди позади, штакетины 4 px с остриём (свет слева, тень справа), гвозди.
+func _fence_picket(x0: int, x1: int, base: int, sd := 1) -> void:
+	for xx in range(x0 - 2, x1 + 4):
+		put(xx, base + 1, Color(0.16, 0.08, 0.16, 0.25))
+	for k: int in [0, 1]:
+		var ry := base - 17 + k * 9
+		for xx in range(x0, x1):
+			put(xx, ry - 1, OUT)
+			put(xx, ry, WOOD_PALE[1])
+			put(xx, ry + 1, WOOD_PALE[2])
+			put(xx, ry + 2, OUT)
+	var x := x0
+	while x < x1 - 3:
+		var h := 22 + hh(x, 0, sd) % 3
+		var pix := {}
+		for yy in h:
+			for xx in 4:
+				if yy < 2 and (xx == 0 or xx == 3):
+					continue
+				var c: Color = WOOD_PALE[1]
+				if xx == 0 or (xx == 1 and yy < 2):
+					c = WOOD_PALE[0]
+				elif xx == 3 or (xx == 2 and yy < 1):
+					c = WOOD_PALE[2]
+				if hh(x + xx, yy / 3, sd) < 60:
+					c = WOOD_PALE[2]
+				if yy > h - 3:
+					c = WOOD_PALE[3]
+				pix[Vector2i(x + xx, base - h + yy)] = c
+		_blit_outlined(pix)
+		put(x + 1, base - 16, IRON[1])
+		put(x + 1, base - 7, IRON[1])
+		x += 8
+
+
+## Калитка: два столба с шапками, створка из досок с перекладинами и раскосом, петли, кольцо.
+func _gate(cx: int, base: int) -> void:
+	var w := 34
+	ground_shadow(cx + 8, base, w / 2 + 10, 3, 0.3)
+	bar(cx - w / 2 - 7, base - 40, 7, 40, WOOD)
+	bar(cx + w / 2, base - 40, 7, 40, WOOD)
+	bar(cx - w / 2 - 9, base - 44, 11, 4, WOOD)
+	bar(cx + w / 2 - 2, base - 44, 11, 4, WOOD)
+	var pix := {}
+	for yy in 30:
+		for xx in w:
+			if yy < hh(xx / 6, 0, 5) % 3:
+				continue
+			var pl := xx % 6
+			var c: Color = WOOD_PALE[1]
+			if pl == 0:
+				c = WOOD_PALE[3]
+			elif pl == 1:
+				c = WOOD_PALE[0]
+			elif pl == 5:
+				c = WOOD_PALE[2]
+			pix[Vector2i(cx - w / 2 + xx, base - 32 + yy)] = c
+	_blit_outlined(pix)
+	bar(cx - w / 2, base - 28, w, 3, WOOD)
+	bar(cx - w / 2, base - 10, w, 3, WOOD)
+	for i in 18:
+		var t := float(i) / 17.0
+		var px := int(lerpf(cx - w / 2 + 2, cx + w / 2 - 4, t))
+		var py := int(lerpf(base - 11, base - 26, t))
+		put(px, py, WOOD[1])
+		put(px + 1, py, WOOD[2])
+		put(px - 1, py, OUT)
+		put(px + 2, py, OUT)
+	for hy: int in [base - 27, base - 9]:
+		rect(cx - w / 2 - 1, hy, 7, 1, IRON[0])
+		rect(cx - w / 2 - 1, hy + 1, 7, 1, IRON[2])
+	for yy in range(-2, 3):
+		for xx in range(-2, 3):
+			var d := xx * xx + yy * yy
+			if d >= 2 and d <= 5:
+				put(cx + w / 2 - 6 + xx, base - 18 + yy, IRON[0] if xx + yy < 0 else IRON[2])
+
+
+## Группа камней: большой задний, средний и малый спереди (угловатые, мох на верхних гранях),
+## камушки, папоротник и пучок травы у подножия.
+func _rock_group(cx: int, base: int, s: int, sd: int) -> void:
+	ground_shadow(cx + s / 2, base, s + 8, 4, 0.32)
+	var h1 := int(s * 0.9)
+	_rock(cx - s / 3, base - h1 / 2 - 2, s, h1, sd)
+	var h2 := int(s * 0.6)
+	_rock(cx + s / 2, base - h2 / 2, int(s * 0.7), h2, sd + 7)
+	var h3 := int(s * 0.4)
+	_rock(cx - s / 2 - 4, base - h3 / 2 + 1, int(s * 0.5), h3, sd + 13)
+	for i in 5:
+		var px := cx - s + hh(i, sd, 1) % (2 * s)
+		var py := base + hh(i, sd, 2) % 4
+		rect(px - 1, py - 1, 5, 4, OUT)
+		rect(px, py, 3, 2, ROCK[1])
+		put(px, py, ROCK[0])
+		put(px + 2, py + 1, ROCK[3])
+	_fern(cx + s / 2 + 10, base + 2, sd, maxi(14, s / 2))
+	_tuft(cx - s + 2, base + 3, sd + 3)
+
+
+## Папоротник: вайи дугами из основания (провисают к кончикам), перышки по обе стороны —
+## верхние светлые, нижние тёмные, кончики светлее; контур тёмно-зелёный.
+func _fern(x: int, base: int, sd: int, s := 14) -> void:
+	var pix := {}
+	var n := 7
+	for f in n:
+		var ang := lerpf(-PI * 0.94, -PI * 0.06, float(f) / (n - 1)) + float(hh(f, sd, 1) % 10 - 5) * 0.02
+		var L := s * (0.75 + float(hh(f, sd, 2) % 30) / 100.0)
+		if f == 0 or f == n - 1:
+			L *= 0.7
+		var d0 := Vector2.from_angle(ang)
+		var prev := Vector2(x, base)
+		for i in int(L):
+			var t := float(i) / L
+			var p := Vector2(x, base) + d0 * (i + 1.0)
+			p.y += t * t * L * 0.5
+			var d := (p - prev).normalized()
+			prev = p
+			var shaft: Color = LEAF5[2] if t < 0.8 else LEAF5[1]
+			pix[Vector2i(int(round(p.x)), int(round(p.y)))] = shaft
+			if i % 2 == 1 and t > 0.12:
+				var perp := Vector2(-d.y, d.x)
+				var ll := int(round((1.0 - t) * 3.0)) + 1
+				for side: int in [-1, 1]:
+					for k in range(1, ll + 1):
+						var q := p + perp * side * k + d * k * 0.6
+						var up := (perp * side).y < 0.0
+						var c: Color = LEAF5[1] if up else LEAF5[3]
+						if t > 0.75:
+							c = LEAF5[0] if up else LEAF5[2]
+						pix[Vector2i(int(round(q.x)), int(round(q.y)))] = c
+	_blit_c(pix, LEAF_OUT_C)
+
+
+## Пучок травы: травинки веером, к кончику светлее.
+func _tuft(x: int, base: int, sd: int) -> void:
+	var pix := {}
+	for b in 7:
+		var lean := float(b - 3) * 0.3 + float(hh(b, sd, 3) % 10 - 5) * 0.05
+		var h := 6 + hh(b, sd, 4) % 7
+		for i in h:
+			var t := float(i) / h
+			var px := x + b - 3 + int(round(lean * i * t))
+			var c: Color = LEAF5[3] if t < 0.3 else (LEAF5[2] if t < 0.65 else LEAF5[1])
+			if t > 0.85:
+				c = LEAF5[0]
+			pix[Vector2i(px, base - i)] = c
+	_blit_c(pix, LEAF_OUT_C)
+
+
+## Клумба: трава и цветы — daisy (ромашки), tulip (тюльпаны), lavender (лаванда) или mix.
+func _flower_bed(cx: int, base: int, sd: int, kind := "mix") -> void:
+	_tuft(cx - 6, base, sd)
+	_tuft(cx + 5, base + 1, sd + 1)
+	var kinds := ["daisy", "tulip", "lavender"]
+	for i in 8:
+		var x := cx - 10 + hh(i, sd, 5) % 21
+		var y := base - 7 - hh(i, sd, 6) % 6
+		var k: String = kind if kind != "mix" else kinds[i % 3]
+		for yy in range(y + 1, base):
+			put(x, yy, LEAF5[2])
+		put(x + 1, y + 4, LEAF5[1])
+		match k:
+			"daisy":
+				for d: Vector2i in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
+					put(x + d.x, y + d.y, Color8(250, 248, 240))
+				put(x, y + 1, Color8(206, 200, 190))
+				put(x + 1, y + 1, Color8(206, 200, 190))
+				put(x, y, Color8(246, 204, 80))
+			"tulip":
+				rect(x - 1, y - 2, 3, 3, Color8(214, 72, 78))
+				put(x - 1, y - 2, Color8(244, 128, 128))
+				put(x, y - 3, Color8(214, 72, 78))
+				put(x + 1, y, Color8(150, 42, 54))
+				put(x + 1, y - 1, Color8(170, 52, 60))
+			_:
+				for j in 5:
+					put(x + (j % 2), y - j + 1, Color8(176, 140, 220) if j % 2 == 0 else Color8(128, 96, 180))
+				put(x, y - 4, Color8(206, 180, 240))
+
+
+## Пергола: четыре столба (задние темнее), задняя и передняя балки, поперечины вглубь,
+## плющ по балке и столбам, два фонаря на цепях, тень на землю.
+func _pergola(cx: int, base: int, w: int, sd := 1) -> void:
+	var h := 52
+	var d := 14
+	ground_shadow(cx + 10, base - d / 2, w / 2 + 12, d / 2 + 3, 0.3)
+	var dark := [WOOD[1], WOOD[2], WOOD[3], Color8(66, 40, 34)]
+	bar(cx - w / 2 + 3, base - d - h, 6, h, dark)
+	bar(cx + w / 2 - 9, base - d - h, 6, h, dark)
+	bar(cx - w / 2 - 6, base - d - h - 6, w + 12, 5, dark)
+	for k in 6:
+		var bx := cx - w / 2 + 2 + k * (w - 8) / 5
+		bar(bx, base - h - d - 4, 4, d + 2, WOOD)
+	bar(cx - w / 2, base - h, 7, h, WOOD)
+	bar(cx + w / 2 - 7, base - h, 7, h, WOOD)
+	bar(cx - w / 2 - 8, base - h - 6, w + 16, 6, WOOD)
+	_ivy_drape(cx - w / 2 - 6, base - h - 8, w + 12, sd)
+	for px: int in [cx - w / 2 + 3, cx + w / 2 - 4]:
+		_ivy_strand(px, base - h, 22 + hh(px, 0, sd) % 12, sd + px)
+	for lx: int in [cx - w / 4, cx + w / 4]:
+		for yy in 6:
+			put(lx, base - h + yy, IRON[2] if yy % 2 == 0 else IRON[1])
+		_lantern_small(lx, base - h + 6)
+
+
+func _lantern_small(x: int, y: int) -> void:
+	rect(x - 4, y, 9, 11, OUT)
+	rect(x - 3, y + 1, 7, 9, Color8(250, 210, 116))
+	rect(x - 1, y + 3, 3, 5, Color8(255, 248, 214))
+	rect(x + 2, y + 1, 1, 9, Color8(212, 150, 70))
+	rect(x - 4, y - 2, 9, 2, IRON[2])
+	put(x, y - 3, OUT)
+
+
+## Листья плюща вдоль балки и свисающие плети.
+func _ivy_drape(x: int, y: int, w: int, sd: int) -> void:
+	var pix := {}
+	for i in range(0, w, 3):
+		var ly := y + hh(i, 0, sd) % 4
+		_leaf(pix, x + i, ly)
+		if hh(i, 1, sd) % 3 == 0:
+			_leaf(pix, x + i + 1, ly - 2)
+	for i in range(2, w, 9):
+		var l := 4 + hh(i, 2, sd) % 10
+		for j in range(0, l, 2):
+			_leaf(pix, x + i + (j / 2) % 2 * 2 - 1, y + 4 + j)
+	_blit_c(pix, LEAF_OUT_C)
+
+
+func _ivy_strand(x: int, y: int, l: int, sd: int) -> void:
+	var pix := {}
+	for j in range(0, l, 2):
+		_leaf(pix, x + (j / 2) % 2 * 3 - 1, y + j + hh(j, 0, sd) % 2)
+	_blit_c(pix, LEAF_OUT_C)
+
+
+func _leaf(pix: Dictionary, x: int, y: int) -> void:
+	pix[Vector2i(x, y)] = LEAF5[0]
+	pix[Vector2i(x + 1, y)] = LEAF5[1]
+	pix[Vector2i(x, y + 1)] = LEAF5[2]
+	pix[Vector2i(x + 1, y + 1)] = LEAF5[3]
+
+
+## Бревно лёжа: кора бороздами вдоль (свет сверху, тень снизу), сучок, торец-спил слева с кольцами.
+func _log(x: int, base: int, length: int, r := 6) -> void:
+	ground_shadow(x + length / 2 + 4, base + 1, length / 2 + 6, 3, 0.32)
+	var cy := base - r
+	var pix := {}
+	for xx in length:
+		for yy in range(-r, r + 1):
+			var t := float(yy + r) / (2.0 * r)
+			var c: Color = BARK[1]
+			if t < 0.25:
+				c = BARK[0]
+			elif t > 0.75:
+				c = BARK[2]
+			if posmod(yy + (xx / 7) % 2, 3) == 0 and t > 0.15:
+				c = c.darkened(0.15)
+			pix[Vector2i(x + xx, cy + yy)] = c
+	var kx := x + length * 2 / 3
+	pix[Vector2i(kx, cy - 2)] = BARK[2]
+	pix[Vector2i(kx + 1, cy - 2)] = BARK[0]
+	pix[Vector2i(kx, cy - 1)] = Color8(60, 40, 34)
+	var ex := maxf(2.0, r * 0.55)
+	for yy in range(-r, r + 1):
+		for xx in range(-int(ex) - 1, int(ex) + 2):
+			var dd := pow((xx + 0.0) / (ex + 0.5), 2) + pow((yy + 0.0) / (r + 0.5), 2)
+			if dd > 1.0:
+				continue
+			var c := Color8(224, 192, 142)
+			if dd > 0.72:
+				c = BARK[1]
+			elif int(sqrt(dd) * 5.0) % 2 == 1:
+				c = Color8(194, 158, 110)
+			if yy > r * 0.4 and dd <= 0.72:
+				c = c.darkened(0.12)
+			pix[Vector2i(x + xx, cy + yy)] = c
+	_blit_outlined(pix)
+
+
+## Пень: бок коры (свет слева, тень справа), сверху спил-эллипс с кольцами и трещиной, корни;
+## axe — воткнутый топор.
+func _stump(cx: int, base: int, r := 9, axe := false) -> void:
+	ground_shadow(cx + 6, base, r + 6, 3, 0.32)
+	var h := 10
+	var ry := 4.0
+	var yt := base - int(ry) - h
+	var pix := {}
+	for xx in range(-r, r + 1):
+		var arc := ry * sqrt(maxf(0.0, 1.0 - pow(float(xx) / r, 2)))
+		var t := float(xx + r) / (2.0 * r)
+		for yy in range(int(yt + arc), int(yt + h + arc) + 1):
+			var c: Color = BARK[1]
+			if t < 0.25:
+				c = BARK[0]
+			elif t > 0.7:
+				c = BARK[2]
+			if posmod(xx, 3) == 0:
+				c = c.darkened(0.14)
+			pix[Vector2i(cx + xx, yy)] = c
+	for side: int in [-1, 1]:
+		for i in 5:
+			pix[Vector2i(cx + side * (r + i), base - 2 + i / 2)] = BARK[0] if side < 0 else BARK[2]
+			pix[Vector2i(cx + side * (r + i), base - 3 + i / 2)] = BARK[1]
+	for yy in range(-int(ry), int(ry) + 1):
+		for xx in range(-r, r + 1):
+			var dd := pow(float(xx) / r, 2) + pow(float(yy) / ry, 2)
+			if dd > 1.0:
+				continue
+			var c := Color8(222, 190, 140)
+			if dd > 0.7:
+				c = Color8(176, 132, 90)
+			elif int(sqrt(dd) * 4.0) % 2 == 1:
+				c = Color8(196, 160, 112)
+			if xx == 2 and yy > -2:
+				c = Color8(120, 86, 60)
+			pix[Vector2i(cx + xx, yt + yy)] = c
+	_blit_outlined(pix)
+	if axe:
+		for i in 14:
+			var px := cx - 1 + i
+			var py := yt - i / 2
+			put(px, py, WOOD[0])
+			put(px, py + 1, WOOD[2])
+			put(px, py - 1, OUT)
+			put(px, py + 2, OUT)
+		rect(cx - 5, yt - 4, 6, 6, OUT)
+		rect(cx - 4, yt - 3, 4, 4, IRON[1])
+		rect(cx - 4, yt - 3, 4, 1, IRON[0])
+		put(cx - 4, yt, IRON[2])
+
+
+## Поленница: торцы поленьев рядами между двумя колышками.
+func _woodpile(cx: int, base: int, cols := 5, rows := 3) -> void:
+	ground_shadow(cx + 8, base, cols * 4 + 8, 3, 0.32)
+	bar(cx - cols * 4 - 3, base - rows * 8 - 6, 3, rows * 8 + 6, WOOD)
+	bar(cx + cols * 4, base - rows * 8 - 6, 3, rows * 8 + 6, WOOD)
+	for r in rows:
+		for c in cols:
+			_log_end(cx - cols * 4 + 4 + c * 8, base - 5 - r * 8, r * 7 + c)
+
+
+func _log_end(x: int, y: int, sd: int) -> void:
+	for yy in range(-5, 6):
+		for xx in range(-5, 6):
+			var d := sqrt(float(xx * xx + yy * yy))
+			if d > 4.6:
+				continue
+			var c: Color = OUT
+			if d <= 3.8:
+				c = BARK[1] if xx + yy < 2 else BARK[2]
+			if d <= 2.8:
+				c = Color8(224, 192, 142) if xx + yy < 1 else Color8(196, 160, 112)
+			if d <= 1.2:
+				c = Color8(176, 136, 94)
+			put(x + xx, y + yy, c)
+	if sd % 4 == 1:
+		put(x + 1, y - 1, Color8(150, 110, 76))
+
+
+## Старое дерево: толстый кривой ствол с бороздами коры, корни наружу, дупло; крона — крупные
+## пучки. kind: "green" | "autumn".
+func _old_tree(cx: int, base: int, s: int, sd: int, kind := "green") -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	var pal: Array = LEAF5 if kind == "green" else LEAF_AUTUMN
+	ground_shadow(cx + s / 2 + 6, base, s + 14, s / 3 + 4, 0.34)
+	var pix := {}
+	var th := int(s * 1.3)
+	var bend_top := 0
+	for yy in th + 1:
+		var k := float(yy) / th
+		var bend := sin(k * 3.0 + sd) * 3.0 + k * 4.0
+		bend_top = int(round(bend))
+		var half := 8.0 - k * 3.0 + (4.0 if yy < 4 else 0.0) + 1.2 * sin(yy * 0.5 + sd)
+		for xx in range(int(floor(-half)), int(ceil(half)) + 1):
+			var t := (xx + half) / (half * 2.0)
+			var c: Color = BARK[1]
+			if t < 0.25:
+				c = BARK[0]
+			elif t > 0.72:
+				c = BARK[2]
+			if posmod(xx * 3 + int(yy / 4.0) + sd, 5) == 0:
+				c = c.darkened(0.18)
+			if k > 0.65:
+				c = c.darkened(0.22)
+			pix[Vector2i(cx + xx + int(round(bend)), base - yy)] = c
+	for side: int in [-1, 1]:
+		for j in 2:
+			for i in 8 + j * 4:
+				var rx := cx + side * (7 + i)
+				var ry := base - 2 + i / 3 - j * 3 + (i / 4 if j == 1 else 0)
+				pix[Vector2i(rx, ry)] = BARK[0] if side < 0 else BARK[2]
+				pix[Vector2i(rx, ry - 1)] = BARK[1]
+	_blit_outlined(pix)
+	# Дупло.
+	var hx := cx + int(round(sin(0.4 * 3.0 + sd) * 3.0 + 1.6)) - 1
+	var hy := base - int(th * 0.4)
+	for yy in range(-6, 7):
+		for xx in range(-4, 5):
+			var e := pow(xx / 3.5, 2) + pow(yy / 5.5, 2)
+			if e > 1.0:
+				continue
+			var c: Color = Color8(34, 22, 24)
+			if e > 0.6:
+				c = OUT
+			if yy > 2 and e > 0.45:
+				c = BARK[0]
+			put(hx + xx, hy + yy, c)
+	# Крона.
+	var top := base - th
+	var cyy := top - s / 3
+	var clumps: Array = [[0, -s * 0.32, s * 0.6, 1]]
+	for i in 4:
+		var ang := PI + 0.2 + i * 0.95 + rng.randf_range(-0.2, 0.2)
+		clumps.append([cos(ang) * s * 0.75, -s * 0.2 + sin(ang) * s * 0.3, s * rng.randf_range(0.45, 0.55), 1])
+	for i in 5:
+		var px := lerpf(-s * 0.9, s * 0.9, i / 4.0) + rng.randf_range(-3, 3)
+		clumps.append([px, s * 0.12 + (i % 2) * 4 - 2, s * rng.randf_range(0.38, 0.46), 0])
+	for i in 3:
+		var px := lerpf(-s * 0.5, s * 0.5, i / 2.0) + rng.randf_range(-2, 2)
+		clumps.append([px, s * 0.45, s * rng.randf_range(0.34, 0.4), 0])
+	_draw_clumps(clumps, cx + bend_top, cyy, pal, sd, rng)

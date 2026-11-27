@@ -1,0 +1,35 @@
+extends "res://tools/camp_art.gd"
+## Галерея мелочей лагеря (заборы, калитка, камни, растения, пергола, брёвна, пни, поленница,
+## старые деревья) → shots/camp_props.png и _x3.png. Рисунки — tools/camp_art.gd.
+
+
+func _init() -> void:
+	setup(560, 300, 0, 0)
+	grass(0, 0, W, H)
+	_fence_rail(10, 120, 100, 1)
+	_fence_rail(140, 250, 100, 2, true)
+	_fence_picket(270, 380, 100, 1)
+	_gate(422, 100)
+	_pergola(505, 112, 70)
+	_rock_group(56, 200, 40, 3)
+	_rock_group(164, 200, 30, 9)
+	_old_tree(262, 200, 26, 5, "green")
+	_old_tree(372, 200, 24, 8, "autumn")
+	_woodpile(462, 200)
+	_stump(528, 200, 9, true)
+	_log(10, 272, 40, 7)
+	_log(68, 270, 30, 5)
+	_fern(130, 272, 1, 22)
+	_fern(166, 270, 2, 16)
+	_tuft(184, 272, 3)
+	_tuft(200, 272, 4)
+	_flower_bed(236, 272, 1, "daisy")
+	_flower_bed(272, 272, 2, "tulip")
+	_flower_bed(308, 272, 3, "lavender")
+	_flower_bed(344, 272, 4, "mix")
+	_stump(392, 272, 8)
+	_fern(436, 272, 5, 24)
+	_rock_group(508, 272, 22, 11)
+	save("camp_props", 3)
+	print("camp_props: done")
+	quit()
