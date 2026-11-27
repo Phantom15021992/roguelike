@@ -461,7 +461,7 @@ func _b_library(sx: int, sy: int) -> void:
 	at(sx - 70, sy)
 	RP = R_BLUE
 	house({"wing": {"x": 10, "w": 120, "h": 104, "gh": 50, "back": 64, "mat": "timber", "gwin": "round"},
-		"chimney": [100, -222, 14], "door": [70, 22, 46],
+		"chimney": [96, -192, 14], "door": [70, 22, 46],
 		"wins": [[22, -50, 20, 26], [98, -50, 20, 26], [22, -92, 20, 22], [98, -92, 20, 22]],
 		"sign": [48, -68, 44, "КНИГИ"],
 		"after": func() -> void:
