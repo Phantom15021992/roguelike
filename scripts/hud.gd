@@ -593,7 +593,10 @@ func _refresh_inv_panel() -> void:
 	var head := _rich(280)
 	head.text = "[b]Снаряжение и сумка[/b]   [color=#a8a0b8]сумка %d/%d — в лагерь попадёт только через портал[/color]" % [Run.bag.size(), Meta.bag_max()]
 	_inv_box.add_child(head)
-	var eq_list := _inv_scroll(58)
+	var worn := _rich(280)
+	worn.text = _worn_table()
+	_inv_box.add_child(worn)
+	var eq_list := _inv_scroll(40)
 	for slot: String in Items.SLOTS:
 		var it: Variant = Run.equipment[slot]
 		if it == null:
@@ -611,7 +614,7 @@ func _refresh_inv_panel() -> void:
 	var sub := _rich(280)
 	sub.text = "[b]Сумка[/b]" + ("  [color=#a8a0b8]пусто[/color]" if Run.bag.is_empty() else "")
 	_inv_box.add_child(sub)
-	var bag_list := _inv_scroll(62)
+	var bag_list := _inv_scroll(48)
 	for i in Run.bag.size():
 		var it: Dictionary = Run.bag[i]
 		var row := HBoxContainer.new()
@@ -642,6 +645,20 @@ func _refresh_inv_panel() -> void:
 	_inv_box.add_child(hint)
 	_center(_panels["inv"])
 	_center.call_deferred(_panels["inv"])
+
+
+## Табличка «что надето сейчас», как у портала: 8 слотов в две колонки.
+func _worn_table() -> String:
+	var t := "[b]Надето:[/b]\n[table=4]"
+	for slot: String in Items.SLOTS:
+		var txt := "[color=#7a7088]—[/color]"
+		var it: Variant = Run.equipment[slot]
+		if it != null:
+			txt = "%s[color=#%s]%s[/color]" % [Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it)]
+		elif slot == "offhand" and Items.is_two_hand(Run.equipment["weapon"]):
+			txt = "[color=#a8a0b8]занята двуручным[/color]"
+		t += "[cell][color=#c8c0d8]%s:[/color] [/cell][cell]%s  [/cell]" % [Items.SLOT_NAMES[slot], txt]
+	return t + "[/table]"
 
 
 func _do_refine(item: Dictionary, bonus: float) -> void:
