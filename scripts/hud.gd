@@ -593,24 +593,18 @@ func _refresh_inv_panel() -> void:
 	var head := _rich(280)
 	head.text = "[b]Снаряжение и сумка[/b]   [color=#a8a0b8]сумка %d/%d — в лагерь попадёт только через портал[/color]" % [Run.bag.size(), Meta.bag_max()]
 	_inv_box.add_child(head)
-	var worn := _rich(280)
+	# Слева — что надето, справа — что эти вещи дают вместе.
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 5)
+	var worn := _rich(150)
+	worn.add_theme_constant_override("table_v_separation", 0)
 	worn.text = _worn_table()
-	_inv_box.add_child(worn)
-	var eq_list := _inv_scroll(40)
-	for slot: String in Items.SLOTS:
-		var it: Variant = Run.equipment[slot]
-		if it == null:
-			continue
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 3)
-		var s: String = slot
-		row.add_child(_inv_button("Снять", not it.get("starter", false) and Run.bag.size() < Meta.bag_max(), func() -> void:
-			if _player:
-				_player.inv("unequip", s)))
-		var t := _rich(250)
-		t.text = "%s: %s[color=#%s]%s[/color] [color=#a8a0b8]%s[/color]" % [Items.SLOT_NAMES[slot], Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it), _short_item(it)]
-		row.add_child(t)
-		eq_list.add_child(row)
+	top.add_child(worn)
+	var gives := _rich(130)
+	gives.add_theme_constant_override("table_v_separation", 0)
+	gives.text = _gear_info()
+	top.add_child(gives)
+	_inv_box.add_child(top)
 	var sub := _rich(280)
 	sub.text = "[b]Сумка[/b]" + ("  [color=#a8a0b8]пусто[/color]" if Run.bag.is_empty() else "")
 	_inv_box.add_child(sub)
@@ -647,18 +641,40 @@ func _refresh_inv_panel() -> void:
 	_center.call_deferred(_panels["inv"])
 
 
-## Табличка «что надето сейчас», как у портала: 8 слотов в две колонки.
+## Табличка «что надето сейчас»: 8 слотов в столбик.
 func _worn_table() -> String:
-	var t := "[b]Надето:[/b]\n[table=4]"
+	var t := "[b]Надето:[/b]\n[table=2]"
 	for slot: String in Items.SLOTS:
 		var txt := "[color=#7a7088]—[/color]"
 		var it: Variant = Run.equipment[slot]
 		if it != null:
-			txt = "%s[color=#%s]%s[/color]" % [Items.icon_bb(it), Items.color(it).to_html(false), Items.display_name(it)]
+			txt = "%s[color=#%s]%s[/color]" % [Items.icon_bb(it, 6), Items.color(it).to_html(false), Items.display_name(it)]
 		elif slot == "offhand" and Items.is_two_hand(Run.equipment["weapon"]):
 			txt = "[color=#a8a0b8]занята двуручным[/color]"
 		t += "[cell][color=#c8c0d8]%s:[/color] [/cell][cell]%s  [/cell]" % [Items.SLOT_NAMES[slot], txt]
 	return t + "[/table]"
+
+
+## Справа от таблички: сумма всего, что дают надетые вещи (и комплекты).
+func _gear_info() -> String:
+	var lines: PackedStringArray = []
+	var weapon: Variant = Run.equipment["weapon"]
+	if weapon != null:
+		var w := Crafting.effective_stats(weapon)
+		lines.append("урон оружия %d–%d" % [w["atk_min"], w["atk_max"]])
+	var sum: Dictionary = Run.gear_bonuses()
+	for k: String in Items.STAT_LABELS:
+		if sum.get(k, 0) != 0:
+			lines.append(Items.stat_text(k, sum[k]))
+	var counts: Dictionary = Run.set_counts()
+	var t := "[b]Дают вещи:[/b]\n[table=2]"
+	for line: String in lines:
+		t += "[cell]%s   [/cell]" % line
+	t += "[/table]"
+	for sid: String in counts:
+		t += "\n[color=#%s]Комплект «%s»: %d из %d[/color]" % [
+			Items.RARITY[Items.SET_RARITY]["color"].to_html(false), Items.SETS[sid]["name"], counts[sid], Items.SETS[sid]["pieces"].size()]
+	return t
 
 
 func _do_refine(item: Dictionary, bonus: float) -> void:

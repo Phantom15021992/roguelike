@@ -400,20 +400,17 @@ func set_counts(equip_set: Dictionary = equipment) -> Dictionary:
 	return counts
 
 
-## Итоговые характеристики героя. Можно передать «примерочное» снаряжение для сравнения.
-func derived(equip_set: Dictionary = equipment) -> Dictionary:
-	var c := class_data()
-	# Сумма свойств предметов (с заточкой) и бонусов комплектов.
+## Что дают надетые вещи вместе: свойства (с заточкой) и бонусы комплектов, без урона оружия.
+func gear_bonuses(equip_set: Dictionary = equipment) -> Dictionary:
 	var sum := {}
-	var eff := {}
 	for slot: String in equip_set:
 		var item: Variant = equip_set[slot]
 		if item == null:
 			continue
-		eff[slot] = Crafting.effective_stats(item)
-		for k: String in eff[slot]:
+		var stats_of_item := Crafting.effective_stats(item)
+		for k: String in stats_of_item:
 			if k != "atk_min" and k != "atk_max":
-				sum[k] = sum.get(k, 0) + eff[slot][k]
+				sum[k] = sum.get(k, 0) + stats_of_item[k]
 	var counts := set_counts(equip_set)
 	for sid: String in counts:
 		var bonus_table: Dictionary = Items.SETS[sid]["bonus"]
@@ -421,6 +418,13 @@ func derived(equip_set: Dictionary = equipment) -> Dictionary:
 			if counts[sid] >= need:
 				for k: String in bonus_table[need]:
 					sum[k] = sum.get(k, 0) + bonus_table[need][k]
+	return sum
+
+
+## Итоговые характеристики героя. Можно передать «примерочное» снаряжение для сравнения.
+func derived(equip_set: Dictionary = equipment) -> Dictionary:
+	var c := class_data()
+	var sum := gear_bonuses(equip_set)
 	var g := func(k: String) -> int: return sum.get(k, 0)
 
 	# Характеристики с бонусами предметов (+1 Сила и т.п.).
@@ -449,8 +453,8 @@ func derived(equip_set: Dictionary = equipment) -> Dictionary:
 	var dmg_mult: float = Meta.damage_mult() * (1.0 + g.call("dmg_pct") / 100.0) * (1.0 + run_dmg / 100.0)  # Кузница, комплекты, Алтарь крови
 	var dr: float = s.call("vit") * 0.5 + g.call("def") + (Skills.value("fortitude", fort, "v2") if fort > 0 else 0.0)
 	return {
-		"atk_min": int(round(((eff["weapon"]["atk_min"] if weapon else 2) + bonus) * dmg_mult)),
-		"atk_max": int(round(((eff["weapon"]["atk_max"] if weapon else 4) + bonus) * dmg_mult)),
+		"atk_min": int(round(((Crafting.effective_stats(weapon)["atk_min"] if weapon else 2) + bonus) * dmg_mult)),
+		"atk_max": int(round(((Crafting.effective_stats(weapon)["atk_max"] if weapon else 4) + bonus) * dmg_mult)),
 		"max_hp": max_hp,
 		"hp_regen": s.call("vit") * 0.15,                                    # HP в секунду
 		"max_sp": c["sp"] + s.call("int") * 5 + g.call("sp") + (int(Skills.value("meditation", med)) if med > 0 else 0),
